@@ -1,16 +1,15 @@
-# Replace @OWNER with the GitHub user or team that owns the leak guards (see CONTRIBUTING.md, "The leak guards"), and turn on
 # "Require review from Code Owners" in branch protection. Every file that decides what may be published needs their review.
-/.github/workflows/ @OWNER
-/.github/CODEOWNERS @OWNER
-/scripts/commit_guard.py @OWNER
-/scripts/push_guard.py @OWNER
-/scripts/ai_diff_read.py @OWNER
-/scripts/hooks/ @OWNER
-/scripts/binary-allow.txt @OWNER
-/scripts/denylist-allow.txt @OWNER
-/scripts/internal-ip-baseline.json @OWNER
-/.gitleaks.toml @OWNER
-/scripts/migration_lint.py @OWNER
-/scripts/migration_lint_grandfather.json @OWNER
-/scripts/ci_guard.sh @OWNER
-/tests/test_migration_lint.py @OWNER
+/.github/workflows/ @c0cl3c
+/.github/CODEOWNERS @c0cl3c
+/scripts/commit_guard.py @c0cl3c
+/scripts/push_guard.py @c0cl3c
+/scripts/ai_diff_read.py @c0cl3c
+/scripts/hooks/ @c0cl3c
+/scripts/binary-allow.txt @c0cl3c
+/scripts/denylist-allow.txt @c0cl3c
+/scripts/internal-ip-baseline.json @c0cl3c
+/.gitleaks.toml @c0cl3c
+/scripts/migration_lint.py @c0cl3c
+/scripts/migration_lint_grandfather.json @c0cl3c
+/scripts/ci_guard.sh @c0cl3c
+/tests/test_migration_lint.py @c0cl3c
