@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Skills{% if scope_project %} · {{ scope_project.name }}{% endif %}{% endblock %}
+{% block page_title %}Skills{% endblock %}
+{% block content %}
+{# Skills (#718). Global (Assets -> Skills): the built-in and global layers every project inherits. A project's own list: inherited and own, each
+   marked with its layer. Needs: skills_base, scope_project (None = global), can_add, entries, mine, inherited, conflicts. #}
+{% macro licence_chip(e) %}
+  {% if e.hold == 'review' %}<span class="chip bg-status-warn/15 text-charcoal" data-review="pending">Imported, not reviewed: not used by jobs</span>
+  {% elif e.blocked %}<span class="chip bg-status-disaster/10 text-status-disaster" data-licence="blocked">Licence unknown: not in use</span>
+  {% elif e.license.status == 'permissive' %}<span class="chip bg-charcoal/[.06] text-charcoal/70" data-licence="permissive">{{ e.license.spdx }}</span>{% endif %}
+{% endmacro %}
+{% macro row(e) %}
+<li class="px-4 py-3" data-skill="{{ e.key }}" data-layer="{{ e.layer_label|lower }}"{% if e.blocked %} data-blocked{% endif %}>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="{{ skills_base }}/{{ e.uid }}" class="press font-semibold hover:underline break-words min-w-0" data-skill-link>{{ e.name }}</a>
+    <code class="text-micro text-charcoal/55">{{ e.key }}</code>
+    <span class="chip {{ 'bg-indigo/10 text-indigo' if e.layer in (4, 5) else 'bg-charcoal/[.06] text-charcoal/70' }}" data-layer-chip>{{ e.layer_label }}</span>
+    <span class="text-micro text-charcoal/50 tabular">v{{ e.n }}</span>
+    {% if e.pinned %}<span class="chip bg-status-warn/15 text-charcoal" data-pinned>Held at v{{ e.n }}</span>{% endif %}
+    {% if e.base %}<span class="text-micro text-charcoal/55">built on <code>{{ e.base }}</code></span>{% endif %}
+    {{ licence_chip(e) }}
+  </div>
+  <p class="text-small text-charcoal/70 mt-0.5 break-words">{{ e.description }}</p>
+  {% if e.overrides %}<p class="text-micro text-charcoal/50 mt-0.5">Replaces the {{ e.overrides|join(' and ')|lower }} skill of the same name here.</p>{% endif %}
+</li>
+{% endmacro %}
+<div class="max-w-5xl min-w-0" data-skills-page="{{ 'global' if not scope_project else 'project' }}">
+  <p class="text-small text-charcoal/70 mb-3 max-w-3xl">
+    {% if not scope_project %}
+    Skills are the instructions agents follow when they build: how to plan, how things should look, which rules hold. This is the <strong>global</strong> layer: the skills that ship with Crewboss, and the ones installed for every project. A project can add its own, or hold one at a version.
+    {% else %}
+    The skills agents follow when they work on <strong>{{ scope_project.name }}</strong>: those it inherits (built-in, global{% if scope_project.kind != 'account' %}, its account{% endif %}), and its own. A skill in a lower layer replaces one of the same name above it. They reach every agent job on this project.
+    {% endif %}
+  </p>
+  {% if can_add %}
+  <div class="flex flex-wrap gap-2 mb-4">
+    <a href="{{ skills_base }}/new" class="btn-primary text-small touch-target" data-new-skill>New skill</a>
+    <a href="{{ skills_base }}/import" class="btn-ghost text-small touch-target border border-line" data-import-skill>Import a skill</a>
+  </div>
+  {% endif %}
+  {% for c in conflicts %}<p class="mb-2 text-small rounded-lg bg-status-warn/15 px-3 py-2" data-conflict>{{ c.key }}: {{ c.reason }}</p>{% endfor %}
+
+  {% if scope_project %}
+  <section class="mb-6" aria-label="This project's skills" data-section="own">
+    <h2 class="text-lead font-semibold mb-2">{{ 'This account' if scope_project.kind == 'account' else 'This project' }} <span class="text-small font-normal text-charcoal/50">({{ mine|length }})</span></h2>
+    {% if mine %}<ul class="card divide-y divide-line" data-own-skills>{% for e in mine %}{{ row(e) }}{% endfor %}</ul>
+    {% else %}<p class="card px-4 py-3 text-small text-charcoal/65" data-no-own>No skills of its own yet.{% if can_add %} Create one, or import a community skill, and choose "this project" under Install to.{% endif %}</p>{% endif %}
+  </section>
+  <section class="mb-6" aria-label="Inherited skills" data-section="inherited">
+    <h2 class="text-lead font-semibold mb-2">Inherited <span class="text-small font-normal text-charcoal/50">({{ inherited|length }})</span></h2>
+    {% if inherited %}<ul class="card divide-y divide-line" data-inherited-skills>{% for e in inherited %}{{ row(e) }}{% endfor %}</ul>
+    {% else %}<p class="card px-4 py-3 text-small text-charcoal/65">Nothing inherited.</p>{% endif %}
+  </section>
+  {% else %}
+  <section class="mb-6" aria-label="Built-in skills" data-section="builtin">
+    <h2 class="text-lead font-semibold mb-2">Built-in</h2>
+    <ul class="card divide-y divide-line" data-builtin-skills>{% for e in entries if e.layer == 0 %}{{ row(e) }}{% else %}<li class="px-4 py-3 text-small text-charcoal/65">None.</li>{% endfor %}</ul>
+  </section>
+  <section class="mb-6" aria-label="Global skills" data-section="global">
+    <h2 class="text-lead font-semibold mb-2">Global</h2>
+    <ul class="card divide-y divide-line" data-global-skills>{% for e in entries if e.layer == 1 %}{{ row(e) }}{% else %}<li class="px-4 py-3 text-small text-charcoal/65" data-no-global>No global skills yet.{% if can_add %} Create one or import a community skill.{% endif %}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

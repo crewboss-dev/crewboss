@@ -1,0 +1,115 @@
+{# THE LIST's TABLE (#772): one row per task, in a rounded container that scrolls SIDEWAYS inside itself (the page never does); the
+   checkbox, number and Title columns are sticky on the left. Colour says what a row is at a glance: the type icon by stream, the status
+   pill (editable), the priority. Only theme tokens. Optional columns hide by a class on the table (js/task-list.js keeps the choice per
+   person). A phone gets stacked rows instead of the table. On an ACCOUNT (rollup, #148) every row names its project and writes there.
+   The fragment refreshes itself on mdd:board-stale (like the Board): hx-select is NOT used, so nothing inherits into the rows. #}
+{% macro stream_icon(stream) -%}
+{%- set cls = STREAM_META.get(stream, UNKNOWN_META).classes -%}
+<span class="tl-type {{ cls }}" title="{{ STREAM_META.get(stream, UNKNOWN_META).label }}" data-type="{{ stream }}">
+<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if stream == 'feature' %}<path d="M12 5v14M5 12h14"/>
+{%- elif stream == 'bug' %}<circle cx="12" cy="13" r="5"/><path d="M12 8V5M7 13H4M20 13h-3M8 9 5.5 6.5M16 9l2.5-2.5"/>
+{%- elif stream == 'tweak' %}<path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/>
+{%- elif stream == 'review' %}<path d="M5 12.5l4.5 4.5L19 7.5"/>
+{%- else %}<path d="M12 4 3 20h18Z"/><path d="M12 10v4M12 17v.5"/>{% endif -%}
+</svg></span>
+{%- endmacro %}
+{% macro status_pill(t, base) -%}
+{% if not can_edit %}<span class="chip {{ STATUS_META.get(t.status, UNKNOWN_META).classes }}" data-status-pill="{{ t.status }}" data-readonly>{{ STATUS_META.get(t.status, UNKNOWN_META).label }}</span>{% else %}
+<span class="chip tl-pill {{ STATUS_META.get(t.status, UNKNOWN_META).classes }}" data-status-pill="{{ t.status }}">
+  <span>{{ STATUS_META.get(t.status, UNKNOWN_META).label }}</span><span aria-hidden="true">&#9662;</span>
+  <select class="tl-select" aria-label="Status of #{{ t.id }}" data-set="status" data-url="{{ base }}/tasks/{{ t.id }}/status">
+    {% for st in ['backlog', 'ready', 'doing', 'review', 'done'] %}<option value="{{ st }}" {% if t.status == st %}selected{% endif %}>{{ STATUS_META[st].label }}</option>{% endfor %}
+  </select></span>{% endif %}
+{%- endmacro %}
+{% macro prio_chip(t) -%}
+<span class="chip tl-prio-{{ t.priority }} {{ {'must': 'bg-flame/10 text-flame font-semibold', 'should': 'bg-status-warn/15 text-charcoal dark:text-status-warn', 'could': 'bg-charcoal/[.07] text-charcoal/70'}.get(t.priority, 'bg-charcoal/[.05] text-charcoal/50') }}" data-priority="{{ t.priority }}">{{ PRIORITY_META.get(t.priority, UNKNOWN_META).short }}</span>
+{%- endmacro %}
+{% macro task_rows(rows, group_key='') -%}
+{% for t in rows %}
+{% set tb = ('/' ~ t.project_slug) if is_rollup else base %}
+{% set steps = steps_by.get(t.id, []) %}
+<tr class="tl-row" data-task="{{ t.id }}" data-priority="{{ t.priority }}" data-base="{{ tb }}"{% if group_key %} data-g="{{ group_key }}"{% endif %}
+    hx-get="{{ tb }}/tasks/{{ t.id }}/panel" hx-target="#drawer-content" hx-swap="innerHTML"
+    hx-trigger="click[!event.target.closest('a:not([data-open]), select, input, button, label')]" hx-on::after-request="Alpine.store('drawer').open = true">
+  <td class="tl-sticky tl-c-sel">{% if can_edit %}<input type="checkbox" class="tl-check" data-pick="{{ t.id }}" aria-label="Select #{{ t.id }}">{% endif %}
+    {% if steps %}<button type="button" class="tl-chev" data-expand="{{ t.id }}" aria-expanded="false" aria-label="Show the {{ steps|length }} steps of #{{ t.id }}">&#9656;</button>{% else %}<span class="tl-chev-gap"></span>{% endif %}</td>
+  <td class="tl-sticky tl-c-num" data-col="number"><span class="tl-typewrap" data-col="type">{{ stream_icon(t.stream) }}</span>
+    <a href="{{ tb }}/board?open={{ t.id }}" data-open class="task-no">#{{ t.id }}</a></td>
+  <td class="tl-sticky tl-c-title" data-col="title"><a href="{{ tb }}/board?open={{ t.id }}" data-open class="tl-title">{% if is_rollup %}<span class="project-chip mr-1">{{ t.project_name }}</span>{% endif %}{{ t.title }}</a></td>
+  <td data-col="status">{{ status_pill(t, tb) }}</td>
+  <td data-col="priority">{{ prio_chip(t) }}</td>
+  <td data-col="assignee">{% include "partials/assignee_chip.html" %}</td>
+  <td data-col="reporter" class="col-reporter text-charcoal/65">{{ (t.created_by or '')|replace('owner', 'Owner') }}</td>
+  <td data-col="progress" class="col-progress tabular text-charcoal/65">{% if t.progress and t.progress.total %}{{ t.progress.done }}/{{ t.progress.total }}{% endif %}</td>
+  <td data-col="created" class="col-created text-charcoal/55 tabular whitespace-nowrap">{{ t.created_at|timeago }}</td>
+  <td data-col="updated" class="text-charcoal/55 tabular whitespace-nowrap">{{ t.updated_at|timeago }}</td>
+  <td class="tl-c-end"></td>
+</tr>
+{% for st in steps %}
+<tr class="tl-step" data-steps-of="{{ t.id }}" hidden><td colspan="11"><span class="tl-step-in {{ 'tl-step-done' if st.done }}"><span aria-hidden="true">{{ '&#10003;' if st.done else '&#9675;' }}</span> {{ st.text }}<span class="sr-only">{{ ' (done)' if st.done else ' (not done)' }}</span></span></td></tr>
+{% endfor %}
+{% endfor %}
+{%- endmacro %}
+{% macro th(key, label, extra='') -%}
+{% set active = opts.sort == key %}
+<th scope="col" data-col="{{ key }}" class="tl-th {{ extra }}" {% if active %}aria-sort="{{ 'ascending' if opts.dir == 'asc' else 'descending' }}"{% endif %}>
+  <a href="{{ list_href(sort=key, dir=('desc' if (active and opts.dir == 'asc') else 'asc')) }}" class="tl-sort" data-sort="{{ key }}">{{ label }}{% if active %} <span aria-hidden="true">{{ '&#9650;' if opts.dir == 'asc' else '&#9660;' }}</span>{% endif %}</a></th>
+{%- endmacro %}
+{% set steps_by = steps %}
+<div id="tasklist" data-tasklist data-total="{{ total }}" data-shown="{{ shown }}" data-query="{{ query }}" data-base="{{ vbase }}"
+     hx-get="{{ vbase }}/tasks/list{{ '?' ~ query if query }}" hx-trigger="mdd:board-stale from:body" hx-swap="outerHTML">
+  {# The table: from tablet up. #}
+  <div class="tl-scroll hidden md:block" data-tl-scroll>
+    <table class="tl-table {% for c in hidden_cols %}tl-hide-{{ c }} {% endfor %}" data-tl-table data-default-hidden="{{ hidden_cols|join(',') }}">
+      <thead><tr>
+        <th scope="col" class="tl-sticky tl-c-sel">{% if can_edit %}<input type="checkbox" class="tl-check" data-pick-all aria-label="Select all rows">{% endif %}</th>
+        <th scope="col" class="tl-sticky tl-c-num tl-th" data-col="number"><a href="{{ list_href(sort='number', dir=('desc' if (opts.sort == 'number' and opts.dir == 'asc') else 'asc')) }}" class="tl-sort" data-sort="number">#{% if opts.sort == 'number' %} <span aria-hidden="true">{{ '&#9650;' if opts.dir == 'asc' else '&#9660;' }}</span>{% endif %}</a></th>
+        {{ th('title', 'Title', 'tl-sticky tl-c-title') }}
+        {{ th('status', 'Status') }}
+        {{ th('priority', 'Priority') }}
+        {{ th('assignee', 'Assignee') }}
+        {{ th('reporter', 'Requested by') }}
+        {{ th('progress', 'Progress') }}
+        {{ th('created', 'Created') }}
+        {{ th('updated', 'Updated') }}
+        <th scope="col" class="tl-c-end"><button type="button" class="tl-colbtn" data-cols-open aria-haspopup="true" aria-label="Choose columns" title="Choose columns">&#9776;</button></th>
+      </tr></thead>
+      <tbody>
+        {% if groups %}
+          {% for g in groups %}
+          <tr class="tl-group" data-group="{{ g.key }}"><td colspan="11"><button type="button" class="tl-group-btn" aria-expanded="true" data-group-toggle="{{ g.key }}"><span class="tl-gchev" aria-hidden="true">&#9662;</span> {{ g.label }} <span class="tabular text-charcoal/50" data-group-count>{{ g.tasks|length }}</span></button></td></tr>
+          {{ task_rows(g.tasks, g.key) }}
+          {% endfor %}
+        {% else %}
+          {{ task_rows(tasks) }}
+        {% endif %}
+        {% if not tasks %}<tr><td colspan="11" class="px-4 py-10 text-center text-charcoal/40" data-list-empty>No tasks match these filters.</td></tr>{% endif %}
+      </tbody>
+    </table>
+  </div>
+  {# A phone: stacked rows (the title, then the status pill, the priority and the number). No table. #}
+  <ul class="md:hidden tl-stack" data-tl-stack>
+    {% for t in tasks %}
+    {% set tb = ('/' ~ t.project_slug) if is_rollup else base %}
+    <li class="tl-card" data-task="{{ t.id }}" hx-get="{{ tb }}/tasks/{{ t.id }}/panel" hx-target="#drawer-content" hx-swap="innerHTML"
+        hx-trigger="click[!event.target.closest('select, button')]" hx-on::after-request="Alpine.store('drawer').open = true">
+      <div class="flex items-start gap-2"><span class="mt-0.5">{{ stream_icon(t.stream) }}</span><a href="{{ tb }}/board?open={{ t.id }}" data-open class="tl-title flex-1 min-w-0">{{ t.title }}</a></div>
+      <div class="mt-1.5 flex flex-wrap items-center gap-2">{{ status_pill(t, tb) }}{{ prio_chip(t) }}<a href="{{ tb }}/board?open={{ t.id }}" data-open class="task-no">#{{ t.id }}</a></div>
+    </li>
+    {% else %}<li class="px-4 py-8 text-center text-charcoal/40">No tasks match these filters.</li>{% endfor %}
+  </ul>
+  {# The foot: "+ Create" (a title-only row), "N of M", refresh. #}
+  <div class="tl-foot" data-tl-foot>
+    {% if can_edit %}<form class="tl-create" data-create data-url="{{ vbase }}/tasks" autocomplete="off">
+      <button type="button" class="tl-create-open" data-create-open>+ Create</button>
+      <span class="tl-create-form" hidden>
+        {% if is_rollup %}<select name="target" required aria-label="Which project" class="field text-small py-1">
+          <option value="">For which project?</option>{% for p in task_targets %}<option value="{{ p.slug }}">{{ '  ' * (p.depth - 1) }}{{ p.name }}</option>{% endfor %}</select>{% endif %}
+        <input name="title" required maxlength="300" placeholder="What needs doing?" aria-label="Title of the new task" class="field text-small py-1 flex-1 min-w-0">
+        <button type="submit" class="btn-primary text-small">Add</button></span>
+    </form>{% else %}<span class="tl-create"></span>{% endif %}
+    <span class="ml-auto text-2xs text-charcoal/55 tabular" data-count>{{ shown }} of {{ total }}</span>
+    <button type="button" class="tl-refresh" data-refresh aria-label="Refresh" title="Refresh">&#8635;</button>
+  </div>
+</div>

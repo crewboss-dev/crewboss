@@ -1,0 +1,539 @@
+#!/usr/bin/python3
+"""crewboss-read: the server side of Crewboss "server reads" (#855). Python 3 standard library only.
+
+Install: root-owned, mode 0755, at /usr/local/bin/crewboss-read. Crewboss's one-command SSH pass runs
+    sudo -n /usr/local/bin/crewboss-read <name> [--since X] [--until Y] [--grep Z] [--lines N]
+and nothing else. THIS FILE IS THE FINAL ALLOWLIST: <name> must be listed in /etc/crewboss/reads.conf (or a *.conf in
+/etc/crewboss/reads.d/), which are root-owned and not writable by anyone else. Each line is
+    name<TAB>kind<TAB>spec
+with kind one of
+    log_container   spec = a Docker container name           -> docker logs [--since X] [--until Y] [--tail N] <container>
+    log_unit        spec = a systemd unit name                -> journalctl -u <unit> [--since X] [--until Y] -n N --no-pager -o short-iso
+    log_file        spec = an absolute file path              -> the last N lines of the file (time window not applied)
+    probe           spec = a JSON array: the command + args   -> run exactly that argv (no shell), as root, only if it fits the
+                                                                 read-only allowlist PROBE_PROGRAMS below (systemctl status, docker ps, ...)
+Lines starting with # and blank lines are ignored. Nothing is ever passed to a shell: commands are started as argument lists, and
+grep is a plain substring test done here in Python.
+
+Parameters (all optional, all re-validated here): --since / --until an ISO-8601 time or a relative age (30m, 2h, 1d), at most 7 days back;
+--grep one fixed string of at most 200 characters (matching lines only); --lines 1..5000 (default 500). A file read ignores --since/--until.
+
+Exit codes:
+  0  the read ran and the command succeeded (an empty result is still 0)
+  2  usage error or a parameter this helper refuses
+  3  the name is not listed in the server's reads.conf
+  4  reads.conf (or reads.d) is missing, not root-owned, writable by others, or malformed for that name
+  5  the command could not be started, could not be read, or ran too long and was stopped (20 s)
+  6  the command ran and exited non-zero (its output is still printed)
+Output goes to stdout (stderr of the command is merged into it); diagnostics from this helper go to stderr."""
+import json
+import os
+import posixpath
+import re
+import select
+import signal
+import stat
+import subprocess
+import sys
+import time
+from collections import deque
+from datetime import datetime, timedelta, timezone
+
+CONF = "/etc/crewboss/reads.conf"
+CONF_DIR = "/etc/crewboss/reads.d"
+PATH_PREFIXES = ("/var/log/", "/opt/", "/srv/")
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,255}\Z")
+UNIT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}\Z")
+PATH_RE = re.compile(r"^/[A-Za-z0-9_./@+-]{1,255}\Z")
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_./:@%+=, -]{1,200}\Z")
+CMD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}\Z")
+REL_RE = re.compile(r"^(\d{1,4})\s*([smhd])\Z", re.I)
+ISO_RE = re.compile(r"^\d{4}-\d\d-\d\d([T ]\d\d:\d\d(:\d\d(\.\d{1,6})?)?)?\s*(Z|[+-]\d\d:?\d\d)?\Z")
+UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+KINDS = ("log_container", "log_unit", "log_file", "probe")
+MAX_LINES, DEFAULT_LINES, MAX_GREP = 5000, 500, 200
+MAX_WINDOW = timedelta(days=7)
+RUN_SECONDS = 20                  # a command that runs longer is stopped
+MAX_OUT_BYTES = 1_000_000         # never print more than this
+MAX_SCAN_BYTES = 200_000_000      # a grep over a container or journal stops reading after this much
+FILE_TAIL_BYTES = 50_000_000      # a file read looks only at this much of the end of the file
+
+
+class Refuse(Exception):
+    def __init__(self, code, msg):
+        super().__init__(msg)
+        self.code, self.msg = code, msg
+
+
+def parse_when(value, now):
+    value = (value or "").strip()
+    m = REL_RE.match(value)
+    if m:
+        when = now - timedelta(**{UNITS[m.group(2).lower()]: int(m.group(1))})
+    elif ISO_RE.match(value):
+        try:
+            when = datetime.fromisoformat(value.replace(" ", "T", 1) if "T" not in value else value)
+        except ValueError:
+            raise Refuse(2, "bad time") from None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        when = when.astimezone(timezone.utc)
+    else:
+        raise Refuse(2, "bad time: use ISO-8601 or a relative age such as 30m")
+    if when < now - MAX_WINDOW - timedelta(seconds=1):
+        raise Refuse(2, "reads go back at most 7 days")
+    if when > now + timedelta(days=1):
+        raise Refuse(2, "that time is in the future")
+    return when
+
+
+def parse_args(argv):
+    """argv after the program name -> (name, {since, until, grep, lines}). Hand parsed: a value is whatever follows its flag, even one that
+    starts with '-' (it is never given to a program as an option)."""
+    if not argv or not NAME_RE.match(argv[0]):
+        raise Refuse(2, "usage: crewboss-read <name> [--since X] [--until Y] [--grep Z] [--lines N]")
+    name, opts, i = argv[0], {}, 1
+    while i < len(argv):
+        flag = argv[i]
+        if flag not in ("--since", "--until", "--grep", "--lines") or i + 1 >= len(argv) or flag[2:] in opts:
+            raise Refuse(2, "bad or repeated option")
+        opts[flag[2:]] = argv[i + 1]
+        i += 2
+    grep = opts.get("grep", "")
+    if len(grep) > MAX_GREP or any(c in grep for c in "\r\n\0"):
+        raise Refuse(2, "grep is one fixed string of at most 200 characters")
+    raw = opts.get("lines", str(DEFAULT_LINES))
+    if not re.fullmatch(r"[0-9]{1,5}", raw) or not 1 <= int(raw) <= MAX_LINES:
+        raise Refuse(2, "lines is a whole number from 1 to 5000")
+    now = datetime.now(timezone.utc)
+    since = parse_when(opts["since"], now) if opts.get("since") else None
+    until = parse_when(opts["until"], now) if opts.get("until") else None
+    if since and until and since >= until:
+        raise Refuse(2, "since must be before until")
+    return name, {"since": since, "until": until, "grep": grep, "lines": int(raw)}
+
+
+def check_conf_file(path, check_owner):
+    st = os.stat(path)
+    if check_owner and (st.st_uid != 0 or st.st_mode & 0o022):
+        raise Refuse(4, f"{path} must be owned by root and not writable by others")
+
+
+def load_conf(conf=CONF, conf_dir=CONF_DIR, check_owner=True):
+    """{name: (kind, spec)} from the conf file and every *.conf in the directory. A name listed twice with different content is refused."""
+    paths = []
+    if os.path.exists(conf):
+        paths.append(conf)
+    if conf_dir and os.path.isdir(conf_dir):
+        paths += [os.path.join(conf_dir, f) for f in sorted(os.listdir(conf_dir)) if f.endswith(".conf")]
+    if not paths:
+        raise Refuse(4, f"no reads.conf at {conf}")
+    if check_owner:
+        for d in {os.path.dirname(p) for p in paths}:
+            st = os.stat(d)
+            if st.st_uid != 0 or st.st_mode & 0o022:
+                raise Refuse(4, f"{d} must be owned by root and not writable by others")
+    out = {}
+    for p in paths:
+        check_conf_file(p, check_owner)
+        with open(p, encoding="utf-8") as fh:
+            for line in fh.read().splitlines():
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) != 3 or not NAME_RE.match(parts[0]) or parts[1] not in KINDS:
+                    continue            # a malformed line lists nothing
+                entry = (parts[1], parts[2])
+                if parts[0] in out and out[parts[0]] != entry:
+                    out[parts[0]] = ("conflict", "")
+                else:
+                    out[parts[0]] = entry
+    return out
+
+
+def validate_spec(kind, spec):
+    """The spec of a listed read, re-checked here. Returns the value to use (a string, or an argv list for a probe)."""
+    if kind in ("log_container", "log_unit"):
+        if not UNIT_RE.match(spec):
+            raise Refuse(4, "the listed name is not a valid container or unit name")
+        return spec
+    if kind == "log_file":
+        if (not PATH_RE.match(spec) or ".." in spec or spec.endswith("/") or posixpath.normpath(spec) != spec
+                or not spec.startswith(PATH_PREFIXES)):
+            raise Refuse(4, "the listed file path is not allowed")
+        return spec
+    try:
+        argv = json.loads(spec)
+    except ValueError:
+        raise Refuse(4, "the listed probe is not a JSON array") from None
+    if not isinstance(argv, list) or not argv or len(argv) > 16 or not all(isinstance(t, str) and TOKEN_RE.match(t) and t.strip() for t in argv):
+        raise Refuse(4, "the listed probe has a word that is not plain")
+    first = argv[0]
+    if first.startswith("/"):
+        if ".." in first or posixpath.normpath(first) != first or not PATH_RE.match(first):
+            raise Refuse(4, "the listed probe's command path is not allowed")
+    elif not CMD_RE.match(first):
+        raise Refuse(4, "the listed probe's command is not allowed")
+    try:
+        check_probe_rules(argv)
+    except ValueError as exc:
+        raise Refuse(4, f"the listed probe is not allowed: {exc}") from None
+    return argv
+
+
+# --- probe allowlist (IDENTICAL in app/server_reads.py and scripts/crewboss-read; tests pin both) -----------------------------------
+# A probe is an allowlist, never a denylist: the program (by basename) must be in PROBE_PROGRAMS and its arguments must fit that program's
+# read-only rule. Adding a program or a subcommand is a code change in BOTH files. Follow-style flags are refused everywhere.
+PROBE_DIRS = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
+PROBE_LOG_ROOT = "/var/log/"
+PROBE_FOLLOW = frozenset({"-f", "-F", "--follow", "--retry"})
+PROBE_ARG_RE = re.compile(r"^[A-Za-z0-9_.@:,=%+][A-Za-z0-9_.@:,=%+-]{0,127}\Z")          # a plain argument: never starts with '-'
+PROBE_VAL_RE = re.compile(r"^(?:-[0-9]{1,6}|[A-Za-z0-9_.@:,=%+][A-Za-z0-9_.@:,=%+ -]{0,127})\Z")   # the value of a flag
+PROBE_ASTERISK = (("show",), ("core", "show"), ("pjsip", "show"), ("sip", "show"), ("dialplan", "show"), ("database", "show"))
+PROBE_PROGRAMS = {
+    "systemctl": {"subs": {
+        "status": {"flags": ("--no-pager", "-l", "--full", "--no-legend"), "val": ("-n", "--lines")},
+        "show": {"flags": ("--no-pager", "--no-legend", "--value", "--all"), "val": ("-p", "--property")},
+        "is-active": {"flags": ("--no-pager",)}, "is-enabled": {"flags": ("--no-pager",)}, "is-failed": {"flags": ("--no-pager",)},
+        "list-units": {"flags": ("--no-pager", "--no-legend", "--all", "-a", "--failed", "--full", "-l"), "val": ("-t", "--type", "--state")},
+        "list-timers": {"flags": ("--no-pager", "--no-legend", "--all", "-a", "--full", "-l")}}},
+    "docker": {"subs": {
+        "ps": {"flags": ("-a", "--all", "-q", "--quiet", "--no-trunc", "-s", "--size"), "pos": "none"},
+        "inspect": {"flags": ("-s", "--size")},
+        "logs": {"flags": ("-t", "--timestamps", "--details"), "val": ("-n", "--tail", "--since", "--until")},
+        "stats": {"flags": ("--no-stream", "-a", "--all", "--no-trunc"), "need": ("--no-stream",)},
+        "images": {"flags": ("-a", "--all", "-q", "--quiet", "--no-trunc", "--digests"), "pos": "none"},
+        "version": {"pos": "none"}, "info": {"pos": "none"}}},
+    "journalctl": {"cluster": "xerqk", "flags": ("--no-pager", "-r", "--reverse", "-k", "--dmesg", "--utc", "-x", "-e", "-q", "--quiet", "--disk-usage", "--list-boots", "-b"),
+                   "val": ("-u", "--unit", "-n", "--lines", "--since", "--until", "-p", "--priority", "-o", "--output", "-t", "--identifier", "-g", "--grep"),
+                   "pos": "none"},
+    "asterisk": {}, "ip": {},
+    "ss": {"cluster": "tulnpaseHoi46rm"},
+    "df": {"cluster": "hHTikPlax", "paths": True},
+    "free": {"cluster": "bkmghltw", "flags": ("--si",), "pos": "none"},
+    "uptime": {"cluster": "ps", "pos": "none"},
+    "uname": {"cluster": "asnrvmpio", "pos": "none"},
+    "hostname": {"cluster": "fsdiIA", "pos": "none"},
+    "ps": {"cluster": "aefuxwlH", "val": ("-p", "-C", "-u")},
+    "cat": {"flags": ("-n",), "pos": "path", "minpos": 1},
+    "head": {"flags": ("-q", "-v"), "val": ("-n", "-c"), "pos": "path", "minpos": 1},
+    "tail": {"flags": ("-q", "-v"), "val": ("-n", "-c"), "pos": "path", "minpos": 1},
+}
+
+
+def probe_path_ok(path):
+    return (bool(PATH_RE.match(path)) and ".." not in path and posixpath.normpath(path) == path and path.startswith(PROBE_LOG_ROOT)
+            and not path.endswith("/"))
+
+
+def _probe_args(rule, rest):
+    flags, val, cluster = set(rule.get("flags", ())), set(rule.get("val", ())), rule.get("cluster", "")
+    pos, seen, npos, i = rule.get("pos", "arg"), set(), 0, 0
+    while i < len(rest):
+        t = rest[i]
+        i += 1
+        if t in PROBE_FOLLOW or t.startswith("--follow"):
+            raise ValueError("following a log is not allowed")
+        if t.startswith("-") and len(t) > 1:
+            name, eq, value = t.partition("=") if t.startswith("--") else (t, "", "")
+            if name in flags and not eq:
+                seen.add(name)
+            elif name in val:
+                if not eq:
+                    if i >= len(rest):
+                        raise ValueError(f"{name} needs a value")
+                    value, i = rest[i], i + 1
+                if not PROBE_VAL_RE.match(value):
+                    raise ValueError(f"the value of {name} is not plain")
+            elif cluster and re.match(r"^-[A-Za-z]{1,12}\Z", t) and all(c in cluster for c in t[1:]):
+                pass
+            else:
+                raise ValueError(f"the option {t} is not allowed")
+        else:
+            npos += 1
+            if pos == "none":
+                raise ValueError("no arguments are allowed there")
+            if pos == "path":
+                if not probe_path_ok(t):
+                    raise ValueError("this program may read only files under " + PROBE_LOG_ROOT)
+            elif not (PROBE_ARG_RE.match(t) or (cluster and re.match(r"^[A-Za-z]{1,12}\Z", t) and all(c in cluster for c in t))
+                      or (rule.get("paths") and PATH_RE.match(t) and ".." not in t and posixpath.normpath(t) == t)):
+                raise ValueError("an argument is not plain")
+    if npos < rule.get("minpos", 0):
+        raise ValueError("a file is needed")
+    for n in rule.get("need", ()):
+        if n not in seen:
+            raise ValueError(f"{n} is required")
+
+
+def _probe_ip(rest):
+    r = list(rest)
+    while r and r[0] in ("-4", "-6", "-s", "-br", "-brief"):
+        r.pop(0)
+    if not r or r[0] not in ("addr", "address", "link", "route"):
+        raise ValueError("ip: only addr, link and route (show) are allowed")
+    r.pop(0)
+    if r and r[0] not in ("show", "list"):
+        raise ValueError("ip: only show is allowed")
+    if r:
+        r.pop(0)
+    if r and r[0] == "dev":
+        r.pop(0)
+    if len(r) > 1 or (r and not PROBE_ARG_RE.match(r[0])):
+        raise ValueError("ip: only an optional device name may follow show")
+
+
+def _probe_asterisk(rest):
+    if len(rest) != 2 or rest[0] != "-rx":
+        raise ValueError('asterisk: only -rx "<show command>" is allowed')
+    cmd = rest[1]
+    words = cmd.split()
+    if (not re.match(r"^[A-Za-z0-9_.@:,=%+ -]{1,200}\Z", cmd) or any(c in cmd for c in ";&|`$<>\n")
+            or not any(tuple(words[:len(p)]) == p for p in PROBE_ASTERISK)):
+        raise ValueError("asterisk: only a show command is allowed")
+
+
+def check_probe_rules(argv):
+    """Raises ValueError (with a reason) unless argv is an allowed read-only probe."""
+    first = argv[0]
+    if "/" in first:
+        folder, base = posixpath.split(first)
+        if folder not in PROBE_DIRS:
+            raise ValueError("a probe's program must live in " + ", ".join(PROBE_DIRS))
+    else:
+        base = first
+    rule = PROBE_PROGRAMS.get(base)
+    if rule is None:
+        raise ValueError(f"{base} is not an allowed probe program")
+    rest = list(argv[1:])
+    if base == "asterisk":
+        return _probe_asterisk(rest)
+    if base == "ip":
+        return _probe_ip(rest)
+    if "subs" in rule:
+        if not rest or rest[0] not in rule["subs"]:
+            raise ValueError(f"{base}: only " + ", ".join(rule["subs"]) + " are allowed")
+        rule, rest = rule["subs"][rest[0]], rest[1:]
+    _probe_args(rule, rest)
+
+
+def stamp_docker(when):
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def stamp_journal(when):
+    return when.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def build_argv(kind, value, p):
+    """The exact argument list for a log read (None for a file or a probe)."""
+    grep = bool(p["grep"])
+    if kind == "log_container":
+        argv = ["docker", "logs"]
+        if p["since"]:
+            argv += ["--since", stamp_docker(p["since"])]
+        if p["until"]:
+            argv += ["--until", stamp_docker(p["until"])]
+        if not grep:
+            argv += ["--tail", str(p["lines"])]
+        return argv + [value]
+    if kind == "log_unit":
+        argv = ["journalctl", "-u", value]
+        if p["since"]:
+            argv += ["--since", stamp_journal(p["since"])]
+        if p["until"]:
+            argv += ["--until", stamp_journal(p["until"])]
+        if not grep:
+            argv += ["-n", str(p["lines"])]
+        return argv + ["--no-pager", "-o", "short-iso"]
+    return None
+
+
+def resolve_program(argv):
+    """The program as an absolute path under the fixed system directories (a bare name is looked up ONLY there, never on PATH)."""
+    first = argv[0]
+    if first.startswith("/"):
+        found = first
+    else:
+        found = next((os.path.join(d, first) for d in PROBE_DIRS if os.path.isfile(os.path.join(d, first)) and os.access(os.path.join(d, first), os.X_OK)), "")
+    if not found or not os.path.isfile(found):
+        raise Refuse(5, f"{first} is not installed in {', '.join(PROBE_DIRS)}")
+    return [found] + list(argv[1:])
+
+
+def check_probe_files(argv):
+    """cat / head / tail read only real files under /var/log/: a symlink that leads elsewhere is refused at run time."""
+    if posixpath.basename(argv[0]) in ("cat", "head", "tail"):
+        for t in argv[1:]:
+            if t.startswith("/") and (os.path.realpath(t) != t or not t.startswith(PROBE_LOG_ROOT)):
+                raise Refuse(4, "the probe's file is a symlink or lies outside " + PROBE_LOG_ROOT)
+
+
+def kill_group(proc):
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)         # the child leads its own process group: everything it started goes too
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+def run_stream(argv, grep, lines, runner=subprocess.Popen):
+    """Start argv (a list, never a shell) in its own session, merge stderr into stdout, keep the last `lines` lines that contain `grep` (all
+    lines when it is empty). The RUN_SECONDS deadline is enforced even while the child is silent (select with a timeout), and the whole
+    process group is killed when it passes. Returns (kept lines, exit code, note); a timeout is code 5."""
+    try:
+        proc = runner(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=False, start_new_session=True)
+    except OSError as exc:
+        raise Refuse(5, f"could not start {argv[0]}: {exc.strerror or exc}") from None
+    keep, scanned, note, buf = deque(maxlen=lines), 0, "", b""
+    deadline = time.monotonic() + RUN_SECONDS
+    fd = proc.stdout.fileno()
+
+    def take(raw):
+        line = raw.decode("utf-8", "replace").rstrip("\r\n")
+        if not grep or grep in line:
+            keep.append(line)
+
+    try:
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                note = f"stopped after {RUN_SECONDS} s with no end; narrow the window"
+                break
+            ready, _, _ = select.select([fd], [], [], min(left, 1.0))
+            if not ready:
+                continue
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            scanned += len(chunk)
+            buf += chunk
+            *whole, buf = buf.split(b"\n")
+            for raw in whole:
+                take(raw)
+            if len(buf) > 1_000_000:
+                take(buf[:1_000_000])
+                buf = b""
+            if scanned > MAX_SCAN_BYTES:
+                note = "stopped after reading too much; narrow the window"
+                break
+    finally:
+        if proc.poll() is None:
+            kill_group(proc)
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
+        code = proc.wait()
+    if buf and not note:
+        take(buf)
+    if note:
+        return list(keep), 5, note
+    return list(keep), code, ""
+
+
+def read_file(path, grep, lines):
+    """The last `lines` lines of a REGULAR file that is not reached through a symlink: the path must already be its own realpath, no
+    directory above it may be a symlink, and it is opened O_NOFOLLOW | O_NONBLOCK (so a FIFO or device cannot hang or be read)."""
+    probe = "/"
+    for part in path.strip("/").split("/")[:-1]:
+        probe = os.path.join(probe, part)
+        if os.path.islink(probe):
+            raise Refuse(4, "a folder on the way to the file is a symlink")
+    if os.path.realpath(path) != path:
+        raise Refuse(4, "the file is reached through a symlink")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOCTTY)
+    except OSError as exc:
+        raise Refuse(5, f"cannot read the file: {exc.strerror or exc}") from None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise Refuse(4, "that is not a regular file")
+        size = st.st_size
+        os.lseek(fd, max(0, size - FILE_TAIL_BYTES), os.SEEK_SET)
+        chunks, deadline = [], time.monotonic() + RUN_SECONDS
+        while True:
+            if time.monotonic() > deadline:
+                raise Refuse(5, f"reading the file took more than {RUN_SECONDS} s")
+            data = os.read(fd, 1 << 20)
+            if not data:
+                break
+            chunks.append(data)
+    except OSError as exc:
+        raise Refuse(5, f"cannot read the file: {exc.strerror or exc}") from None
+    finally:
+        os.close(fd)
+    rows = b"".join(chunks).decode("utf-8", "replace").splitlines()
+    if size > FILE_TAIL_BYTES and rows:
+        rows = rows[1:]                    # the first line is cut in the middle
+    if grep:
+        rows = [r for r in rows if grep in r]
+    return rows[-lines:]
+
+
+def emit(rows, out):
+    total = 0
+    for r in rows:
+        data = r + "\n"
+        total += len(data.encode("utf-8", "replace"))
+        if total > MAX_OUT_BYTES:
+            out.write("[output cut at 1 MB by crewboss-read]\n")
+            break
+        out.write(data)
+
+
+def _alarm(signum, frame):
+    raise Refuse(5, f"stopped: no result within {RUN_SECONDS + 10} s")
+
+
+def main(argv=None, out=None, err=None, conf=CONF, conf_dir=CONF_DIR, check_owner=True, runner=subprocess.Popen):
+    """Returns the exit code (documented in the module docstring)."""
+    argv = sys.argv[1:] if argv is None else argv
+    out, err = out or sys.stdout, err or sys.stderr
+    old = None
+    try:
+        old = signal.signal(signal.SIGALRM, _alarm)
+        signal.alarm(RUN_SECONDS + 10)              # a backstop: nothing here may hang this root process
+    except (ValueError, OSError):
+        pass                                        # not the main thread (tests): the loops enforce their own deadlines
+    try:
+        name, p = parse_args(argv)
+        listed = load_conf(conf, conf_dir, check_owner)
+        if name not in listed:
+            raise Refuse(3, "that read is not listed in this server's reads.conf")
+        kind, spec = listed[name]
+        if kind == "conflict":
+            raise Refuse(4, "that read is listed twice with different content")
+        value = validate_spec(kind, spec)
+        if kind == "log_file":
+            rows, code = read_file(value, p["grep"], p["lines"]), 0
+        else:
+            if kind == "probe":
+                check_probe_files(value)
+                cmd = resolve_program(value)
+            else:
+                cmd = build_argv(kind, value, p)
+            rows, code, note = run_stream(cmd, p["grep"], p["lines"], runner)
+            if note:
+                err.write(note + "\n")
+        emit(rows, out)
+        if code == 5:
+            return 5
+        return 0 if code == 0 else 6
+    except Refuse as exc:
+        err.write(f"crewboss-read: {exc.msg}\n")
+        return exc.code
+    finally:
+        try:
+            signal.alarm(0)
+            if old is not None:
+                signal.signal(signal.SIGALRM, old)
+        except (ValueError, OSError):
+            pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())

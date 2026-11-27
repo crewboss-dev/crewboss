@@ -1,0 +1,8 @@
+#!/bin/sh
+# Crewboss pre-push: refuse a push whose commits carry a secret, a private value, an internal address or a file such as .env or
+# *.pem. Install with scripts/install-hooks.sh. See scripts/push_guard.py. Git passes the remote's name as $1 and the refs on stdin.
+# The migration lint reads the migrations in the PUSHED commits' trees, not the working tree. stdin is read once and given to both.
+root="$(git rev-parse --show-toplevel)" || exit 1
+refs="$(cat)"
+printf '%s\n' "$refs" | python3 "$root/scripts/migration_lint.py" --push || exit 1
+printf '%s\n' "$refs" | exec python3 "$root/scripts/push_guard.py" "$1" "$2"

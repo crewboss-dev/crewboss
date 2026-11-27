@@ -1,0 +1,23 @@
+/* Fold-away (task #582): the one collapse every removed / moved item uses, driven by js/fold.js.
+   mallen-design §4: height + opacity only, 220 ms, critically damped; the way in mirrors the way out.
+   Same numbers as the ERP's .rm-clearing (mallen-erp #583) so both surfaces feel alike. prefers-reduced-motion: none. */
+.fold-anim {
+  transition: height .22s cubic-bezier(.25, .1, .25, 1), opacity .16s cubic-bezier(.25, .1, .25, 1),
+              margin .22s cubic-bezier(.25, .1, .25, 1), padding .22s cubic-bezier(.25, .1, .25, 1),
+              border-width .22s cubic-bezier(.25, .1, .25, 1);
+}
+/* arriving: the mirror of leaving (inverse bezier, §4.3) */
+.fold-anim.fold-in {
+  transition-timing-function: cubic-bezier(.75, 0, .75, .9);
+}
+.fold-collapsed {
+  overflow: hidden; opacity: 0; pointer-events: none;
+  height: 0 !important;
+  margin-top: 0 !important; margin-bottom: var(--fold-mb, 0px) !important;
+  padding-top: 0 !important; padding-bottom: 0 !important; border-width: 0 !important;
+}
+/* a table row cannot animate its height: it just fades, then goes */
+tr.fold-collapsed { height: auto !important; }
+@media (prefers-reduced-motion: reduce) {
+  .fold-anim, .fold-anim.fold-in { transition: none; }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "crewboss-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ../app/static/css/app.css --minify",
+    "build:js": "vite build --config vite.editor.config.ts",
+    "build:vendor": "mkdir -p ../app/static/js && cp node_modules/htmx.org/dist/htmx.min.js ../app/static/js/htmx.min.js && cp node_modules/alpinejs/dist/cdn.min.js ../app/static/js/alpine.min.js",
+    "build": "npm run build:css && npm run build:js && npm run build:canvas && npm run build:vendor",
+    "build:canvas": "vite build --config vite.canvas.config.ts && node scripts/canvas-version.mjs"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^1.1.8",
+    "@joplin/turndown-plugin-gfm": "^1.0.68",
+    "@tiptap/core": "^3.31.3",
+    "@tiptap/extension-image": "^3.31.3",
+    "@tiptap/extension-table": "^3.31.3",
+    "@tiptap/extensions": "^3.31.3",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
+    "@xyflow/react": "^12.3.6",
+    "alpinejs": "^3.17.4",
+    "htmx.org": "^2.0.11",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/turndown": "^5.0.6",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

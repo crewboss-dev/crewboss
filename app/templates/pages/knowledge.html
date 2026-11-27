@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Knowledge{% endblock %}
+{% block page_title %}Knowledge{% endblock %}
+{% block content %}
+{# Knowledge v2 — summary first (memory: adhd-focused-design). Every entry is a collapsed card: title +
+   two-line summary. The few filters people use sit in one row; the rare ones (tag, archived) hide behind
+   one "Filters" button. #}
+{% macro qs(kind_=None, needs_review_=None, tag_=None, archived_=None, q_=None) -%}
+  {%- set parts = [] -%}
+  {%- set k = kind if kind_ is none else kind_ -%}
+  {%- set nr = needs_review if needs_review_ is none else needs_review_ -%}
+  {%- set tg = tag if tag_ is none else tag_ -%}
+  {%- set ar = show_archived if archived_ is none else archived_ -%}
+  {%- set sq = search if q_ is none else q_ -%}
+  {%- if k %}{% set _ = parts.append('kind=' ~ k|urlencode) %}{% endif -%}
+  {%- if nr %}{% set _ = parts.append('needs_review=1') %}{% endif -%}
+  {%- if tg %}{% set _ = parts.append('tag=' ~ tg|urlencode) %}{% endif -%}
+  {%- if ar %}{% set _ = parts.append('archived=1') %}{% endif -%}
+  {%- if sq %}{% set _ = parts.append('q=' ~ sq|urlencode) %}{% endif -%}
+  {{ base }}/knowledge{% if parts %}?{{ parts|join('&') }}{% endif %}
+{%- endmacro %}
+{% set rare_active = (1 if tag else 0) + (1 if show_archived else 0) %}
+
+<div class="kb-page">
+  {% if current_project.kind == 'account' %}
+  {# An ACCOUNT's knowledge is SHARED (task #148): every project under it inherits it, and their sessions see it. #}
+  <div class="rounded-xl border border-indigo/20 bg-indigo/[.04] px-4 py-3 mb-4 text-small" data-account-shared-note>
+    <span class="font-semibold">Shared with every project in {{ current_project.name }}.</span>
+    <span class="text-charcoal/65">Each project's Knowledge page shows these as inherited, and every session working one of them sees them.</span>
+  </div>
+  {% endif %}
+  <div class="kb-toolbar">
+    {# List | Graph (task #550): the graph is the same entries drawn as a link map, plus the housekeeping lens. #}
+    <div class="seg kb-views" role="navigation" aria-label="View">
+      <a href="{{ qs() }}" class="kb-seg {{ 'kb-seg-on' if view != 'graph' }}" {% if view != 'graph' %}aria-current="page"{% endif %}>List</a>
+      <a href="{{ base }}/knowledge?view=graph" class="kb-seg {{ 'kb-seg-on' if view == 'graph' }}" {% if view == 'graph' %}aria-current="page"{% endif %} data-view-graph>Graph</a>
+    </div>
+    {% if view != 'graph' %}
+    <div class="seg kb-kinds" role="navigation" aria-label="Kind">
+      <a href="{{ qs(kind_='') }}" class="kb-seg {{ 'kb-seg-on' if not kind }}" {% if not kind %}aria-current="page"{% endif %}>All <span class="kb-count">{{ counts.all }}</span></a>
+      {% for k in kinds if counts.by_kind.get(k, 0) or kind == k %}{# an empty kind is noise: hidden until it has entries #}
+      <a href="{{ qs(kind_=k) }}" class="kb-seg {{ 'kb-seg-on' if kind == k }}" {% if kind == k %}aria-current="page"{% endif %}>{{ k|capitalize }}s <span class="kb-count">{{ counts.by_kind.get(k, 0) }}</span></a>
+      {% endfor %}
+    </div>
+    {% if counts.needs_review or needs_review %}
+    <a href="{{ qs(needs_review_=(not needs_review)) }}" class="{{ 'fchip-on' if needs_review else 'fchip' }} kb-review-chip">
+      <span class="kb-dot" aria-hidden="true"></span>Needs review <span class="tabular">{{ counts.needs_review }}</span>
+    </a>
+    {% endif %}
+    {% endif %}
+
+    <div class="kb-toolbar-end">
+      {# No per-page search box (house rule: the Filters button only). ?q= still works from a link, and an active
+         search shows as a removable chip below. #}
+      {% if view != 'graph' %}
+      <div class="relative" x-data="{ f: false }" @keydown.escape="f = false">
+        <button type="button" class="btn-ghost kb-filters-btn {{ 'kb-filters-on' if rare_active }}" @click="f = !f" :aria-expanded="f ? 'true' : 'false'" aria-haspopup="true">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M4 6h16M7 12h10M10 18h4"/></svg>
+          Filters{% if rare_active %} <span class="kb-count">{{ rare_active }}</span>{% endif %}
+        </button>
+        <div x-show="f" x-cloak @click.outside="f = false" x-transition.opacity.duration.150ms class="popover kb-filters-pop origin-top-right">
+          <form method="get" action="{{ base }}/knowledge" class="flex flex-col gap-3">
+            {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+            {% if needs_review %}<input type="hidden" name="needs_review" value="1">{% endif %}
+            {% if search %}<input type="hidden" name="q" value="{{ search }}">{% endif %}
+            <label class="flex flex-col gap-1">
+              <span class="kb-label">Tag</span>
+              <select name="tag" class="field text-small" onchange="this.form.requestSubmit()">
+                <option value="">All tags</option>
+                {% for t in tags %}<option value="{{ t }}" {% if tag == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+              </select>
+            </label>
+            <label class="kb-toggle">
+              <input type="checkbox" name="archived" value="1" {% if show_archived %}checked{% endif %} onchange="this.form.requestSubmit()">
+              <span>Show archived{% if counts.archived %} <span class="kb-count">{{ counts.archived }}</span>{% endif %}</span>
+            </label>
+            <noscript><button type="submit" class="btn-ghost">Apply</button></noscript>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+
+      <a href="{{ base }}/knowledge/new{% if kind %}?kind={{ kind }}{% endif %}" class="btn-primary">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Add
+      </a>
+    </div>
+  </div>
+
+  {% if view == 'graph' %}
+  {% include "partials/knowledge_graph.html" %}
+  {% else %}
+  {% if tag or show_archived or search %}
+  <div class="kb-active">
+    {% if search %}<a href="{{ qs(q_='') }}" class="kb-active-chip">&ldquo;{{ search }}&rdquo; <span aria-hidden="true">&times;</span><span class="sr-only">clear search</span></a>{% endif %}
+    {% if tag %}<a href="{{ qs(tag_='') }}" class="kb-active-chip">Tag: {{ tag }} <span aria-hidden="true">&times;</span><span class="sr-only">clear tag</span></a>{% endif %}
+    {% if show_archived %}<a href="{{ qs(archived_=False) }}" class="kb-active-chip">Showing archived <span aria-hidden="true">&times;</span><span class="sr-only">hide archived</span></a>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="kb-list">
+    {% for e in entries %}
+    {% include "partials/knowledge_card.html" %}
+    {% else %}
+    <div class="card p-8 text-center text-charcoal/50">
+      {% if search or tag or kind or needs_review %}Nothing matches. <a href="{{ base }}/knowledge" class="underline">Show everything</a>{% else %}Nothing here yet.{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% with section = 'knowledge' %}{% include "partials/inherited_shared.html" %}{% endwith %}
+  {% endif %}
+</div>
+{% endblock %}

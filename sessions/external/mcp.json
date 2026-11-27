@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "dashboard": {
+      "type": "http",
+      "url": "https://dash.example.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${CREWBOSS_DASH_TOKEN}"
+      }
+    }
+  }
+}

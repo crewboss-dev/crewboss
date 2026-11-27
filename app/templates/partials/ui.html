@@ -1,0 +1,46 @@
+{# The ERP's page components as macros (the same markup its home dashboard and lists use; the CSS is css/erp-design.css plus the
+   Tailwind utilities). Import: {% import "partials/ui.html" as ui %}. #}
+
+{# Section header: title, count, right-aligned subtitle (the ERP's ui.section). #}
+{% macro section(title, count='', subtitle='') -%}
+<div class="flex items-baseline gap-2 mt-6 mb-2">
+  <h2 class="text-xs font-semibold uppercase tracking-wider text-charcoal/60">{{ title }}</h2>
+  {% if count != '' %}<span class="text-xs text-charcoal/40">{{ count }}</span>{% endif %}
+  {% if subtitle %}<span class="text-xs text-charcoal/40 ml-auto">{{ subtitle }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{# A stat tile: big number, label, links into what it summarises. tone='alert' turns a non-zero number flame ("needs you"). #}
+{% macro tile(value, label, href='', tone='', sub='') -%}
+<a href="{{ href or '#' }}" class="press block rounded-xl border border-line bg-surface p-4 hover:border-charcoal/25 transition {{ '' if href else 'pointer-events-none' }}">
+  <div class="text-3xl font-semibold tracking-tight tabular {{ 'text-flame' if tone == 'alert' and value else 'text-charcoal' }}">{{ value }}</div>
+  <div class="text-sm text-charcoal/60 mt-0.5">{{ label }}</div>
+  {% if sub %}<div class="text-2xs text-charcoal/40 mt-0.5">{{ sub }}</div>{% endif %}
+</a>
+{%- endmacro %}
+
+{# A trend/compare card: value, unit, label (and a second figure). #}
+{% macro card(value, label, sub='') -%}
+<div class="rounded-xl border border-line bg-surface p-4">
+  <div class="flex items-baseline gap-2"><span class="text-3xl font-semibold tracking-tight tabular">{{ value }}</span></div>
+  <div class="text-sm text-charcoal/60 mt-0.5">{{ label }}</div>
+  {% if sub %}<div class="text-2xs text-charcoal/40 mt-0.5">{{ sub }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{# A status word with a dot (the ERP's ui.status_mark): word + shape, never colour alone. #}
+{% macro status_mark(state, label='') -%}
+{%- set _cls = {'active': 'text-status-ok', 'archived': 'text-charcoal/45'}.get(state, 'text-charcoal/45') -%}
+<span class="inline-flex items-center gap-1.5 shrink-0 text-2xs font-semibold uppercase tracking-wide {{ _cls }}" title="Status: {{ label or state }}">
+  <i class="w-2 h-2 rounded-full bg-current" aria-hidden="true"></i>{{ label or state }}</span>
+{%- endmacro %}
+
+{# The page's add pill (the ERP's ui.add_pill, size 'page'). `onclick` is script for the button, autoescaped. #}
+{% macro add_pill(label, onclick='') -%}
+<button type="button"{% if onclick %} onclick="{{ onclick }}"{% endif %} class="shrink-0 border pill-lg border-indigo/40 bg-indigo/5 text-indigo hover:bg-indigo/10">{{ label }}</button>
+{%- endmacro %}
+
+{# The empty state: one quiet line and what to do (the ERP's, text-sm charcoal/40, centred). #}
+{% macro empty(text) -%}
+<div class="px-4 py-10 text-center text-charcoal/40 text-sm">{{ text }}</div>
+{%- endmacro %}

@@ -1,0 +1,27 @@
+{# Platform key reminders (#562): keys whose rotation stage went to due within 30 days, within 7, or overdue, from each
+   key store's status (app/platform_keys.py: read every few minutes and on each Platform keys page view). Each stage is
+   announced once (a phone notification); back on schedule withdraws it. Key NAMES only. Needs: keys (reminders()). #}
+{% set muted = 'text-charcoal/50' %}
+<section aria-labelledby="keys-h" class="mt-8" data-keys-health="{{ keys.open|length }}">
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
+    <h2 id="keys-h" class="text-lead font-semibold">Platform keys</h2>
+    <span class="text-micro {{ muted }}">expiry and rotation reminders</span>
+    {% for st in keys.stores %}
+    <a href="{{ st.href }}" class="{{ 'ml-auto' if loop.first }} text-micro {{ muted }} tabular hover:underline" data-keys-store-link="{{ st.slug }}">
+      {{ st.name }} · {% if st.credential %}not connected{% elif st.last_ok_at %}{{ st.server }} read {{ st.last_ok_at|timeago }}{% else %}{{ st.server }} not read yet{% endif %}</a>
+    {% endfor %}
+  </div>
+  {% for st in keys.stores %}{% if st.error and not st.credential %}<div class="mb-3 text-small text-status-disaster break-words">The last read of {{ st.server }} failed: {{ st.error }}</div>{% endif %}{% endfor %}
+  <div class="card divide-y divide-line">
+    {% for p in keys.open %}
+    <div class="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-1 px-4 py-3" data-key-reminder data-severity="{{ p.severity }}">
+      {% if p.eventid in keys.down_ids %}<span class="chip shrink-0 bg-status-disaster/15 text-status-disaster font-semibold" data-keys-down>Not read</span>
+      {% else %}<span class="chip shrink-0 {{ 'bg-status-disaster/15 text-status-disaster font-semibold' if p.severity >= 4 else 'bg-status-high/15 text-status-high font-semibold' if p.severity == 3 else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}">{{ 'Overdue' if p.severity >= 4 else 'Within 7 days' if p.severity == 3 else 'Within 30 days' }}</span>{% endif %}
+      <div class="min-w-0 flex-1 text-small font-medium break-words">{{ p.name }}</div>
+      <span class="text-micro tabular {{ muted }} shrink-0">since {{ p.started_at|timeago }}</span>
+    </div>
+    {% else %}
+    <div class="px-4 py-6 text-center text-small {{ muted }}">No platform key is due.</div>
+    {% endfor %}
+  </div>
+</section>

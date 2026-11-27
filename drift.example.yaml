@@ -1,0 +1,64 @@
+# Example. Copy to $CREWBOSS_HOME/drift.yaml (default ~/.crewboss) and edit; keep the real file out of the repo.
+# No drift (#402, owner q213: "anything any agent changes must be updated"). What app/drift.py checks so the code, the
+# Crewboss and each project's admin site never drift apart. REVIEWED CONFIG: linking another project's admin site,
+# or ignoring another OS timer, is an edit here (+ `docker compose up -d --build app`), never a code change.
+
+# --- admin sites ---------------------------------------------------------------------------------------------------
+# Projects (by dashboard slug) whose admin site draws the workflows from a catalog built by the release
+# (python -m app.catalog_export). The project's current health report (pushed to /api/health/report, task #404, or the
+# ERP feed while it is still fetched: health_feeds.yaml) carries:
+#   "app_sha": "<the deployed commit>",  "catalog": {"commit": "<the commit its catalog was built from>", "built_at": "<iso>"}
+# The dashboard raises "behind" (an error) when the catalog-relevant paths differ between those two commits, i.e.
+#   git diff --name-only <catalog.commit> <app_sha> -- <catalog_paths> ':(exclude)<exclude_paths>'
+# is non-empty — the same rule as the project's own deploy-check. catalog.commit != app_sha on its own is NORMAL (the
+# release commits the built catalog one commit after the code it was built from). A warning follows when main has had
+# catalog-relevant changes for more than `undeployed_hours` that the running app doesn't have yet.
+#
+#   repo   the project's checkout path INSIDE the app container. Its .git is mounted READ-ONLY there: set CREWBOSS_DRIFT_REPO in
+#          .env to this same value and CREWBOSS_DRIFT_GIT_SRC to the host's .git (docker-compose.yml). The host's auto-rescan fetches it every 5 min; a commit the dashboard's copy doesn't
+#          have yet is "can't verify" (a warning), never "behind".
+admin_sites:
+  acme-app:
+    repo: /srv/acme-app
+    catalog_paths: [app, scanner]
+    exclude_paths: [app/generated/, app/static/canvas/]
+    undeployed_hours: 24
+    # Optional (#828): a slim version endpoint answering {"app_sha": ..., "catalog_sha": ...}. When set, the check reads the
+    # deployed commits from it (GET with the ERP health read token, https only) instead of the full health report; if it can't
+    # be read the report is used as before. `version: erp` derives <erp health url>/api/health/release; version_url wins.
+    # version_url: https://erp.example.com/api/health/release
+    # version: erp
+
+# --- server timers -------------------------------------------------------------------------------------------------
+# Systemd timers on the estate's servers come from Zabbix (the item systemd.unit.discovery[timer] on the template
+# "Server Health"). A timer is covered when an annotation in $CREWBOSS_HOME/scanner/annotations.yaml names it under `box_jobs`
+# (docs/catalog-schema.md) or it is an operating-system timer listed here. Anything else is a Health warning:
+# "Automation on <hosts> with no diagram: <unit>" (one per unit). Cron jobs are not checked yet.
+os_timers:
+  # Ubuntu / Debian / Armbian housekeeping that ships with the OS or its packages (seen on the estate 2026-10-15).
+  - apport-autoreport.timer
+  - apt-daily.timer
+  - apt-daily-upgrade.timer
+  - apt-listchanges.timer
+  - armbian-disable-autologin.timer
+  - dpkg-db-backup.timer
+  - e2scrub_all.timer
+  - fake-hwclock-save.timer
+  - fstrim.timer
+  - fwupd-refresh.timer
+  - logrotate.timer
+  - man-db.timer
+  - motd-news.timer
+  - snapd.snap-repair.timer
+  - sysstat-collect.timer
+  - sysstat-rotate.timer
+  - sysstat-summary.timer
+  - systemd-sysupdate.timer
+  - systemd-sysupdate-reboot.timer
+  - systemd-tmpfiles-clean.timer
+  - ua-timer.timer
+  - update-notifier-download.timer
+  - update-notifier-motd.timer
+  - xfs_scrub_all.timer
+  # NOT here on purpose: certbot.timer (on 8 servers) — the owner decides whether it is a package default to ignore
+  # or a certificate job that needs a diagram.

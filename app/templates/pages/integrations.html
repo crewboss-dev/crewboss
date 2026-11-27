@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Integrations{% endblock %}
+{% block page_title %}Integrations{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ asset('canvas/mallen-canvas.css') }}">
+{% endblock %}
+{% block content %}
+{# #393 (the dashboard side of ERP #391): every link between the ERP and another system, graded A–D with the
+   reasons — the ERP's own export (docs/generated/integrations.json), carried in by the scanner with the catalog.
+   Key NAMES only: the export has no key state and no values. Owner q208: grades are shown here too. #}
+{% set GRADE_CLS = {'A': 'bg-status-ok text-white', 'B': 'bg-status-warn text-charcoal', 'C': 'bg-status-avg text-white', 'D': 'bg-status-disaster text-white'} %}
+{% macro grade_badge(g) -%}
+<span class="inline-flex items-center justify-center w-5 h-5 rounded-md text-micro font-bold shrink-0 {{ GRADE_CLS.get(g, 'bg-charcoal/20') }}" title="Grade {{ g }}">{{ g }}</span>
+{%- endmacro %}
+{% macro v(group, code) -%}{{ (vocab.get(group) or {}).get(code, code) }}{%- endmacro %}
+
+{% if conns_shown %}
+<section class="mb-6" aria-label="Connected projects" data-connected-projects>
+  <h2 class="text-small font-semibold mb-2">Connected projects</h2>
+  <div class="card px-4 py-1">{% from "partials/connections.html" import conn_list %}{{ conn_list(conns, conn_labels) }}</div>
+</section>
+{% endif %}
+
+{% if not doc %}
+<div class="card p-8 text-center text-charcoal/50" data-empty-integrations>
+  <div class="text-base font-semibold text-charcoal/70 mb-1">No integrations for this project yet</div>
+  <p class="text-small max-w-xl mx-auto">This page shows the graded list the ERP publishes in its code
+    (<code class="text-micro">docs/generated/integrations.json</code> on its main branch). The scanner brings it in with the
+    workflow catalog; a project whose code doesn't publish one has nothing to show here.</p>
+</div>
+{% else %}
+
+{% if scan %}<div class="text-micro text-charcoal/40 mb-3">From the scan of {{ scan.commit[:12] }} &middot; {{ scan.generated_at|timeago }} &middot; {{ rows|length }} integration{{ '' if rows|length == 1 else 's' }}</div>{% endif %}
+
+{# summary: one tile per grade, zero included (an empty grade is good news, not a gap) #}
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5" aria-label="Integrations by grade">
+  {% for g in GRADES|reverse %}
+  <a href="{{ href(grade='' if grade == g else g) }}" class="card p-3 press flex items-center gap-3 {{ 'ring-2 ring-indigo' if grade == g }}{{ ' opacity-60' if not summary[g] }}" data-grade-tile="{{ g }}">
+    {{ grade_badge(g) }}
+    <span class="min-w-0">
+      <span class="block text-title tabular leading-none">{{ summary[g] }}</span>
+      <span class="block text-micro text-charcoal/55 mt-1">{{ {'A': 'strong', 'B': 'one shared secret or plain LAN', 'C': 'weak sign-in', 'D': 'exposed'}[g] }}</span>
+    </span>
+  </a>
+  {% endfor %}
+</div>
+
+{# per-module diagrams: the shared canvas (docs/canvas-contract.md), names link to the row below #}
+{% for m, n in modules if not module or m == module %}
+<section class="mb-6" id="diagram-{{ m }}" aria-label="{{ module_names.get(m, m) }} diagram">
+  <div class="flex items-baseline gap-2 mb-2">
+    <h2 class="text-small font-semibold uppercase tracking-wide text-charcoal/50">{{ module_names.get(m, m) }}</h2>
+    <span class="text-micro text-charcoal/40 tabular">{{ n }} integration{{ '' if n == 1 else 's' }}</span>
+  </div>
+  <div class="mallen-canvas" id="int-{{ m }}" data-kind="integrations" data-mode="view" data-module="{{ m }}"
+       data-src="{{ base }}/integrations.json" data-integration-link="#i-{id}"></div>
+</section>
+{% endfor %}
+
+{# filters: module, grade, kind #}
+{% set active = [] %}
+{% if module %}{% set _ = active.append(('module', module)) %}{% endif %}
+{% if grade %}{% set _ = active.append(('grade', 'Grade ' ~ grade)) %}{% endif %}
+{% if kind %}{% set _ = active.append(('kind', v('kinds', kind))) %}{% endif %}
+<div class="flex flex-col gap-2 mb-4" id="list">
+  <div class="flex flex-wrap items-center gap-1.5" aria-label="Module">
+    <span class="text-micro uppercase tracking-wide text-charcoal/50 w-16">Module</span>
+    <a href="{{ href(module='') }}#list" class="{{ 'fchip-on' if not module else 'fchip' }}">All</a>
+    {% for m, n in modules %}<a href="{{ href(module=m) }}#list" class="{{ 'fchip-on' if module == m else 'fchip' }} normal-case">{{ module_names.get(m, m) }} <span class="tabular opacity-60">{{ n }}</span></a>{% endfor %}
+  </div>
+  <div class="flex flex-wrap items-center gap-1.5" aria-label="Grade">
+    <span class="text-micro uppercase tracking-wide text-charcoal/50 w-16">Grade</span>
+    <a href="{{ href(grade='') }}#list" class="{{ 'fchip-on' if not grade else 'fchip' }}">Any</a>
+    {% for g in GRADES|reverse %}<a href="{{ href(grade=g) }}#list" class="{{ 'fchip-on' if grade == g else 'fchip' }}">{{ g }}</a>{% endfor %}
+  </div>
+  <div class="flex flex-wrap items-center gap-1.5" aria-label="Kind">
+    <span class="text-micro uppercase tracking-wide text-charcoal/50 w-16">Kind</span>
+    <a href="{{ href(kind='') }}#list" class="{{ 'fchip-on' if not kind else 'fchip' }}">Any</a>
+    {% for k in kinds %}<a href="{{ href(kind=k) }}#list" class="{{ 'fchip-on' if kind == k else 'fchip' }} normal-case">{{ v('kinds', k) }}</a>{% endfor %}
+  </div>
+  {% if active %}
+  <div class="flex flex-wrap gap-1.5">
+    {% for key, label in active %}
+    <a href="{{ href(**{key: ''}) }}#list" class="chip press bg-charcoal/[.07] text-charcoal/80 normal-case touch-target" aria-label="Remove filter {{ label }}">{{ label }} <span aria-hidden="true">&times;</span></a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="space-y-2">
+  {% for r in shown %}
+  <details class="card scroll-mt-20 group" id="i-{{ r.id }}" data-integration="{{ r.id }}">
+    <summary class="press cursor-pointer list-none flex items-start gap-3 p-3">
+      {{ grade_badge(r.grade) }}
+      <span class="min-w-0 flex-1">
+        <span class="flex flex-wrap items-baseline gap-x-2">
+          <span class="text-small font-semibold">{{ r.name }}</span>
+          <span class="text-micro text-charcoal/50">{{ r.peer }}</span>
+        </span>
+        <span class="block text-micro text-charcoal/60 mt-0.5 line-clamp-2 group-open:line-clamp-none">{{ r.purpose }}</span>
+      </span>
+      <span class="flex flex-wrap justify-end gap-1 shrink-0 max-w-[45%]">
+        {% if (doc.sources or [])|length > 1 %}<span class="chip bg-charcoal/[.05] text-charcoal/60 normal-case">{{ r.source }}</span>{% endif %}
+        <span class="chip bg-charcoal/[.05] text-charcoal/60 normal-case">{{ module_names.get(r.module, r.module) }}</span>
+        <span class="chip bg-charcoal/[.05] text-charcoal/60 normal-case hidden sm:inline-flex">{{ v('kinds', r.kind) }}</span>
+        {% if r.status and r.status != 'live' %}<span class="chip bg-flame/10 text-flame">{{ r.status }}</span>{% endif %}
+      </span>
+    </summary>
+    <div class="px-3 pb-3 pl-11 text-small">
+      {% if r.why %}
+      <ul class="list-disc pl-4 mb-2 text-charcoal/75" aria-label="Why grade {{ r.grade }}">{% for w in r.why %}<li>{{ w }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if r.accepted %}<p class="text-micro text-charcoal/60 mb-2"><span class="font-semibold">Accepted:</span> {{ r.accepted }}</p>{% endif %}
+      <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1">
+        <dt class="text-charcoal/50">Data</dt><dd>{{ v('flows', r.flow) }}</dd>
+        {% if r.starts %}<dt class="text-charcoal/50">Who starts</dt><dd>{{ v('starts', r.starts) }}</dd>{% endif %}
+        {% if r.us %}<dt class="text-charcoal/50">From</dt><dd>{{ r.us }}</dd>{% endif %}
+        {% if r.endpoint %}<dt class="text-charcoal/50">Points at</dt><dd class="font-mono text-micro break-all pt-0.5">{{ r.endpoint }}</dd>{% endif %}
+        {% if r.resolves %}<dt class="text-charcoal/50">Found via</dt><dd>{{ v('resolves', r.resolves) }}</dd>{% endif %}
+        {% if r.path %}<dt class="text-charcoal/50">Route</dt><dd>{{ v('paths', r.path) }}</dd>{% endif %}
+        <dt class="text-charcoal/50">Sign-in</dt><dd>{{ v('auths', r.auth) }}</dd>
+        <dt class="text-charcoal/50">Line</dt><dd>{{ v('transports', r.transport) }}</dd>
+        {% if r['keys'] %}<dt class="text-charcoal/50">Key names</dt>
+        <dd class="flex flex-wrap gap-1">{% for k in r['keys'] %}<span class="chip bg-charcoal/[.05] text-charcoal/70 normal-case font-mono">{{ k }}</span>{% endfor %}</dd>{% endif %}
+        {% if used_by.get(r.id) %}<dt class="text-charcoal/50">Used by</dt>
+        <dd class="flex flex-wrap gap-x-2 gap-y-0.5">{% for u in used_by[r.id] %}<a class="text-indigo hover:underline" href="{{ base }}/workflows/{{ u.workflow }}">{{ u.name }}</a>{% endfor %}</dd>{% endif %}
+      </dl>
+      {% if r.notes %}<p class="text-micro text-charcoal/60 mt-2">{{ r.notes }}</p>{% endif %}
+      <a href="{{ href() }}{{ '&' if '?' in href() else '?' }}open={{ r.id|urlencode }}#diagram-{{ r.module }}" class="inline-block mt-2 text-micro text-indigo hover:underline">Show on the {{ module_names.get(r.module, r.module) }} diagram</a>
+    </div>
+  </details>
+  {% else %}
+  <div class="card p-6 text-center text-small text-charcoal/50">No integrations match these filters.</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<script src="{{ asset('canvas/mallen-canvas.js') }}" defer></script>
+{% endblock %}

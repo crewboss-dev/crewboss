@@ -1,0 +1,52 @@
+{# BOARD — status columns Backlog · Ready · In progress · Review · Done (this week). Inside a column cards sort
+   Must → Should → Could → Won't, then rank, and the MoSCoW bucket is each card's left stripe. Drag a card up/down to
+   rank it inside its priority band, or to another column to move it; the drop line shows where it will sit.
+   Priority is changed in the drawer. In progress carries the owner's WIP. This is the ONLY task board.
+   On an ACCOUNT (rollup, task #148) the columns hold every project under it: each card shows its project and writes
+   to it, the view refetches at the account (view_base), and quick-add asks which project. #}
+{% set is_rollup = rollup is defined and rollup %}
+{% set vbase = view_base if is_rollup else base %}
+{% set show_triage = false %}
+{% set col_help = {"backlog": "New requests", "ready": "Decided, not started", "doing": "Being worked",
+                   "review": "Needs your check", "done": "This week"} %}
+<div id="board" data-query="{{ query }}" data-layout="board" data-fold-root
+     class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-3 -mx-3 px-3 scroll-px-3 sm:mx-0 sm:px-0 sm:scroll-px-0 lg:grid lg:grid-cols-5 lg:overflow-visible lg:snap-none"
+     hx-get="{{ vbase }}/tasks/board?{{ query }}" hx-trigger="mdd:board-stale from:body" hx-swap="outerHTML">
+  {% for st in ['backlog', 'ready', 'doing', 'review', 'done'] %}
+  {% set cards = status_columns[st] %}
+  <section class="snap-start shrink-0 w-[82vw] sm:w-72 lg:w-auto flex flex-col gap-2 min-w-0" aria-label="{{ STATUS_META[st].label }}">
+    <div class="flex items-center gap-2 px-1 min-h-[28px]">
+      <span class="chip {{ STATUS_META[st].classes }}">{{ STATUS_META[st].label }}</span>
+      <span class="text-micro tabular text-charcoal/45">{{ cards|length }}</span>
+      {% if st == 'doing' %}
+      <span class="ml-auto text-micro tabular font-medium {{ 'text-indigo font-semibold' if wip.full else 'text-charcoal/55' }}"
+            title="Your tasks in progress, across all projects (limit {{ wip.limit }})" data-wip>You {{ wip.n }}/{{ wip.limit }}</span>
+      {% else %}
+      <span class="ml-auto text-micro text-charcoal/40 truncate">{{ col_help[st] }}</span>
+      {% endif %}
+    </div>
+    {% if st == 'backlog' %}
+    <form hx-post="{{ vbase }}/tasks?{{ query }}" hx-target="#board" hx-swap="outerHTML" class="flex {{ 'flex-col' if is_rollup }} gap-1.5">
+      <input type="hidden" name="priority" value="should">
+      <input type="hidden" name="stream" value="feature">
+      <input type="hidden" name="assignee" value="{{ 'owner' if filters.assignee == 'owner' else 'ai' }}">
+      {% if is_rollup %}
+      {# Accounts hold no tasks: a new one goes to the project picked here. #}
+      <select name="target" required aria-label="Which project" class="field text-small py-1.5" data-quick-target>
+        <option value="">For which project?</option>
+        {% for p in task_targets %}<option value="{{ p.slug }}">{{ '  ' * (p.depth - 1) }}{{ p.name }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <input name="title" required placeholder="+ New request…" aria-label="Quick add a request to the backlog"
+             class="field text-small py-1.5 flex-1 min-w-0">
+    </form>
+    {% endif %}
+    <div data-drop-col data-status-col="{{ st }}" class="flex flex-col gap-2 rounded-xl min-h-[96px] p-0.5 -m-0.5 transition-colors">
+      {% for t in cards %}{% include "partials/task_card.html" %}{% endfor %}
+      {% if not cards %}
+      <div class="rounded-xl border border-dashed border-line py-6 text-center text-small text-charcoal/40">Empty</div>
+      {% endif %}
+    </div>
+  </section>
+  {% endfor %}
+</div>

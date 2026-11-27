@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy to $CREWBOSS_HOME/session-briefing.json. Wording this install adds to the SessionStart briefing (sessions/hooks/ground.sh). Every key is optional.",
+  "node": "dev-box",
+  "session_name_prefix": "",
+  "default_project": "acme-app",
+  "annotations_path": "/home/you/.crewboss/scanner/annotations.yaml",
+  "rule2_extra": " Never nag about invoicing; the finance app's Now page owns sales priorities.",
+  "rule6_integrations": " (the integrations registry and its generated file)",
+  "coordinator_agents": ": builder, migrator, designer, auditor, scout, ..."
+}

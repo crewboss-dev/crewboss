@@ -1,0 +1,23 @@
+{# Front door check progress (#976). Needs: state (running|passed|failed|error), domain, check_id, result, dns, p80, p443, no_443, problem. #}
+<div data-check-state="{{ state }}"
+  {% if state == "running" %}hx-get="/admin/front-door/check/{{ check_id }}?domain={{ domain|urlencode }}" hx-trigger="load delay:2s" hx-swap="outerHTML"{% endif %}>
+{% if state == "error" %}
+  <p class="text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert">{{ problem }}</p>
+{% else %}
+  {% set r = result or {} %}
+  <ul class="text-small space-y-1">
+    <li>{% if state == "running" and not (dns or r.get('dns')) %}…{% elif (dns or r.get('dns') or {}).get('ok') %}✓{% else %}✗{% endif %} The address points here{% if (dns or {}).get('problem') %}: {{ dns.problem }}{% endif %}</li>
+    <li>{% if state == "running" and not (p80 or r.get('port80')) %}…{% elif (p80 or r.get('port80') or {}).get('ok') %}✓{% else %}✗{% endif %} Port 80 is reachable from the internet{% if (p80 or {}).get('problem') %}: {{ p80.problem }}{% endif %}</li>
+    <li>{% if state == "running" and not (p443 or r.get('port443')) %}…{% elif (p443 or r.get('port443') or {}).get('ok') %}✓{% else %}⚠{% endif %} Port 443 is reachable from the internet{% if (p443 or {}).get('problem') %}: {{ p443.problem }}{% endif %}</li>
+  </ul>
+  {% if state == "running" %}<p class="text-micro text-charcoal/55 mt-2">Checking. This can take up to a minute and a half.</p>{% endif %}
+  {% if state == "failed" %}<p class="text-small mt-2">Nothing was changed. Fix the item marked ✗ and press Check again.</p>{% endif %}
+  {% if state == "passed" %}
+  <form class="mt-3" hx-post="/admin/front-door/switch" hx-include="#fd-email" hx-target="#fd-result" hx-swap="innerHTML" data-switch-form>
+    <input type="hidden" name="domain" value="{{ domain }}"><input type="hidden" name="check_id" value="{{ check_id }}">
+        {% if no_443 %}<label class="block text-small mb-2"><input type="checkbox" name="allow_no_443" value="1"> Switch on anyway (only people inside your network will use it)</label>{% endif %}
+    <button class="btn-primary text-small touch-target" type="submit" {% if no_443 %}data-needs-tick{% endif %}>Switch on</button>
+  </form>
+  {% endif %}
+{% endif %}
+</div>

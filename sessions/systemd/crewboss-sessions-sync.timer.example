@@ -1,0 +1,12 @@
+[Unit]
+Description=Run crewboss-sessions-sync every minute (after boot's crewboss-sessions.service has had its turn)
+
+[Timer]
+# boot: crewboss-sessions.service sleeps 30 s then runs `start`; sync takes over from ~2 min in
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Unit=crewboss-sessions-sync.service
+
+[Install]
+WantedBy=timers.target

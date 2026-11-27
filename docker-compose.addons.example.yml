@@ -1,0 +1,32 @@
+# Add-on mounts for an install that connects Crewboss to other systems. Copy this file, keep the lines you need, and
+# select it next to the base compose file with COMPOSE_FILE in the install's env file:
+#
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.addons.example.yml        (paths relative to the repo; ':' separates)
+#
+# Each mount maps a file or folder on the HOST into the container. Every source MUST exist before `docker compose up`:
+# a missing single-file bind source makes Docker create a root-owned DIRECTORY there, which breaks the feature (create an
+# empty file for "not configured yet"). A fresh install needs none of these; the base compose has everything it needs.
+#
+# What each one feeds (all optional, feature-gated: a missing/empty token means that feature is off):
+#   zabbix-api-token            read-only Zabbix API token (System Health)
+#   erp-health-read-token       ) bearer tokens for the ERP health feed (task #196); the feed's base URL is
+#   erp-health-resolve-token    )   CREWBOSS_ERP_HEALTH_URL
+#   entra-client-secret         Microsoft (Entra) client secret, only with `auth: oidc`
+#   dash-keys-1                 the writer credential for a platform key store (#562); one per key store
+#   github-token                fine-grained token of the dedicated GitHub bot account (Contents: write on the enrolled repos only),
+#                               0600, for the merge executor (task #829; CREWBOSS_GITHUB_TOKEN_FILE; never put it in an env var)
+#   estate dir                  read-only servers.yml + policy docs for the Servers tab (CREWBOSS_ESTATE_SRC)
+#   drift .git                  a linked admin site's repo .git, read-only, for the no-drift check (CREWBOSS_DRIFT_GIT_SRC;
+#                               CREWBOSS_DRIFT_REPO is where it appears in the container, the `repo` path in drift.yaml)
+
+services:
+  app:
+    volumes:
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/zabbix-api-token:/run/secrets/zabbix-api-token:ro
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/erp-health-read-token:/run/secrets/erp-health-read-token:ro
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/erp-health-resolve-token:/run/secrets/erp-health-resolve-token:ro
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/github-token:/run/secrets/github-token:ro
+      - ${CREWBOSS_ESTATE_SRC:-${HOME}/.crewboss/estate}:/data/estate:ro
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/entra-client-secret:/run/secrets/entra-client-secret:ro
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/dash-keys-1:/run/secrets/dash-keys-1:ro
+      - ${CREWBOSS_DRIFT_GIT_SRC:-${HOME}/.crewboss/drift.git}:${CREWBOSS_DRIFT_REPO:-/srv/linked-site}/.git:ro

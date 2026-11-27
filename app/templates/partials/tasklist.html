@@ -1,0 +1,40 @@
+{# The list view refreshes itself after a drawer change (mdd:board-stale), like the boards. On an account (rollup,
+   task #148) it lists every project under it, each row opening in its own project. #}
+{% set is_rollup = rollup is defined and rollup %}
+<div id="board" data-query="{{ query }}" data-fold-root hx-get="{{ view_base if is_rollup else base }}/tasks/board?{{ query }}&amp;view=list"
+     hx-trigger="mdd:board-stale from:body" hx-swap="outerHTML">
+<div class="card overflow-hidden">
+  <table class="w-full text-small">
+    <thead>
+      <tr class="border-b border-line text-micro uppercase tracking-wide text-charcoal/50">
+        <th class="text-left font-medium px-3 py-2">Task</th>
+        <th class="text-left font-medium px-3 py-2">Stream</th>
+        <th class="text-left font-medium px-3 py-2">Priority</th>
+        <th class="text-left font-medium px-3 py-2">Status</th>
+        <th class="text-left font-medium px-3 py-2">Tags</th>
+        <th class="text-left font-medium px-3 py-2">Assigned</th>
+        <th class="text-left font-medium px-3 py-2">Steps</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr data-fold="row:{{ t.id }}" class="press cursor-pointer border-b border-line last:border-0
+                 hover:bg-charcoal/[.03]"
+          hx-get="{{ ('/' ~ t.project_slug) if is_rollup else base }}/tasks/{{ t.id }}/panel" hx-target="#drawer-content" hx-swap="innerHTML"
+          hx-trigger="click[!event.target.closest('a')]" hx-on::after-request="Alpine.store('drawer').open = true">
+        <td class="px-3 py-2.5 font-medium">{% if is_rollup %}<a href="/{{ t.project_slug }}" class="project-chip mr-1" data-project-chip="{{ t.project_slug }}">{{ t.project_name }}</a>{% endif %}{{ t.title }} <span class="task-no" data-task-no>#{{ t.id }}</span>
+          {% if t.category %}<span class="chip ml-1 {{ CATEGORY_META.get(t.category, UNKNOWN_META).classes }}">{{ CATEGORY_META.get(t.category, UNKNOWN_META).label }}</span>{% endif %}</td>
+        <td class="px-3 py-2.5"><span class="chip {{ STREAM_META.get(t.stream, UNKNOWN_META).classes }}">{{ STREAM_META.get(t.stream, UNKNOWN_META).label }}</span></td>
+        <td class="px-3 py-2.5">{{ PRIORITY_META.get(t.priority, UNKNOWN_META).label }}</td>
+        <td class="px-3 py-2.5"><span class="chip {{ STATUS_META.get(t.status, UNKNOWN_META).classes }}">{{ STATUS_META.get(t.status, UNKNOWN_META).label }}</span></td>
+        <td class="px-3 py-2.5 text-charcoal/60">{{ t.subprojects|join(', ') }}</td>
+        <td class="px-3 py-2.5">{% include "partials/assignee_chip.html" %}</td>
+        <td class="px-3 py-2.5 tabular text-charcoal/60">{% if t.progress and t.progress.total %}{{ t.progress.done }}/{{ t.progress.total }}{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="px-3 py-8 text-center text-charcoal/40">No tasks match these filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</div>

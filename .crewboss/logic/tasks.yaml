@@ -1,0 +1,53 @@
+# Crewboss's own logic map (task #715). One file per area; each workflow names the code it runs so the gate can tell when it goes stale.
+workflows:
+  - id: task.created-and-triaged
+    name: Task created, then triaged
+    summary: A person (or an agent) files a task; the owning session reads it, suggests where it belongs, and the owner accepts or overrides.
+    trigger:
+      type: button
+      control: "New task (task form) or POST /api/tasks"
+      detail: A new task is filed on a project
+      route: "POST /tasks"
+      code_ref: {file: app/routers/pages.py, function: create_task_form}
+    data: ["table:tasks", "table:subtasks", "table:activity"]
+    steps:
+      - id: create
+        kind: action
+        label: Save the task and its checklist
+        detail: The task lands in the project's backlog with its stream and owner stream.
+        code_ref: {file: app/repo.py, function: create_task}
+        data: ["table:tasks", "table:subtasks"]
+        effects: ["create:tasks", "create:subtasks", "log:activity"]
+      - id: client-check
+        kind: decision
+        question: Was the task written by a client on their mini dashboard?
+        label: Client-written text?
+        detail: Client text is outside, untrusted text; it is only triaged, never acted on.
+      - id: suggest
+        kind: action
+        label: The owning session suggests triage
+        detail: Category, needed now or later, bucket, rank, stream and assignee, each with its reason.
+        code_ref: {file: app/repo.py, function: suggest_triage}
+        data: ["table:tasks"]
+        effects: ["change:tasks (suggestion)", "log:activity"]
+      - id: owner-decides
+        kind: decision
+        question: Does the owner accept the suggestion?
+        label: Owner accepts, keeps their own or argues
+      - id: accept
+        kind: action
+        label: Apply the suggestion
+        code_ref: {file: app/repo.py, function: accept_triage}
+        effects: ["change:tasks (priority, stream, rank)", "log:activity"]
+      - id: override
+        kind: action
+        label: Keep the owner's own placement
+        code_ref: {file: app/repo.py, function: override_triage}
+        effects: ["change:tasks"]
+    edges:
+      - {from: trigger, to: create}
+      - {from: create, to: client-check}
+      - {from: client-check, to: suggest, label: "yes: triage only"}
+      - {from: suggest, to: owner-decides}
+      - {from: owner-decides, to: accept, label: accepts}
+      - {from: owner-decides, to: override, label: keeps own}

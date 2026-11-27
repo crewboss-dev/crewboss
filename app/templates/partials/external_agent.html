@@ -1,0 +1,47 @@
+{# WORKED BY AN EXTERNAL AGENT (#574): this project is worked by a Claude Code session that does NOT run on the sessions server
+   (e.g. the owner's Windows desktop). It gets its own outbox and is left out of the parent session's reach, but no tmux
+   session is ever started for it. Owner only -- the browser IS the owner and the same-origin guard refuses anyone else,
+   as with Move/Rename. Issue token shows the token ONCE (pages/external_token.html); Revoke deletes it.
+   Needs: current_project, external (None hides the block: accounts and the dashboard root). #}
+{% if external is defined and external is not none %}
+{% set ea = external %}
+<section class="mt-10 rounded-xl border border-line" data-external-agent>
+  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 py-3">
+    <span class="text-small font-semibold">Worked by an external agent</span>
+    <span class="text-micro text-charcoal/50">A Claude Code session off the sessions server (your desktop) works {{ current_project.name }} through tasks and contract docs</span>
+  </div>
+  <div class="px-4 pb-4 max-w-3xl space-y-3">
+    <form method="post" action="{{ base }}/external-agent" class="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="on" value="{{ '0' if ea.on else '1' }}">
+      <span class="text-small" data-external-state>{% if ea.on %}On: it has its own outbox and no tmux session is started.{% else %}Off.{% endif %}</span>
+      <button type="submit" class="btn btn-ghost border border-line text-small touch-target" data-external-toggle>{{ 'Turn off' if ea.on else 'Turn on' }}</button>
+      {% if ea.has_tmux and not ea.on %}<span class="text-micro text-charcoal/55">This project runs its own Claude session on the sessions server; it can't be both.</span>{% endif %}
+      {% if ea.on %}<span class="text-micro text-charcoal/55">Turning it off also revokes its tokens.</span>{% endif %}
+    </form>
+    {% if ea.on %}
+    <div data-external-tokens>
+      {% if ea.tokens %}
+      <ul class="text-small divide-y divide-line rounded-lg border border-line">
+        {% for t in ea.tokens %}
+        <li class="px-3 py-2 flex flex-wrap gap-x-4"><span class="font-mono">{{ t.name }}</span>
+          <span class="text-charcoal/55">issued {{ t.created_at.strftime('%Y-%m-%d') }}{% if t.last_used_at %}, last used {{ t.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% else %}, never used{% endif %}</span>
+          <form method="post" action="{{ base }}/external-agent/revoke" class="ml-auto" x-data @submit="if (!confirm('Revoke this token? Its next call fails.')) $event.preventDefault()">
+            <input type="hidden" name="token_id" value="{{ t.id }}">
+            <button type="submit" class="text-micro text-indigo underline" data-external-revoke-one>Revoke</button></form></li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="text-small text-charcoal/55">No token yet.</p>{% endif %}
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <form method="post" action="{{ base }}/external-agent/token" autocomplete="off">
+        <button type="submit" class="btn btn-ghost border border-line text-small touch-target" data-external-issue>Issue token</button></form>
+      {% if ea.tokens %}
+      <form method="post" action="{{ base }}/external-agent/revoke" x-data @submit="if (!confirm('Revoke the external agent\'s token? Its next call fails.')) $event.preventDefault()">
+        <button type="submit" class="btn btn-ghost border border-line text-small touch-target" data-external-revoke>Revoke all</button></form>
+      {% endif %}
+    </div>
+    <p class="text-micro text-charcoal/55">The token reaches only this project{% if place and place.children %} and its sub-projects{% endif %}, never another account. It is shown once. Setup: <span class="font-mono">sessions/external/README.md</span>.</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}

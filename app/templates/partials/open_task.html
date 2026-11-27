@@ -1,0 +1,11 @@
+{# ?open=<id>: open that task's drawer once the page is ready (its project is the page's — the route checked — or,
+   on an account, one of the projects under it: open_task_project). #}
+{% if open_task_id %}
+{% set otbase = ('/' ~ open_task_project.slug) if (open_task_project is defined and open_task_project) else base %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    htmx.ajax("GET", "{{ otbase }}/tasks/{{ open_task_id }}/panel", { target: "#drawer-content", swap: "innerHTML" })
+      .then(function () { Alpine.store("drawer").open = true; });
+  });
+</script>
+{% endif %}

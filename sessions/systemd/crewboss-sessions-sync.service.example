@@ -1,0 +1,18 @@
+# Keep the standing Claude sessions in step with the dashboard's plan (start new, wind down archived).
+# Copy to /etc/systemd/system/crewboss-sessions-sync.service and replace the CAPITALISED placeholders.
+[Unit]
+Description=Keep the standing Claude sessions in step with the dashboard's plan (start new, wind down archived)
+After=network-online.target docker.service crewboss-sessions.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=SESSIONS_USER
+Environment=HOME=/home/SESSIONS_USER
+# Same PATH as crewboss-sessions.service: started sessions need claude and node.
+Environment=PATH=/home/SESSIONS_USER/.local/bin:/home/SESSIONS_USER/NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+# Shares one lock (STATE_DIR/lock) with the boot `start`: a sync that finds it held skips.
+ExecStart=CREWBOSS_REPO/sessions/crewboss-sessions.sh sync
+# The tmux server outlives this oneshot (sync may start sessions); systemd must never kill it when the run ends.
+# KillMode=process (not the deprecated 'none'): only the main process is signalled; the tmux server stays.
+KillMode=process

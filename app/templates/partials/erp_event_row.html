@@ -1,0 +1,36 @@
+{# One open ERP event (task #196). Rendered in the Health page's list and, after Resolve, returned alone to htmx:
+   `result` = {"ok": True} (the row turns Resolved) or {"ok": False, "error": ...} (the error shows under the title). #}
+{% set result = result if result is defined else none %}
+{% set resolved = result is not none and result.ok %}
+<div id="erp-event-{{ e.id }}" data-erp-event="{{ e.id }}" data-fold="event:{{ e.id }}"
+     class="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-1 px-4 py-3 {{ 'opacity-60' if resolved }}">
+  <span class="chip shrink-0 {{ SEVERITY_CLASSES.get(e.level, SEVERITY_CLASSES[0]) }}">{{ e.severity }}</span>
+  <div class="min-w-0 flex-1">
+    <div class="text-small font-medium break-words">{{ e.title }}</div>
+    <div class="text-micro text-charcoal/55">{{ e.source or 'unknown source' }}
+      {%- if e.count and e.count > 1 %} · <span class="tabular">{{ e.count }}×</span>{% endif %}
+      {%- if e.first_seen %} · since {{ e.first_seen|timeago }}{% endif %}
+      {% if e.tagged %}<span class="chip ml-1 {{ 'bg-status-disaster/10 text-status-disaster' if e.kind == 'code_fault' else 'bg-charcoal/[.06] text-charcoal/60' }}" data-kind="{{ e.kind }}">{{ 'Code fault' if e.kind == 'code_fault' else 'Ops' }}</span>{% endif %}
+      {% if e.workflow and e.step %}<a class="chip ml-1 bg-charcoal/[.06] text-charcoal/70 underline" href="{{ base }}/logic?wf={{ e.workflow|urlencode }}&step={{ e.step|urlencode }}" data-logic-step>Step {{ e.step }} of {{ e.workflow }}</a>{% endif %}
+      {% if e.baseline %}<span class="chip ml-1 bg-charcoal/[.06] text-charcoal/60">baseline</span>{% endif %}
+      {% if e.escalated_at %}<span class="chip ml-1 bg-status-disaster/10 text-status-disaster">sent to errors</span>{% endif %}
+    </div>
+    {% if e.detail %}<div class="mt-1 text-micro text-charcoal/60 break-words line-clamp-2" title="{{ e.detail }}">{{ e.detail }}</div>{% endif %}
+    {% if result is not none and not result.ok %}
+    <div role="alert" class="mt-1.5 text-micro font-medium text-status-disaster break-words" data-resolve-error>{{ result.error }}</div>
+    {% endif %}
+  </div>
+  <div class="flex items-center justify-end gap-2 shrink-0 w-full sm:w-auto sm:ml-auto">
+    {% if e.last_seen %}<span class="text-micro tabular text-charcoal/50" title="last seen {{ e.last_seen }}">{{ e.last_seen|timeago }}</span>{% endif %}
+    {% if resolved %}
+    <span class="chip bg-status-ok/15 text-status-ok" data-resolved>Resolved</span>
+    {% else %}
+    <form method="post" action="{{ base }}/health/erp/events/{{ e.id }}/resolve"
+          hx-post="{{ base }}/health/erp/events/{{ e.id }}/resolve" hx-target="#erp-event-{{ e.id }}" hx-swap="outerHTML"
+          hx-disabled-elt="find button">
+      <button type="submit" class="btn-ghost touch-target border border-line"
+              data-resolve-button aria-label="Resolve ERP event {{ e.id }}: {{ e.title }}">Resolve</button>
+    </form>
+    {% endif %}
+  </div>
+</div>

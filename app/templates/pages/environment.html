@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Environment · {{ current_project.name }}{% endblock %}
+{% block page_title %}Environment{% endblock %}
+{% block content %}
+{# Environment (#810 step 6): what a machine needs installed to build this project, and which of MY runners have it. Crewboss checks a runner against
+   this list whenever "Runs on" switches to it (or on Check again) and marks it Compliant or Missing N. A warning, never a block. The checks are the
+   runner's own built-in probes (tool, env, android_sdk_pkg, file, keystore); nothing here is ever run as a command. Needs: rows, runners, kinds,
+   kind_labels, oses, status_words, can_edit, error, form, repo_here, max_rows. #}
+<div class="max-w-5xl min-w-0" data-environment-page>
+  <p class="text-small text-charcoal/70 mb-4">What a machine needs to build <strong>{{ current_project.name }}</strong>. When you switch the project to a runner, Crewboss checks that runner against this list and tells you what is missing. It warns; it never blocks a job.</p>
+
+  {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-error>{{ error }}</p>{% endif %}
+
+  <section class="mb-6" aria-label="Runners" data-section="runners">
+    <h2 class="text-lead font-semibold mb-2">Your runners</h2>
+    {% if not rows %}
+    <p class="card px-4 py-3 text-small text-charcoal/65" data-no-checks>Nothing to check yet: list what this project needs below.</p>
+    {% elif not runners %}
+    <p class="card px-4 py-3 text-small text-charcoal/65" data-no-runners>You have no runner in this project's account yet. Enrol one on the Machines page.</p>
+    {% else %}
+    <ul class="grid gap-3 md:grid-cols-2">
+      {% for d in runners %}{% set e = d.env %}
+      <li class="card p-3 min-w-0" data-runner="{{ d.id }}" data-env-state="{{ e.state }}">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="w-2 h-2 rounded-full {{ 'bg-status-ok' if d.connected else 'bg-charcoal/30' }}" aria-hidden="true"></span>
+          <h3 class="font-semibold break-words min-w-0">{{ d.name }}</h3>
+          <span class="chip {{ 'bg-status-ok/10 text-status-ok' if e.state == 'compliant' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' if e.state in ('missing', 'checking') else 'bg-charcoal/[.06] text-charcoal/70' }}" data-env-badge>{{ e.label }}</span>
+          {% if d.default %}<span class="chip bg-charcoal/[.06] text-charcoal/70">Runs on</span>{% endif %}
+          <span class="text-micro text-charcoal/55 ml-auto">{{ 'online' if d.connected else 'offline' }}</span>
+        </div>
+        {% if e.checked_at %}<p class="text-micro text-charcoal/55 mt-0.5" data-checked>Checked {{ e.checked_at.strftime('%d %b %Y %H:%M') }} UTC · {{ e.runner_os or 'OS unknown' }}</p>{% endif %}
+        {% if e.state == 'unchecked' %}<p class="text-micro text-charcoal/60 mt-1">Not checked yet. It is checked when you switch the project to this runner, or now:</p>{% endif %}
+        {% if e.pending and e.state != 'checking' %}<p class="text-micro text-charcoal/60 mt-1">A new check is waiting for this runner{{ '' if d.connected else ' (it runs when the runner is online)' }}.</p>{% endif %}
+        {% if e.state == 'checking' and not d.connected %}<p class="text-micro text-charcoal/60 mt-1">Waiting for this runner to come online.</p>{% endif %}
+        {% set bad = e['items']|rejectattr('status', 'in', ['ok', 'na'])|list %}
+        {% if bad %}
+        <ul class="mt-2 space-y-1.5 text-small" data-missing>
+          {% for it in bad %}
+          <li data-missing-item="{{ it.name }}"><strong>{{ it.name }}{% if it.min_version %} {{ it.min_version }}+{% endif %}</strong>
+            <span class="text-charcoal/60">({{ kind_labels[it.kind] }}) {{ status_words[it.status] }}{% if it.found %}: {{ it.found }}{% endif %}</span>
+            {% if it.hint %}<br><span class="text-micro text-charcoal/65" data-hint>{{ it.hint }}</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        <form method="post" action="{{ base }}/environment/check" class="mt-2"><input type="hidden" name="device_id" value="{{ d.id }}">
+          <button class="btn-ghost text-small touch-target border border-line" type="submit" data-check-again>Check again</button></form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  <section class="mb-6" aria-label="Requirements" data-section="requirements">
+    <div class="flex items-center gap-2 mb-2 flex-wrap">
+      <h2 class="text-lead font-semibold">Requirements <span class="text-small font-normal text-charcoal/50">({{ rows|length }})</span></h2>
+      {% if can_edit %}
+      <form method="post" action="{{ base }}/environment/suggest" class="ml-auto"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-suggest>Suggest from the repo</button></form>
+      {% endif %}
+    </div>
+    {% if can_edit and not repo_here %}<p class="text-micro text-charcoal/55 mb-2" data-repo-not-here>The repo is not on this server, so "Suggest from the repo" can't read it; add the rows by hand.</p>{% endif %}
+    {% if rows %}
+    <ul class="card divide-y divide-line" data-rows>
+      {% for r in rows %}
+      <li class="px-4 py-3" data-requirement="{{ r.id }}" data-kind="{{ r.kind }}">
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="min-w-0 flex-1 break-words"><strong data-req-name>{{ r.name }}</strong>{% if r.min_version %} <span class="text-charcoal/65">{{ r.min_version }} or newer</span>{% endif %}
+            <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ kind_labels[r.kind] }}</span>
+            {% if r.os != 'any' %}<span class="chip bg-indigo/10 text-indigo">{{ r.os }} only</span>{% endif %}
+            {% if r.source == 'suggested' %}<span class="text-micro text-charcoal/50">suggested</span>{% endif %}</p>
+          {% if can_edit %}
+          <details class="relative" data-edit-row>
+            <summary class="press list-none cursor-pointer btn-ghost text-small touch-target border border-line">Edit</summary>
+            <form method="post" action="{{ base }}/environment/rows/{{ r.id }}" class="grid gap-2 sm:grid-cols-2 mt-2 p-2 min-w-[18rem]">
+              {% include 'partials/env_fields.html' %}
+              <div class="sm:col-span-2 flex gap-2"><button class="btn-primary text-small touch-target" type="submit">Save</button></div>
+            </form>
+            <form method="post" action="{{ base }}/environment/rows/{{ r.id }}/delete" class="mt-1"><button class="btn-ghost text-small touch-target border border-line text-status-disaster" type="submit" data-delete-row>Remove</button></form>
+          </details>
+          {% endif %}
+        </div>
+        {% if r.install_hint %}<p class="text-micro text-charcoal/60">{{ r.install_hint }}</p>{% endif %}
+        {% if r.kind == 'keystore' %}<p class="text-micro text-charcoal/55">Fingerprint <span class="font-mono break-all">{{ r.expected_fingerprint }}</span> (public; the key itself never leaves the machine)</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="card px-4 py-3 text-small text-charcoal/65" data-no-rows>No requirements yet. For a Windows app, list what Windows needs installed; for Android, a JDK, the Android SDK and its build tools.</p>
+    {% endif %}
+
+    {% if can_edit and rows|length < max_rows %}
+    <details class="card p-3 mt-3" data-add-requirement{% if error %} open{% endif %}>
+      <summary class="press list-none cursor-pointer font-semibold text-small touch-target flex items-center">+ Add a requirement</summary>
+      <form method="post" action="{{ base }}/environment/rows" class="grid gap-3 sm:grid-cols-2 mt-2" data-requirement-form>
+        {% set r = form %}{% include 'partials/env_fields.html' %}
+        <div class="sm:col-span-2"><button class="btn-primary text-small touch-target" type="submit">Add requirement</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

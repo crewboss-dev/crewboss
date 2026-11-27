@@ -1,0 +1,90 @@
+# The first-run how-to tour (#938): the ONE source of its text. app/tour.py serves it; app/static/js/tour.js draws it.
+# docs/getting-started.md is checked against it (tests/test_tour.py): each `doc` below is the title of a numbered section of that
+# page, in the same order, so the page and the tour cannot disagree. Keep each text to one or two short sentences.
+#
+#   id        stable key stored as the person's last step
+#   title     the step card's heading
+#   text      what the step says (plain words, a control says what happens)
+#   doc       the getting-started.md section this step teaches (omit for the welcome and the finish)
+#   target    CSS selector of the real element to outline; the first VISIBLE match wins
+#   open      what the step opens so the target can be seen: nav (the left menu), profile (the profile menu), details (a closed <details> around it)
+#   go        where the step lives; {project} / {task} are filled from the person's own work. Omit = any page will do
+#   page      regex on the page path: the step only outlines its target while the person is on a matching page
+#   needs     project | task | owner | runner (one, or a list): when the person lacks any of them the step shows `else_text`, outlines nothing and never
+#             navigates (a `go` with {project} or {task} in it needs those too, so a path is never built with a blank)
+#   interactive + do   the outlined element is the real thing to press: it stays clickable through the dim, and the card offers `do` as a button that presses it
+#   else_text what to say instead
+not_in_tour: [Install, Sign in for the first time]      # numbered getting-started sections that come before the tour starts
+steps:
+  - id: welcome
+    title: Welcome to Crewboss
+    text: Crewboss is a board for your projects and tasks, where an AI agent on your own PC can do the work and you review it. This short tour shows the first things to do, one step at a time.
+  - id: project
+    title: Make your first project
+    doc: Make a project
+    text: Press the + next to Accounts to make a project. Give it a name, then set its GitHub repository so a job has somewhere to work.
+    target: "[data-tour='new-project']"
+    open: nav
+    interactive: true
+    do: Make a project now
+    else_text: Press the + next to Accounts in the left menu to make a project. You need write access to see it.
+  - id: runner
+    title: Enrol a runner on your PC
+    doc: Enrol a runner
+    text: A runner is the program on your PC that runs the agents. Pick your system here, install it, then enter the one-time code from "New enrolment code".
+    go: /runners
+    page: /machines$
+    target: "[data-os-cards]"
+    open: details
+    needs: runner
+    else_text: Make a project first. Then open Machines from the Administration section, and its Runners tab, to enrol a runner.
+  - id: task
+    title: Add a task
+    doc: Add a task
+    text: Press Create to add a task to a project. Say what you want done in a sentence or two.
+    go: /
+    page: '^/($|dashboard$|recent$|[^/]+/(board|list|overview)$)'     # the pages of the Build section that have the Create button
+    target: "[data-create-open]"
+  - id: run
+    title: Run it with an agent
+    doc: Run your first agent job
+    text: Open the task and use Run on a PC. Pick a profile and start it, then watch the job's state and branch right here in the task window.
+    go: /{project}/tasks/{task}
+    page: /tasks/\d+$
+    target: "[data-run]"
+    needs: task
+    else_text: Make a project and add a task first (the two steps before this one), then come back to Next.
+  - id: review
+    title: Review, then merge or deploy
+    doc: Review, merge or deploy
+    text: When a job finishes, read its branch and the task thread, then approve the merge or the deploy on the project's Releases page. Nothing ships until a person says so.
+    go: /{project}/releases
+    page: /releases$
+    target: "[data-releases-page]"
+    needs: [owner, project]
+    else_text: When a job finishes, read its branch and the task thread. The project's owner approves the merge or the deploy; nothing ships until a person says so.
+  - id: assistant
+    title: Ask the assistant
+    doc: Ask CA
+    text: CA is the assistant on every page. Open it and ask what is waiting on you. It shows a confirm card before it does anything.
+    target: "[data-ca-open]"
+  - id: settings
+    title: Where settings live
+    doc: Where settings live
+    text: Your profile menu holds the theme, account security and sign out. The section switcher at the top left opens Administration for users, machines and servers.
+    target: "#user-menu"
+    open: profile
+  - id: padlock
+    title: Give it your own web address
+    doc: Give it your own web address (optional)
+    text: Want a padlock instead of the one-time browser warning, and passwordless sign-in with a passkey? The Front door card walks you through it in three steps. It is optional.
+    go: /admin/front-door
+    page: /admin/front-door$
+    target: "[data-front-door]"
+    needs: owner
+    else_text: The owner can give Crewboss its own web address from Administration, then Front door. It is optional.
+  - id: done
+    title: You're set
+    text: "That is the tour. Reopen it any time from the profile menu, then How-to."
+    target: "[data-tour-restart]"
+    open: profile

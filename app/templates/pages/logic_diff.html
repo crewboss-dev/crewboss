@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Logic changes · {{ current_project.name }}{% endblock %}
+{% block page_title %}<a href="{{ base }}/logic" class="text-charcoal/40 hover:text-charcoal">Logic</a><span class="text-charcoal/30 mx-1">/</span>What changed{% endblock %}
+{% block content %}
+{# What a commit changed in the logic against the last release (#715). Needs: res ({diff, sha, baseline_sha, first} or None), sha. #}
+<div class="max-w-4xl min-w-0" data-logic-diff>
+  {% if not res %}
+  <p class="card px-4 py-3 text-small text-charcoal/65" data-no-report>There is no logic report for {{ sha[:12] if sha else 'this commit' }} yet.</p>
+  {% elif res.unreadable %}
+  <p class="card px-4 py-3 text-small text-status-disaster" data-unreadable>The stored report for {{ res.sha[:12] }} is unreadable. Report the commit again.</p>
+  {% else %}{% set d = res.diff %}
+  <p class="text-small text-charcoal/70 mb-3">Commit <span class="font-mono">{{ res.sha[:12] }}</span>
+    {% if res.baseline_sha %}against the last release, <span class="font-mono">{{ res.baseline_sha[:12] }}</span>.{% else %}is the first report: there is nothing earlier to compare with, so every workflow shows as added.{% endif %}</p>
+  <p class="text-micro text-charcoal/55 mb-3" data-reported-by>Reported by {{ res.reported_by }}.</p>
+  {% if not (d.added or d.removed or d.changed) %}
+  <p class="card px-4 py-3 text-small text-charcoal/65" data-no-change>The logic did not change.</p>
+  {% endif %}
+  {% if d.added %}
+  <section class="mb-4" data-section="added"><h2 class="text-lead font-semibold mb-1">Added <span class="text-small font-normal text-charcoal/50">({{ d.added|length }})</span></h2>
+    <ul class="card divide-y divide-line">{% for w in d.added %}<li class="px-4 py-2 text-small" data-added="{{ w.id }}"><span class="chip bg-status-ok/10 text-status-ok">added</span> <a class="underline" href="{{ base }}/logic?wf={{ w.id|urlencode }}">{{ w.name }}</a> <span class="text-charcoal/55">{{ w.steps }} step{{ '' if w.steps == 1 else 's' }}</span></li>{% endfor %}</ul></section>
+  {% endif %}
+  {% if d.removed %}
+  <section class="mb-4" data-section="removed"><h2 class="text-lead font-semibold mb-1">Removed <span class="text-small font-normal text-charcoal/50">({{ d.removed|length }})</span></h2>
+    <ul class="card divide-y divide-line">{% for w in d.removed %}<li class="px-4 py-2 text-small" data-removed="{{ w.id }}"><span class="chip bg-status-disaster/10 text-status-disaster">removed</span> {{ w.name }}</li>{% endfor %}</ul></section>
+  {% endif %}
+  {% if d.changed %}
+  <section class="mb-4" data-section="changed"><h2 class="text-lead font-semibold mb-1">Changed <span class="text-small font-normal text-charcoal/50">({{ d.changed|length }})</span></h2>
+    <ul class="card divide-y divide-line">{% for w in d.changed %}
+      <li class="px-4 py-2 text-small" data-changed="{{ w.id }}"><a class="font-medium underline" href="{{ base }}/logic?wf={{ w.id|urlencode }}">{{ w.name }}</a>
+        <ul class="mt-1 space-y-0.5">{% for c in w.changes %}<li><span class="chip {{ 'bg-status-ok/10 text-status-ok' if c.what == 'step added' else 'bg-status-disaster/10 text-status-disaster' if c.what == 'step removed' else 'bg-status-warn/15 text-charcoal' }}">{{ c.what }}</span>
+          {% if c.step %}<a class="underline" href="{{ base }}/logic?wf={{ w.id|urlencode }}&step={{ c.step|urlencode }}">{{ c.detail }}</a>{% else %}{{ c.detail }}{% endif %}</li>{% endfor %}</ul></li>{% endfor %}</ul></section>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

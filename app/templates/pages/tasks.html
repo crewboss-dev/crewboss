@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Board · {{ current_project.name }}{% endblock %}
+{% block page_title %}Board{% endblock %}
+{% block content %}
+{# One row: who (the common filter), a single "Filters" button for the rest, the active filters as removable
+   chips, and one primary action. No per-page search box (house rule). On an ACCOUNT the board rolls up every project
+   under it (task #148): each card names its project and writes there. #}
+{% if rollup is defined and rollup %}
+<p class="text-small text-charcoal/55 mb-3" data-rollup-note>Every task in {{ rollup.name }}'s projects. Each card says which project it's in; moving it changes it there.</p>
+{% endif %}
+{% if milestones %}{% include "partials/milestone_strip.html" %}{% endif %}
+{% set extra_active = [] %}
+{% if filters.priority %}{% set _ = extra_active.append(('priority', PRIORITY_META.get(filters.priority, UNKNOWN_META).label)) %}{% endif %}
+{% if filters.stream %}{% set _ = extra_active.append(('stream', STREAM_META.get(filters.stream, UNKNOWN_META).label)) %}{% endif %}
+{% if filters.category %}{% set _ = extra_active.append(('category', 'Not triaged' if filters.category == 'untriaged' else CATEGORY_META.get(filters.category, UNKNOWN_META).label)) %}{% endif %}
+{% if filters.status %}{% set _ = extra_active.append(('status', STATUS_META.get(filters.status, UNKNOWN_META).label)) %}{% endif %}
+{% if filters.subproject %}{% set _ = extra_active.append(('subproject', filters.subproject)) %}{% endif %}
+{% if filters.q %}{% set _ = extra_active.append(('q', '“' ~ filters.q ~ '”')) %}{% endif %}
+{% if filters.view == 'list' %}{% set _ = extra_active.append(('view', 'List')) %}{% endif %}
+
+<div class="flex flex-wrap items-center gap-2 mb-4">
+  <nav class="seg" aria-label="Assigned to">
+    {% for a, label in [('', 'Everyone'), ('owner', 'Me'), ('ai', 'AI')] %}
+    <a href="{{ filter_href(assignee=a) }}" class="seg-opt"{% if filters.assignee == a %} aria-current="true"{% endif %}>
+      <span class="{{ 'seg-on' if filters.assignee == a }}">{{ label }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+
+  <div x-data="{ open: false }" class="relative" @keydown.escape.window="open = false">
+    <button type="button" @click="open = !open" class="btn-ghost text-small touch-target border border-line"
+            :aria-expanded="open" aria-haspopup="true" data-filters-button>
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      Filters{% if extra_active %} <span class="chip bg-indigodeep text-white normal-case tabular">{{ extra_active|length }}</span>{% endif %}
+    </button>
+    <div x-show="open" @click.outside="open = false" x-cloak
+         x-transition:enter="transition ease-physics duration-150" x-transition:enter-start="opacity-0 scale-95"
+         x-transition:leave="transition ease-physics-out duration-100" x-transition:leave-end="opacity-0 scale-95"
+         class="absolute left-0 mt-2 z-30 popover p-3 w-[min(22rem,calc(100vw-2rem))] origin-top-left flex flex-col gap-3">
+      <div>
+        <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">Priority</div>
+        <div class="flex flex-wrap gap-1.5">
+          <a href="{{ filter_href(priority='') }}" class="{{ 'fchip-on' if not filters.priority else 'fchip' }}">All</a>
+          {% for pr in ['must', 'should', 'could', 'wont'] %}
+          <a href="{{ filter_href(priority=pr) }}" class="{{ 'fchip-on' if filters.priority == pr else 'fchip' }}">{{ PRIORITY_META[pr].label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">Stream</div>
+        <div class="flex flex-wrap gap-1.5">
+          <a href="{{ filter_href(stream='') }}" class="{{ 'fchip-on' if not filters.stream else 'fchip' }}">All</a>
+          {% for s in ['feature', 'bug', 'tweak', 'review', 'error'] %}
+          <a href="{{ filter_href(stream=s) }}" class="{{ 'fchip-on' if filters.stream == s else 'fchip' }}">{{ STREAM_META.get(s, UNKNOWN_META).label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">What it is</div>
+        <div class="flex flex-wrap gap-1.5">
+          <a href="{{ filter_href(category='') }}" class="{{ 'fchip-on' if not filters.category else 'fchip' }}">All</a>
+          <a href="{{ filter_href(category='untriaged') }}" class="{{ 'fchip-on' if filters.category == 'untriaged' else 'fchip' }}">Not triaged</a>
+          {% for c, meta in CATEGORY_META.items() %}
+          <a href="{{ filter_href(category=c) }}" class="{{ 'fchip-on' if filters.category == c else 'fchip' }}">{{ meta.label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      {% if filters.view == 'list' %}
+      <div>
+        <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">Status</div>
+        <div class="flex flex-wrap gap-1.5">
+          <a href="{{ filter_href(status='') }}" class="{{ 'fchip-on' if not filters.status else 'fchip' }}">All</a>
+          {% for st in ['backlog', 'ready', 'doing', 'review', 'done'] %}
+          <a href="{{ filter_href(status=st) }}" class="{{ 'fchip-on' if filters.status == st else 'fchip' }}">{{ STATUS_META.get(st, UNKNOWN_META).label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if subprojects %}
+      <div>
+        <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">Tag</div>
+        <div class="flex flex-wrap gap-1.5">
+          <a href="{{ filter_href(subproject='') }}" class="{{ 'fchip-on' if not filters.subproject else 'fchip' }}">All</a>
+          {% for sp in subprojects %}
+          <a href="{{ filter_href(subproject=sp) }}" class="{{ 'fchip-on' if filters.subproject == sp else 'fchip' }} normal-case">{{ sp }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="flex items-center gap-2 pt-2 border-t border-line">
+        <span class="text-micro uppercase tracking-wide text-charcoal/50">Show as</span>
+        <a href="{{ filter_href(view='') }}" class="{{ 'fchip-on' if filters.view != 'list' else 'fchip' }}">Board</a>
+        <a href="{{ base }}/list" class="fchip" data-open-list>List</a>
+        {% if extra_active %}<a href="{{ filter_href(priority='', stream='', category='', status='', subproject='', q='', view='') }}" class="ml-auto text-small underline text-charcoal/60">Clear all</a>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% set sf_page = 'board' %}{% set sf_project = current_project.slug %}{% include "partials/saved_filters.html" %}
+
+  {% for key, label in extra_active %}
+  <a href="{{ filter_href(**{key: ''}) }}" class="chip press bg-charcoal/[.07] text-charcoal/80 normal-case touch-target"
+     aria-label="Remove filter {{ label }}">{{ label }} <span aria-hidden="true">&times;</span></a>
+  {% endfor %}
+
+  <a href="{{ base }}/tasks/new" class="btn-primary text-small ml-auto touch-target">
+    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    New request
+  </a>
+</div>
+
+{% if filters.view == 'list' %}
+  {% include "partials/tasklist.html" %}
+{% else %}
+  {% include "partials/board_status.html" %}
+{% endif %}
+
+{% include "partials/task_drawer_shell.html" %}
+{% include "partials/open_task.html" %}
+{% endblock %}

@@ -1,0 +1,104 @@
+{# The expanded part of a knowledge card: the rendered body (sanitised Markdown — see templating.py),
+   then what the owner can do with it. One primary action: Ask AI to change…; the rest are quiet. #}
+{% set archived = e.archived_at is not none %}
+<div class="kb-body" x-data="{ ask: null }">
+  {% if asked %}
+  <div role="status" class="kb-note kb-note-ok">
+    <span>Sent to the AI as <a href="{{ base }}/tasks?open={{ asked }}" class="underline font-medium">task #{{ asked }}</a>. It edits this entry and tells you when it&rsquo;s done.</span>
+  </div>
+  {% endif %}
+  {% if archived %}
+  <div class="kb-note">
+    <span>Archived {{ e.archived_at|timeago }} by {{ 'you' if e.archived_by == 'owner' else e.archived_by|actor_label }}{% if e.archive_reason %}: {{ e.archive_reason }}{% endif %}</span>
+    <form method="post" action="{{ base }}/knowledge/{{ e.id }}/restore" class="ml-auto shrink-0">
+      <button type="submit" class="btn-ghost text-small">Restore</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if e.body %}
+  <div class="kb-prose">{{ e.body|markdown }}</div>
+  {% else %}
+  <p class="text-small text-charcoal/50">No detail beyond the summary.</p>
+  {% endif %}
+  {% if e.source %}<div class="kb-source">Source: {{ e.source }}</div>{% endif %}
+
+  {# Backlinks (task #550): the entries whose text links this one ([[its title]], or superseding it) and the open
+     tasks that reference it, read from the link graph (app/knowledge_graph.py). Needs: linked_from. #}
+  {% if linked_from is defined and linked_from is not none %}
+  <div class="kb-backlinks" data-backlinks>
+    <span class="kb-label">Linked from</span>
+    {% if linked_from.entries or linked_from.tasks %}
+    <ul class="kb-backlink-list">
+      {% for n in linked_from.entries %}
+      <li><a href="{{ n.url }}" class="kb-backlink{% if n.archived or n.superseded %} kb-backlink-old{% endif %}">{{ n.title }}</a>
+        {%- if n.rel == 'supersedes' %} <span class="kb-backlink-rel">supersedes this</span>
+        {%- elif n.rel == 'superseded_by' %} <span class="kb-backlink-rel">superseded by this</span>{% endif %}
+        {%- if n.archived %} <span class="kb-backlink-rel">archived</span>{% endif %}</li>
+      {% endfor %}
+      {% for t in linked_from.tasks %}
+      <li><a href="{{ t.url }}" class="kb-backlink"><span class="tabular">#{{ t.ref }}</span> {{ t.title }}</a> <span class="kb-backlink-rel">task</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="kb-hint">Nothing links here yet. Another entry links this one by writing [[{{ e.title }}]].</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if not archived %}
+  <div class="kb-actions">
+    <button type="button" class="btn-primary" @click="ask = ask === 'change' ? null : 'change'; $nextTick(() => ask && $refs.changeText.focus())"
+            :aria-expanded="ask === 'change' ? 'true' : 'false'">Ask AI to change&hellip;</button>
+    <a href="{{ base }}/knowledge/{{ e.id }}/edit" class="btn-ghost">Edit</a>
+    {% if e.needs_review %}
+    <form method="post" action="{{ base }}/knowledge/{{ e.id }}/reviewed">
+      <button type="submit" class="btn-ghost">Mark reviewed</button>
+    </form>
+    {% endif %}
+    <button type="button" class="btn-ghost kb-quiet" @click="ask = ask === 'remove' ? null : 'remove'; $nextTick(() => ask && $refs.removeText.focus())"
+            :aria-expanded="ask === 'remove' ? 'true' : 'false'">Ask AI to remove</button>
+    <button type="button" class="btn-ghost kb-collapse" @click="open = false; $nextTick(() => { const r = $root.closest('.kb-card').getBoundingClientRect(); if (r.top < 0) $root.closest('.kb-card').scrollIntoView({ block: 'start' }) })">
+      Collapse
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M18 15l-6-6-6 6"/></svg>
+    </button>
+  </div>
+
+  <form method="post" action="{{ base }}/knowledge/{{ e.id }}/ask" x-show="ask === 'change'" x-cloak class="kb-ask">
+    <input type="hidden" name="mode" value="change">
+    <label for="k{{ e.id }}-change" class="kb-label">What should change?</label>
+    <textarea id="k{{ e.id }}-change" x-ref="changeText" name="text" rows="3" required maxlength="2000" class="field text-small"
+              placeholder="e.g. Add the new colour ramp for priority, and shorten the summary"></textarea>
+    <fieldset>
+      <legend class="kb-label">Which session</legend>
+      <div class="seg" role="radiogroup">
+        {% for s in ['tweak', 'feature', 'bug'] %}
+        <label class="seg-opt"><input type="radio" name="stream" value="{{ s }}" {% if s == 'tweak' %}checked{% endif %}><span>{{ STREAM_META.get(s, UNKNOWN_META).label }}</span></label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <p class="kb-hint">Creates a request task for the AI, linked to this entry. It edits the entry and marks the task done.</p>
+    <div class="flex gap-2">
+      <button type="submit" class="btn-primary">Send to AI</button>
+      <button type="button" class="btn-ghost" @click="ask = null">Cancel</button>
+    </div>
+  </form>
+
+  <form method="post" action="{{ base }}/knowledge/{{ e.id }}/ask" x-show="ask === 'remove'" x-cloak class="kb-ask">
+    <input type="hidden" name="mode" value="remove">
+    <input type="hidden" name="stream" value="tweak">
+    <label for="k{{ e.id }}-remove" class="kb-label">Why should it go?</label>
+    <input id="k{{ e.id }}-remove" x-ref="removeText" name="text" required maxlength="500" class="field text-small"
+           placeholder="e.g. Superseded by the Theme page">
+    <p class="kb-hint">The AI archives it (never deletes). You can still find it under Show archived.</p>
+    <div class="flex gap-2">
+      <button type="submit" class="btn-primary">Ask to remove</button>
+      <button type="button" class="btn-ghost" @click="ask = null">Cancel</button>
+    </div>
+  </form>
+  {% else %}
+  <div class="kb-actions">
+    <button type="button" class="btn-ghost kb-collapse" @click="open = false">Collapse</button>
+  </div>
+  {% endif %}
+</div>

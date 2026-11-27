@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}List · {{ current_project.name }}{% endblock %}
+{% block page_title %}List{% endblock %}
+{% block content %}
+{# THE LIST (#772): every task as a table, Jira-style. Toolbar, left to right: Ask CA, search, Everyone / Me / AI, Filter, Group, saved filters,
+   then the "..." menu (columns, show done). The same filters as the Board (the query parameters are the same, so switching keeps them, js/task-views.js);
+   sort by clicking a header; Show done is off by default. A row opens the task drawer in place. #}
+{% set extra_active = [] %}
+{% if filters.priority %}{% set _ = extra_active.append(('priority', PRIORITY_META.get(filters.priority, UNKNOWN_META).label)) %}{% endif %}
+{% if filters.stream %}{% set _ = extra_active.append(('stream', STREAM_META.get(filters.stream, UNKNOWN_META).label)) %}{% endif %}
+{% if filters.category %}{% set _ = extra_active.append(('category', 'Not triaged' if filters.category == 'untriaged' else CATEGORY_META.get(filters.category, UNKNOWN_META).label)) %}{% endif %}
+{% if filters.status %}{% set _ = extra_active.append(('status', STATUS_META.get(filters.status, UNKNOWN_META).label)) %}{% endif %}
+{% if filters.subproject %}{% set _ = extra_active.append(('subproject', filters.subproject)) %}{% endif %}
+<h1 class="sr-only" data-area-title>List</h1>
+{% if rollup %}<p class="text-small text-charcoal/55 mb-3" data-rollup-note>Every task in {{ rollup.name }}'s projects. Each row says which project it's in; changing it writes there.</p>{% endif %}
+
+<div class="tl-toolbar" data-tl-toolbar>
+  <button type="button" class="btn-ghost text-small touch-target border border-line tl-ask" data-ca-open data-ca-page-list aria-controls="ca-drawer" title="Ask the Crewboss Assistant about this list">
+    <svg class="ca-mk" width="16" height="16" aria-hidden="true"><use href="#ca-mark"/></svg> Ask CA</button>
+
+  <form method="get" action="{{ vbase }}/list" class="tl-search" role="search" data-tl-search>
+    {% for k, v in filters.items() if v and k in ['assignee', 'priority', 'stream', 'category', 'subproject', 'status'] %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    {% for k in ['group', 'sort', 'dir'] %}{% if opts[k] %}<input type="hidden" name="{{ k }}" value="{{ opts[k] }}">{% endif %}{% endfor %}
+    {% if opts.done %}<input type="hidden" name="done" value="1">{% endif %}
+    {% if opts.cols_set %}<input type="hidden" name="cols" value="{{ opts.cols }}">{% endif %}
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="Search tasks" aria-label="Search tasks" class="field text-small py-1.5" data-tl-q>
+  </form>
+
+  <nav class="tl-who" aria-label="Assigned to">
+    {% for a, label, icon in [('', 'Everyone', 'all'), ('owner', 'Me', 'me'), ('ai', 'AI', 'ai')] %}
+    <a href="{{ list_href(assignee=a) }}" class="tl-avatar {{ 'is-on' if filters.assignee == a }}" title="{{ label }}"{% if filters.assignee == a %} aria-current="true"{% endif %} data-who="{{ a or 'all' }}">
+      <span class="tl-av tl-av-{{ icon }}" aria-hidden="true">
+        {% if icon == 'me' %}<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+        {% elif icon == 'ai' %}<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg>
+        {% else %}<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.4"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5M15 15c2.4-.4 4.6.7 5.5 3.5"/></svg>{% endif %}
+      </span><span class="tl-av-label">{{ label }}</span></a>
+    {% endfor %}
+  </nav>
+
+  <div x-data="{ open: false }" class="relative" @keydown.escape.window="open = false">
+    <button type="button" @click="open = !open" class="btn-ghost text-small touch-target border border-line" :aria-expanded="open" aria-haspopup="true" data-filters-button>
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      Filter{% if extra_active %} <span class="chip bg-indigodeep text-white normal-case tabular">{{ extra_active|length }}</span>{% endif %}</button>
+    <div x-show="open" @click.outside="open = false" x-cloak
+         class="absolute left-0 mt-2 z-30 popover p-3 w-[min(22rem,calc(100vw-2rem))] origin-top-left flex flex-col gap-3">
+      {% set groups_def = [('Priority', 'priority', ['must', 'should', 'could', 'wont'], PRIORITY_META),
+                           ('Stream', 'stream', ['feature', 'bug', 'tweak', 'review', 'error'], STREAM_META),
+                           ('Status', 'status', ['backlog', 'ready', 'doing', 'review', 'done'], STATUS_META)] %}
+      {% for label, key, vals, meta in groups_def %}
+      <div>
+        <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">{{ label }}</div>
+        <div class="flex flex-wrap gap-1.5">
+          <a href="{{ list_href(**{key: ''}) }}" class="{{ 'fchip-on' if not filters[key] else 'fchip' }}">All</a>
+          {% for val in vals %}<a href="{{ list_href(**{key: val}) }}" class="{{ 'fchip-on' if filters[key] == val else 'fchip' }}">{{ meta.get(val, UNKNOWN_META).label }}</a>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+      <div>
+        <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">What it is</div>
+        <div class="flex flex-wrap gap-1.5">
+          <a href="{{ list_href(category='') }}" class="{{ 'fchip-on' if not filters.category else 'fchip' }}">All</a>
+          <a href="{{ list_href(category='untriaged') }}" class="{{ 'fchip-on' if filters.category == 'untriaged' else 'fchip' }}">Not triaged</a>
+          {% for c, meta in CATEGORY_META.items() %}<a href="{{ list_href(category=c) }}" class="{{ 'fchip-on' if filters.category == c else 'fchip' }}">{{ meta.label }}</a>{% endfor %}
+        </div>
+      </div>
+      {% if subprojects %}
+      <div><div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">Tag</div>
+        <div class="flex flex-wrap gap-1.5"><a href="{{ list_href(subproject='') }}" class="{{ 'fchip-on' if not filters.subproject else 'fchip' }}">All</a>
+          {% for sp in subprojects %}<a href="{{ list_href(subproject=sp) }}" class="{{ 'fchip-on' if filters.subproject == sp else 'fchip' }} normal-case">{{ sp }}</a>{% endfor %}</div></div>
+      {% endif %}
+      {% if extra_active or filters.q %}<div class="pt-2 border-t border-line"><a href="{{ list_href(priority='', stream='', category='', status='', subproject='', q='', all='1') }}" class="text-small underline text-charcoal/60" data-clear-filters>Clear all</a></div>{% endif %}
+    </div>
+  </div>
+
+  <label class="tl-group-pick text-small text-charcoal/65">Group
+    <select class="field text-small py-1 !w-auto" onchange="location.href = this.value" aria-label="Group by" data-group-by>
+      {% for val, label in [('', 'None'), ('status', 'Status'), ('priority', 'Priority'), ('stream', 'Stream'), ('assignee', 'Assignee')] %}
+      <option value="{{ list_href(group=val) }}" {% if opts.group == val %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
+
+  {% set sf_page = 'list' %}{% set sf_project = current_project.slug %}{% include "partials/saved_filters.html" %}
+
+  <div class="relative ml-auto" data-tl-menu-wrap>
+    <button type="button" class="btn-ghost text-small touch-target border border-line" data-cols-open aria-haspopup="true" aria-expanded="false" aria-label="More: columns and done tasks" title="Columns and done tasks">&hellip;</button>
+    <div class="tl-menu popover" data-tl-menu hidden>
+      <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1.5">Columns</div>
+      <div class="flex flex-col gap-1" data-col-picker>
+        {% for key, label in [('type', 'Type'), ('status', 'Status'), ('priority', 'Priority'), ('assignee', 'Assignee'), ('reporter', 'Requested by'), ('progress', 'Progress'), ('created', 'Created'), ('updated', 'Updated')] %}
+        <label class="flex items-center gap-2 text-small"><input type="checkbox" data-col-toggle="{{ key }}" {% if key not in hidden_cols %}checked{% endif %}> {{ label }}</label>{% endfor %}
+        <p class="text-2xs text-charcoal/45">The number and title always show.</p>
+      </div>
+      <div class="mt-2 pt-2 border-t border-line">
+        <a href="{{ list_href(done=('' if opts.done else '1')) }}" class="text-small flex items-center gap-2" data-show-done aria-pressed="{{ 'true' if opts.done else 'false' }}">
+          <span class="tog-pill {{ 'tog-on' if opts.done }}"><span class="tog-dot"></span>Show done</span></a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Bulk change: appears when rows are ticked. One request per task, through the same routes the Board's drag and the drawer use. #}
+{% if can_edit %}<div class="tl-bulk" data-tl-bulk hidden role="region" aria-label="Change the selected tasks">
+  <span class="tabular text-small" data-bulk-count>0 selected</span>
+  <select class="field text-small py-1 !w-auto" data-bulk="status" aria-label="Set status of selected"><option value="">Status…</option>
+    {% for st in ['backlog', 'ready', 'doing', 'review', 'done'] %}<option value="{{ st }}">{{ STATUS_META[st].label }}</option>{% endfor %}</select>
+  <select class="field text-small py-1 !w-auto" data-bulk="priority" aria-label="Set priority of selected"><option value="">Priority…</option>
+    {% for p in ['must', 'should', 'could', 'wont'] %}<option value="{{ p }}">{{ PRIORITY_META[p].label }}</option>{% endfor %}</select>
+  <select class="field text-small py-1 !w-auto" data-bulk="assignee" aria-label="Set assignee of selected"><option value="">Assignee…</option>
+    <option value="owner">Me</option><option value="ai">AI</option></select>
+  <button type="button" class="text-small underline text-charcoal/60" data-bulk-clear>Clear</button>
+</div>{% endif %}
+
+{% include "partials/task_table.html" %}
+
+{% include "partials/task_drawer_shell.html" %}
+{% include "partials/open_task.html" %}
+<script src="{{ asset('js/task-list.js') }}" defer></script>
+{% endblock %}

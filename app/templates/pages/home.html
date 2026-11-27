@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Now{% endblock %}
+{% block page_title %}Now{% endblock %}
+{% block content %}
+{# ALL PROJECTS — one full-width dashboard of everything up and coming across every NON-ARCHIVED project (task
+   #148; no left menu here, the topbar's switcher is the navigation). In order: dash's Plan (one order across every
+   project), what's waiting on you (questions, change decisions, checks, Now / Up next: the Focus partial across
+   projects, each row naming its project), the project TREE as cards (a parent's numbers are its whole branch), then
+   the quieter panels, each collapsed to a one-line summary. Every row clicks into the right project page. #}
+{% set dot_color = {"online": "bg-status-ok", "offline": "bg-charcoal/25",
+                    "waiting": "bg-status-warn", "starting": "bg-indigodeep animate-pulse", "stopping": "bg-charcoal/40"} %}
+{% set dot_label = {"online": "Online", "offline": "Offline", "waiting": "Waiting for you to confirm",
+                    "starting": "Starting…", "stopping": "Stopping"} %}
+
+<p class="text-small text-charcoal/55 mb-4">
+  What to do now, across {{ o.projects|length }} project{{ '' if o.projects|length == 1 else 's' }}.
+</p>
+
+{# dash's plan across every project comes FIRST: one clear order, the reason under each card (task #129) #}
+{% include "partials/global_plan.html" %}
+
+<h2 class="text-title font-semibold mb-3">Waiting on you</h2>
+{% include "partials/focus.html" %}
+
+{# The project tree is the Projects list now (#733): this page is what needs you. #}
+
+{# --- the quieter panels: a one-line summary each, detail on click -------------------------------------------- #}
+<section aria-label="More" class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+
+  <details class="card group" data-panel="triage">
+    <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+      <span class="w-2 h-2 rounded-full {{ 'bg-flame' if o.triage else 'bg-charcoal/20' }}" aria-hidden="true"></span>
+      <span class="text-small"><span class="font-semibold tabular">{{ o.triage|length }}</span> AI suggestion{{ '' if o.triage|length == 1 else 's' }} waiting for your decision</span>
+      <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+    </summary>
+    <ul class="px-2 pb-2">
+      {% for t in o.triage %}
+      {% set sg = t.suggestion or {} %}
+      <li><a href="/{{ t.project_slug }}/board?open={{ t.id }}" class="press flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-charcoal/[.04]">
+        <span class="min-w-0 flex-1">
+          <span class="block text-small font-medium leading-snug">{{ t.title }}</span>
+          <span class="block text-micro text-charcoal/55"><span class="task-no" data-task-no>#{{ t.id }}</span> {{ t.project_name }}{% if sg.priority %} · suggests {{ PRIORITY_META.get(sg.priority, UNKNOWN_META).short }}{% endif %}{% if sg.category %} · {{ CATEGORY_META.get(sg.category, UNKNOWN_META).label }}{% endif %}</span>
+        </span>
+      </a></li>
+      {% else %}
+      <li class="px-2 py-2 text-small text-charcoal/45">Nothing to decide.</li>
+      {% endfor %}
+    </ul>
+  </details>
+
+  {% set online = o.sessions|selectattr('status', 'equalto', 'online')|list|length %}
+  {% set waiting = o.sessions|selectattr('status', 'equalto', 'waiting')|list|length %}
+  <details class="card group" data-panel="sessions">
+    <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+      <span class="flex gap-1" aria-hidden="true">{% for s in o.sessions %}<span class="w-2 h-2 rounded-full {{ dot_color[s.status] }}"></span>{% endfor %}</span>
+      <span class="text-small">Sessions: <span class="font-semibold tabular">{{ online }}</span> online{% if waiting %} · <span class="font-semibold tabular">{{ waiting }}</span> waiting for you{% endif %} · <span class="tabular">{{ o.ai_work_count }}</span> AI task{{ '' if o.ai_work_count == 1 else 's' }} in progress</span>
+      <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+    </summary>
+    <ul class="px-4 pb-3 flex flex-col gap-2.5">
+      {% for proj_slug, group in o.sessions|groupby('project') %}
+      <li class="text-micro uppercase tracking-wide font-semibold text-charcoal/50 pt-1" data-session-project="{{ proj_slug }}">{{ group[0].project_name }}</li>
+      {% for s in group %}
+      <li data-session="{{ s.session_name }}">
+        <div class="flex items-center gap-2 text-small">
+          <span class="w-2 h-2 rounded-full shrink-0 {{ dot_color[s.status] }}" aria-hidden="true"></span>
+          <span class="font-medium">{{ s.label }}</span>
+          <span class="text-charcoal/50 ml-auto">{{ dot_label[s.status] }}</span>
+        </div>
+        {% for t in s.working_on %}
+        <a href="/{{ t.project_slug }}/board?open={{ t.id }}" class="press flex items-baseline gap-2 ml-4 mt-1 text-small hover:underline">
+          <span class="min-w-0 truncate">{{ t.title }}</span>
+          <span class="task-no shrink-0" data-task-no>#{{ t.id }}</span>
+        </a>
+        {% endfor %}
+      </li>
+      {% endfor %}
+      {% else %}
+      <li class="text-small text-charcoal/45">No project runs standing sessions.</li>
+      {% endfor %}
+      <li class="text-micro text-charcoal/45 pt-1">After a reboot, open each session's terminal and choose "I am using this for local development."</li>
+    </ul>
+  </details>
+
+  <details class="card group" data-panel="workflows">
+    <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+      <span class="w-2 h-2 rounded-full {{ 'bg-status-disaster' if o.totals.broken else ('bg-status-warn' if o.totals.stale else 'bg-status-ok') }}" aria-hidden="true"></span>
+      <span class="text-small">Workflows: <span class="font-semibold tabular">{{ o.totals.broken }}</span> broken · <span class="font-semibold tabular">{{ o.totals.stale }}</span> stale</span>
+      <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+    </summary>
+    <div class="px-4 pb-3 flex flex-col gap-3">
+      {% for r in o.projects %}
+      <div>
+        <a href="/{{ r.project.slug }}/workflows" class="text-micro uppercase tracking-wide font-semibold text-charcoal/50 hover:underline">{{ r.project.name }}</a>
+        <ul class="mt-1 flex flex-col">
+          {% for w in r.broken %}
+          <li><a href="/{{ r.project.slug }}/workflows/{{ w.id|urlencode }}" class="press flex items-center gap-2 py-1 text-small hover:underline"><span class="chip bg-status-disaster/15 text-status-disaster">broken</span><span class="truncate">{{ w.name }}</span></a></li>
+          {% endfor %}
+          {% for w in r.stale %}
+          <li><a href="/{{ r.project.slug }}/workflows/{{ w.id|urlencode }}" class="press flex items-center gap-2 py-1 text-small hover:underline"><span class="chip bg-status-warn/15 text-charcoal">stale</span><span class="truncate">{{ w.name }}</span></a></li>
+          {% endfor %}
+          {% for c in r.changes %}
+          <li><a href="/{{ r.project.slug }}/workflows/{{ c.workflow_id|urlencode }}" class="press flex items-center gap-2 py-1 text-small hover:underline">
+            <span class="chip bg-charcoal/[.07] text-charcoal/70">{{ c.change_type }}</span>
+            <span class="truncate">{{ c.workflow_name }}</span><span class="text-micro text-charcoal/40 ml-auto shrink-0">{{ c.created_at|timeago }}</span></a></li>
+          {% endfor %}
+          {% if not (r.broken or r.stale or r.changes) %}<li class="text-small text-charcoal/45 py-1">No recent changes.</li>{% endif %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+
+  <details class="card group" data-panel="health">
+    <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+      {% set hs = health_slot %}
+      <span class="w-2 h-2 rounded-full {{ 'bg-charcoal/20' if hs.state in ('off', 'waiting') else ('bg-status-disaster' if hs.state == 'error' or (hs.worst is not none and hs.worst >= 4) else ('bg-status-warn' if hs.open or hs.state == 'stale' else 'bg-status-ok')) }}" aria-hidden="true"></span>
+      <span class="text-small">Health &amp; alerts: {{ hs.label }}</span>
+      <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+    </summary>
+    <ul class="px-2 pb-2">
+      {% for r in o.projects %}
+      <li><a href="/{{ r.project.slug }}/health" class="press flex items-center gap-2 rounded-lg px-2 py-2 text-small hover:bg-charcoal/[.04]">
+        <span class="font-medium">{{ r.project.name }}</span>
+        <span class="ml-auto text-micro text-charcoal/45">{{ health_slot.label if r.project.slug == health_slot.project else 'No alerts wired' }}</span>
+      </a></li>
+      {% endfor %}
+    </ul>
+  </details>
+
+  <details class="card group lg:col-span-2" data-panel="activity">
+    <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+      <span class="text-small">Recent activity</span>
+      {% if o.activity %}<span class="text-micro text-charcoal/45">latest {{ o.activity[0].at|timeago }}</span>{% endif %}
+      <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+    </summary>
+    <div class="px-4 pb-3 space-y-1">
+      {% for a in o.activity %}
+      {% set href = '/' ~ a.project_slug ~ ('/board?open=' ~ a.entity_id if a.entity == 'task' and a.entity_id else ('/knowledge' if a.entity == 'knowledge' else ('' if a.entity == 'project' else '/activity'))) %}
+      <a href="{{ href }}" class="press block rounded-lg px-1 py-1 hover:bg-charcoal/[.04]">{% include "partials/activity_row.html" %}</a>
+      {% else %}
+      <div class="text-small text-charcoal/45">Nothing yet.</div>
+      {% endfor %}
+    </div>
+  </details>
+</section>
+
+{% include "partials/task_drawer_shell.html" %}
+{% endblock %}

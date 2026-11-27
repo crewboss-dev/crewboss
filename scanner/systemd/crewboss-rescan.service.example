@@ -1,0 +1,28 @@
+# Rescans the configured repos' origin/main and imports the workflow catalog into the dashboard when
+# anything changed (repos, the annotations file, or the scanner itself). Fired by crewboss-rescan.timer every 5 min.
+# See scanner/README.md "Auto-rescan". scanner/systemd/install.sh fills in the placeholders and installs both units.
+# The repos, annotations, token file and state folder are read from $CREWBOSS_HOME/scanner/ (scanner/config.py).
+#
+# Status:   systemctl status crewboss-rescan.service   (failed = last run exited non-zero)
+# Logs:     journalctl -u crewboss-rescan.service
+# Machine:  <state_dir>/rescan-status.json
+[Unit]
+Description=Crewboss: rescan + import the workflow catalog if anything changed
+Documentation=file:@REPO@/scanner/README.md
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=@RUN_AS@
+Group=@RUN_AS@
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/.venv/bin/python -m scanner.auto_rescan
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+SyslogIdentifier=crewboss-rescan
+TimeoutStartSec=10min
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full

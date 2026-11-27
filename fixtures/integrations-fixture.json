@@ -1,0 +1,293 @@
+{
+ "version": 1,
+ "vocab": {
+  "kinds": {
+   "api": "API call",
+   "webhook_in": "Webhook in",
+   "webhook_out": "Webhook out",
+   "database": "Database login",
+   "mail": "Mail",
+   "sip": "Phone (SIP)",
+   "monitoring": "Monitoring",
+   "storage": "File storage",
+   "auth": "Sign-in",
+   "other": "Other"
+  },
+  "flows": {
+   "in": "data comes to us",
+   "out": "data goes from us",
+   "both": "data goes both ways"
+  },
+  "starts": {
+   "us": "we call them",
+   "them": "they call us",
+   "both": "either side starts"
+  },
+  "zones": {
+   "server": "On the same server",
+   "estate": "Our other servers",
+   "cloud": "Cloud services",
+   "people": "People and devices"
+  },
+  "resolves": {
+   "ip": "an IP address",
+   "hosts_file": "the server's hosts file",
+   "netbird": "NetBird DNS",
+   "public_dns": "public DNS",
+   "compose_network": "the compose network",
+   "localhost": "the same server"
+  },
+  "paths": {
+   "compose": "inside the server (compose network)",
+   "localhost": "inside the server",
+   "lan": "private LAN (the same VPC)",
+   "mesh": "NetBird mesh",
+   "public": "the internet",
+   "cloudflare": "the internet, through Cloudflare"
+  },
+  "auths": {
+   "entra_oauth": "Microsoft Entra (OAuth)",
+   "oauth2": "OAuth 2",
+   "mtls": "Device certificate (mutual TLS)",
+   "hmac_signature": "Signed request (HMAC)",
+   "db_role": "Scoped database login",
+   "bearer_token": "Bearer token",
+   "api_key": "API key",
+   "webhook_key": "Shared webhook key",
+   "psk": "Pre-shared key",
+   "basic": "Username + password",
+   "db_superuser": "Database superuser",
+   "none": "None"
+  },
+  "transports": {
+   "tls_pinned": "TLS, certificate pinned",
+   "tls": "TLS",
+   "plain_local": "Unencrypted, never leaves the server",
+   "plain_mesh": "Unencrypted inside NetBird (WireGuard encrypts the tunnel)",
+   "plain_lan": "Unencrypted on the private LAN",
+   "plain_public": "Unencrypted over the internet"
+  }
+ },
+ "integrations": [
+  {
+   "id": "db-erp",
+   "name": "ERP database",
+   "module": "core",
+   "purpose": "Test fixture: ERP database — what stops working without it.",
+   "us": "",
+   "peer": "Postgres",
+   "zone": "server",
+   "flow": "both",
+   "starts": "us",
+   "kind": "database",
+   "label": "ERP database",
+   "endpoint": "example.invalid",
+   "resolves": "compose_network",
+   "path": "compose",
+   "auth": "db_superuser",
+   "transport": "plain_local",
+   "keys": [],
+   "notes": "",
+   "status": "live",
+   "accepted": "The app owns its database.",
+   "grade": "C",
+   "why": [
+    "A superuser database login: it can read and change everything."
+   ]
+  },
+  {
+   "id": "pbx-sip",
+   "name": "PBX trunk",
+   "module": "pbx",
+   "purpose": "Test fixture: PBX trunk — what stops working without it.",
+   "us": "",
+   "peer": "Carrier",
+   "zone": "cloud",
+   "flow": "both",
+   "starts": "both",
+   "kind": "sip",
+   "label": "PBX trunk",
+   "endpoint": "example.invalid",
+   "resolves": "public_dns",
+   "path": "public",
+   "auth": "basic",
+   "transport": "tls",
+   "keys": [],
+   "notes": "",
+   "status": "live",
+   "accepted": "",
+   "grade": "C",
+   "why": [
+    "A username and password, not a token or certificate."
+   ]
+  },
+  {
+   "id": "anthropic-erp",
+   "name": "Claude API",
+   "module": "core",
+   "purpose": "Test fixture: Claude API — what stops working without it.",
+   "us": "",
+   "peer": "Anthropic",
+   "zone": "cloud",
+   "flow": "out",
+   "starts": "us",
+   "kind": "api",
+   "label": "Claude API",
+   "endpoint": "example.invalid",
+   "resolves": "public_dns",
+   "path": "public",
+   "auth": "api_key",
+   "transport": "tls",
+   "keys": [
+    "ANTHROPIC_API_KEY"
+   ],
+   "notes": "",
+   "status": "live",
+   "accepted": "",
+   "grade": "B",
+   "why": [
+    "One shared secret: anyone holding it is treated as the caller."
+   ]
+  },
+  {
+   "id": "zabbix-webhook",
+   "name": "Zabbix alert webhook",
+   "module": "core",
+   "purpose": "Test fixture: Zabbix alert webhook — what stops working without it.",
+   "us": "",
+   "peer": "Zabbix",
+   "zone": "estate",
+   "flow": "in",
+   "starts": "them",
+   "kind": "webhook_in",
+   "label": "Zabbix alert webhook",
+   "endpoint": "example.invalid",
+   "resolves": "hosts_file",
+   "path": "mesh",
+   "auth": "webhook_key",
+   "transport": "tls",
+   "keys": [
+    "WEBHOOK_KEY"
+   ],
+   "notes": "",
+   "status": "live",
+   "accepted": "",
+   "grade": "B",
+   "why": [
+    "One shared secret: anyone holding it is treated as the caller."
+   ]
+  },
+  {
+   "id": "ms-mail-send",
+   "name": "Send mail (Graph)",
+   "module": "core",
+   "purpose": "Test fixture: Send mail (Graph) — what stops working without it.",
+   "us": "",
+   "peer": "Microsoft 365",
+   "zone": "cloud",
+   "flow": "out",
+   "starts": "us",
+   "kind": "mail",
+   "label": "outgoing mail",
+   "endpoint": "example.invalid",
+   "resolves": "public_dns",
+   "path": "public",
+   "auth": "entra_oauth",
+   "transport": "tls",
+   "keys": [],
+   "notes": "",
+   "status": "live",
+   "accepted": "",
+   "grade": "A",
+   "why": [
+    "Encrypted.",
+    "Signed in with: Microsoft Entra (OAuth)."
+   ]
+  },
+  {
+   "id": "ms-sharepoint",
+   "name": "SharePoint documents",
+   "module": "core",
+   "purpose": "Test fixture: SharePoint documents — what stops working without it.",
+   "us": "",
+   "peer": "Microsoft 365",
+   "zone": "cloud",
+   "flow": "both",
+   "starts": "us",
+   "kind": "storage",
+   "label": "SharePoint documents",
+   "endpoint": "example.invalid",
+   "resolves": "public_dns",
+   "path": "public",
+   "auth": "entra_oauth",
+   "transport": "tls",
+   "keys": [],
+   "notes": "",
+   "status": "live",
+   "accepted": "",
+   "grade": "A",
+   "why": [
+    "Encrypted.",
+    "Signed in with: Microsoft Entra (OAuth)."
+   ]
+  },
+  {
+   "id": "xero",
+   "name": "Xero accounting",
+   "module": "core",
+   "purpose": "Test fixture: Xero accounting — what stops working without it.",
+   "us": "",
+   "peer": "Xero",
+   "zone": "cloud",
+   "flow": "both",
+   "starts": "us",
+   "kind": "api",
+   "label": "invoices, contacts",
+   "endpoint": "example.invalid",
+   "resolves": "public_dns",
+   "path": "public",
+   "auth": "oauth2",
+   "transport": "tls",
+   "keys": [
+    "XERO_CLIENT_ID",
+    "XERO_CLIENT_SECRET"
+   ],
+   "notes": "",
+   "status": "live",
+   "accepted": "",
+   "grade": "A",
+   "why": [
+    "Encrypted.",
+    "Signed in with: OAuth 2."
+   ]
+  }
+ ],
+ "systems": {
+  "xero": [
+   "xero"
+  ],
+  "graph": [
+   "ms-mail-send",
+   "ms-sharepoint"
+  ],
+  "sharepoint": [
+   "ms-sharepoint"
+  ],
+  "db": [
+   "db-erp"
+  ],
+  "claude": [
+   "anthropic-erp"
+  ],
+  "zabbix": [
+   "zabbix-webhook"
+  ],
+  "internal": []
+ },
+ "summary": {
+  "A": 3,
+  "B": 2,
+  "C": 2,
+  "D": 0
+ }
+}

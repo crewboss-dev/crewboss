@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Discussions{% endblock %}
+{% block page_title %}Discussions{% endblock %}
+{% block content %}
+{# DISCUSSIONS (#733): the CA conversations linked to this project, beside any agents. The same list the task drawer shows for a task. #}
+{% if signed_in %}
+{% with kind='project', ident=current_project.slug, item={'title': current_project.name} %}{% include "partials/ca_discussions.html" %}{% endwith %}
+{% else %}<p class="text-sm text-charcoal/50">Sign in to start or see discussions.</p>{% endif %}
+{% endblock %}

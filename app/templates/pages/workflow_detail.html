@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ wf.name }}{% endblock %}
+{% block page_title %}
+<a href="{{ base }}/workflows" class="text-charcoal/40 hover:text-charcoal">Workflows</a>
+<span class="text-charcoal/30 mx-1">/</span>{{ wf.name }}
+{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ asset('canvas/mallen-canvas.css') }}">
+{% endblock %}
+{% block content %}
+
+<div class="flex flex-wrap items-start justify-between gap-3 mb-4" data-ca-entity="workflow:{{ current_project.slug }}/{{ wf.id }}" data-ca-title="{{ wf.name }}" data-ca-page>
+  <div class="max-w-2xl">
+    <p class="text-base text-charcoal/70">{{ wf.summary }}</p>
+    <div class="flex flex-wrap gap-1.5 mt-2">
+      <span class="chip bg-charcoal/[.05] text-charcoal/60">{{ wf.group }}</span>
+      <span class="chip bg-charcoal/[.05] text-charcoal/60">{{ wf.trigger.type }} trigger</span>
+      {% if wf.has_ai %}<span class="chip bg-indigo/10 text-indigo">AI</span>{% endif %}
+      {% if error %}<span class="chip bg-status-disaster/15 text-status-disaster">failing</span>{% endif %}
+      {% if wf.broken %}<span class="chip bg-status-disaster/15 text-status-disaster" title="This annotation points at code that no longer exists">layout broken</span>
+      {% elif wf.stale %}<span class="chip bg-flame/10 text-flame" title="Code under this workflow changed but its catalog annotation didn't">layout may be stale</span>{% endif %}
+    </div>
+    {% if wf.broken %}
+    <ul class="mt-2 text-small text-status-disaster list-disc pl-5">
+      {% for p in wf.problems %}<li>{{ p.message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if scan %}<div class="text-micro text-charcoal/40 mt-1.5">Last scanned {{ scan.generated_at|timeago }} at {{ scan.commit[:12] }}</div>{% endif %}
+  </div>
+</div>
+
+{% macro task_row(t, show_step=false) %}
+<a href="{{ base }}/board?open={{ t.id }}" class="press flex items-center gap-2 py-2 border-b border-line last:border-0 {{ 'opacity-60' if t.status == 'done' }}">
+  <span class="chip shrink-0 {{ STATUS_META.get(t.status, UNKNOWN_META).classes }}">{{ STATUS_META.get(t.status, UNKNOWN_META).label }}</span>
+  <span class="min-w-0 flex-1">
+    <span class="block text-small font-medium truncate">{{ t.title }}</span>
+    <span class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+      <span class="task-no" data-task-no>#{{ t.id }}</span>
+      {% include "partials/assignee_chip.html" %}
+      {% if t.progress and t.progress.total %}<span class="text-micro tabular text-charcoal/55">{{ t.progress.done }}/{{ t.progress.total }} steps</span>{% endif %}
+      {% if show_step %}
+      {% for link in t.links.workflows if link.id == wf.id %}
+      <span class="chip bg-charcoal/[.05] text-charcoal/55 normal-case">{{ step_labels.get(link.step, 'Whole workflow') if link.step else 'Whole workflow' }}</span>
+      {% endfor %}
+      {% endif %}
+    </span>
+  </span>
+</a>
+{% endmacro %}
+
+<div x-data="{ tab: location.hash === '#tasks' ? 'tasks' : (location.hash === '#changes' ? 'changes' : 'canvas') }">
+  <div class="flex gap-1 mb-3 border-b border-line" role="tablist">
+    <button @click="tab = 'canvas'; history.replaceState(null, '', '#canvas')" class="press px-3 py-2 text-small font-medium border-b-2" role="tab"
+            :class="tab === 'canvas' ? 'border-indigo text-indigo' : 'border-transparent text-charcoal/50'">Canvas</button>
+    <button @click="tab = 'tasks'; history.replaceState(null, '', '#tasks')" class="press px-3 py-2 text-small font-medium border-b-2" role="tab"
+            :class="tab === 'tasks' ? 'border-indigo text-indigo' : 'border-transparent text-charcoal/50'">Tasks {% if tasks %}({{ tasks|length }}){% endif %}</button>
+    <button @click="tab = 'changes'; history.replaceState(null, '', '#changes')" class="press px-3 py-2 text-small font-medium border-b-2" role="tab"
+            :class="tab === 'changes' ? 'border-indigo text-indigo' : 'border-transparent text-charcoal/50'">Changes {% if wf.changes %}({{ wf.changes|length }}){% endif %}</button>
+  </div>
+
+  {# The shared canvas (docs/canvas-contract.md): the step panel is the bundle's; each step's Tasks + "new request"
+     section is Dashboard-only host content (<template data-mc-step-extra>), cloned into that panel — the admin site
+     draws the same canvas with none of it (owner, #393: issue tracking stays out of admin). #}
+  <div x-show="tab === 'canvas'">
+    {% set panels = ([{'id': '__trigger__'}] if not has_trigger_step else []) + wf.steps %}
+    <div class="mallen-canvas" id="wf-canvas" data-kind="workflow" data-mode="view"
+         {% if failed_step %}data-open="{{ failed_step }}"{% elif request.query_params.get('step') %}data-open="{{ request.query_params.get('step') }}"{% endif %}>
+      {% for s in panels %}
+      {% set step_tasks = tasks_by_step.get(s.id, []) %}
+      {% set open_n = step_tasks|rejectattr('status', 'equalto', 'done')|list|length %}
+      <template data-mc-step-extra="{{ s.id }}">
+        <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1 tabular">Tasks on this step ({{ open_n }} open)</div>
+        {% for t in step_tasks %}{{ task_row(t) }}{% else %}
+        <div class="text-small text-charcoal/45 py-1">No tasks on this step yet.</div>
+        {% endfor %}
+        <div x-data class="mt-2">
+          <button type="button" class="btn-ghost text-small -ml-2" x-show="$store.wf.pane !== 'new'" @click="$store.wf.pane = 'new'">+ New task on this step</button>
+          <form x-show="$store.wf.pane === 'new'" x-cloak method="post" action="{{ base }}/workflows/{{ wf.id }}/tasks" class="flex flex-col gap-3">
+            <input type="hidden" name="step" value="{{ s.id }}">
+            {% with form_id = 'step-' ~ loop.index %}{% include "partials/new_request_fields.html" %}{% endwith %}
+            <div class="flex gap-2">
+              <button type="submit" class="btn-primary">Send request</button>
+              <button type="button" class="btn-ghost text-small" @click="$store.wf.pane = 'detail'">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </template>
+      {% endfor %}
+    </div>
+    <script type="application/json" data-canvas-for="wf-canvas">{{ canvas_data|json_script }}</script>
+  </div>
+
+  <div x-show="tab === 'tasks'" x-cloak class="flex flex-col lg:flex-row gap-4 items-start">
+    <div class="w-full lg:flex-1 min-w-0 card px-4 py-1">
+      {% for t in tasks %}{{ task_row(t, show_step=true) }}{% else %}
+      <div class="p-8 text-center text-charcoal/40">No tasks linked to this workflow yet.</div>
+      {% endfor %}
+    </div>
+
+    <aside class="w-full lg:w-[22rem] shrink-0">
+      <div class="card p-4">
+        <div class="text-small font-semibold mb-3">New request on this workflow</div>
+        <form method="post" action="{{ base }}/workflows/{{ wf.id }}/tasks" class="flex flex-col gap-3">
+          {% with form_id = 'wf' %}{% include "partials/new_request_fields.html" %}{% endwith %}
+          <div>
+            <label for="wf-step" class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">On step</label>
+            <select id="wf-step" name="step" class="field text-small">
+              <option value="">Whole workflow</option>
+              {% if not has_trigger_step %}<option value="__trigger__">Trigger</option>{% endif %}
+              {% for s in wf.steps %}<option value="{{ s.id }}">{{ s.label }}</option>{% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn-primary self-start">Send request</button>
+        </form>
+      </div>
+    </aside>
+  </div>
+
+  <div x-show="tab === 'changes'" x-cloak>
+    <div class="space-y-2">
+      {% for c in wf.changes %}
+      <div class="card p-3 flex items-start gap-2.5">
+        <span class="chip shrink-0 {{ {'added': 'bg-status-ok/15 text-status-ok', 'removed': 'bg-status-disaster/15 text-status-disaster', 'modified': 'bg-status-warn/15 text-charcoal dark:text-status-warn'}.get(c.change_type, 'bg-charcoal/10 text-charcoal/60') }}">{{ c.change_type }}</span>
+        <div class="min-w-0">
+          <div class="text-small">{{ c.detail.keys()|join(', ') if c.detail else c.change_type }}</div>
+          <div class="text-micro text-charcoal/40">{{ c.created_at|timeago }}</div>
+        </div>
+      </div>
+      {% else %}
+      <div class="card p-8 text-center text-charcoal/40">No changes recorded yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<script src="{{ asset('canvas/mallen-canvas.js') }}" defer></script>
+{% endblock %}

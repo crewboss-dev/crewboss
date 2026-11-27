@@ -1,0 +1,5 @@
+{# "Install to" choice of the skill forms (#718). Needs: targets [{value, label}], form (install_to). #}
+<label class="block" data-install-to><span class="kb-label">Install to</span>
+  <select name="install_to" class="field text-small">
+    {% for t in targets %}<option value="{{ t.value }}"{% if (form.install_to and form.install_to == t.value) or (not form.install_to and loop.first) %} selected{% endif %}>{{ t.label }}</option>{% endfor %}
+  </select></label>

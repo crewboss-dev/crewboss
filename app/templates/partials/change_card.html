@@ -1,0 +1,27 @@
+{# One recommended change waiting for the owner. Needs: c (a change_log row, optionally with project_slug/name).
+   Approve and Reject are one tap; Change opens a note box (required). Posts to the change's own project. #}
+{% set cbase = '/' ~ (c.project_slug or (current_project.slug if current_project else '')) %}
+<div class="rounded-xl border border-flame/30 bg-flame/[.05] p-3 mb-2" data-change="{{ c.id }}" data-ca-entity="change:{{ c.id }}" data-ca-title="{{ c.title }}" data-fold="chg:{{ c.id }}" x-data="{ edit: false }">
+  <div class="text-micro text-charcoal/55 mb-1">
+    Change #{{ c.id }}{% if c.project_name %} · <a href="/{{ c.project_slug }}" class="project-chip" data-project-chip="{{ c.project_slug }}">{{ c.project_name }}</a>{% endif %} · recommended by {{ c.recommended_by|actor_label }} · {{ c.created_at|timeago }}
+  </div>
+  <div class="text-base font-semibold leading-snug break-words">{{ c.title }}</div>
+  {% if c.recommendation %}<div class="prose-dash text-small mt-1 break-words">{{ c.recommendation|markdown }}</div>{% endif %}
+  {% if c.options %}
+  <ul class="text-small text-charcoal/70 mt-1 list-disc pl-5">{% for o in c.options %}<li class="break-words">{{ o }}</li>{% endfor %}</ul>
+  {% endif %}
+  {# #582: with JS the card folds away in place (an empty answer; on the Changes page the row also lands in its next list);
+       without it the form posts and comes back as a 303. #}
+  <form method="post" action="{{ cbase }}/changes/{{ c.id }}/decide" class="flex flex-wrap gap-2 mt-3"
+        hx-post="{{ cbase }}/changes/{{ c.id }}/decide" hx-target="closest [data-fold]" hx-swap="outerHTML" hx-disabled-elt="find fieldset">
+<fieldset class="contents" style="border:0;margin:0;padding:0;min-width:0">
+    <button type="submit" name="decision" value="approved" class="btn-primary text-small touch-target">Approve</button>
+    <button type="submit" name="decision" value="rejected" class="btn-ghost text-small touch-target border border-line">Reject</button>
+    <button type="button" @click="edit = !edit" class="btn-ghost text-small touch-target">Change…</button>
+    <div x-show="edit" x-cloak class="w-full flex flex-col sm:flex-row gap-2">
+      <textarea name="note" rows="2" class="field text-small flex-1" placeholder="How should it change?"></textarea>
+      <button type="submit" name="decision" value="changed" class="btn-primary text-small self-start">Approve with changes</button>
+    </div>
+  </fieldset>
+</form>
+</div>

@@ -1,0 +1,12 @@
+{# Front door switch result (#976). Needs: ok, problem, domain, new_url, removed, renewed. #}
+{% if ok %}
+<div class="card p-4" role="status" data-switch-ok data-new-url="{{ new_url }}">
+  <p class="font-medium">{% if removed %}Done. Crewboss is back to the network address.{% elif renewed %}Done. The network connection was renewed.{% else %}Done. Open <a class="underline" href="{{ new_url }}">{{ new_url }}</a>{% endif %}</p>
+  <p class="text-small text-charcoal/65 mt-1" data-restarting>Restarting... (about 10 seconds)</p>
+</div>
+<script>(function(){var t=0,u=document.querySelector('[data-switch-ok]').dataset.newUrl;function go(){t++;fetch('/healthz',{cache:'no-store'}).then(function(r){if(r.ok){var m=document.querySelector('[data-restarting]');if(m)m.textContent='Ready.';if(t>1)location.href=u;else setTimeout(go,3000);}else throw 0;}).catch(function(){if(t<60)setTimeout(go,2000);});}setTimeout(go,4000);})();</script>
+{% else %}
+<div class="rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2 text-small" role="alert" data-switch-failed>
+  <p><strong>Nothing was changed.</strong> {{ problem }}</p>
+</div>
+{% endif %}

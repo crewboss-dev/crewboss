@@ -1,0 +1,79 @@
+workflows:
+  - id: job.claim-run-finish
+    name: Job claimed, run and finished
+    summary: A runner claims the next queued agent job, the agent works on its own branch through the job MCP, then the runner records the result and the person who started it is told.
+    trigger:
+      type: queue
+      detail: A runner asks for work (the job queue)
+      code_ref: {file: app/jobs.py, function: claim}
+    data: ["table:jobs", "table:locks", "table:task_comments", "table:activity", "table:project_agent_files"]
+    steps:
+      - id: claim
+        kind: action
+        label: Runner claims the next job it may run
+        detail: "One atomic claim; a job token is made (only its hash is stored) with a fence number. A profile whose allowed_tools holds anything but bare tool names (a pattern such as Bash(git *)) never starts: the claim fails the job with that reason, and create_job refuses to queue it."
+        code_ref: {file: app/jobs.py, function: claim}
+        effects: ["change:jobs (running, fence)", "create:job token", "log:activity"]
+      - id: pins
+        kind: decision
+        question: Is every agent, command and skill file in the repository pinned by the project Owner, with no link among them?
+        label: Agent files pinned?
+        detail: "Deny by default. The runner hashes every file under any .claude/agents, .claude/commands and .claude/skills (any depth) and .crewboss/skills; (repo path, sha256) must be in the project's pins, and so must each .claude/settings*.json (any letter case; .crewboss and .claude are compared case-insensitively). A project settings file with hooks, any key naming a plugin or marketplace at any depth (additionalMarketplaces included), permissions.allow beyond the job's tools, env keys or a command-running key (apiKeyHelper, statusLine, ...) blocks the job outright with no pin able to lift it (settings.hooks, settings.plugins, settings.allow, settings.env, settings.exec); every job also runs with --settings disableAllHooks, an explicit permission mode (subscription: default, so a tool outside the ceiling prompts; API: dontAsk) and --disallowedTools for dangerous tools the ceiling does not name. No: the job is released (config.unreviewed or config.symlink), the unpinned files are sent to the Owner in chunks each sized from the frame budget so no frame passes 7168 bytes whatever the path (a failed send releases the job with that reason), who reads them and pins them on the Machines page with a fresh factor. Nothing is approved by parsing."
+        code_ref: {file: runner/crewboss_runner/agentscan.py, function: scan_worktree}
+        effects: ["change:jobs (released, reason names the files)", "create:pending agent files for the Owner"]
+      - id: ca-launch
+        kind: action
+        label: CA turns and looks launch locked down
+        detail: "Not a job: the CA chat turns and read-only looks a runner starts beside its jobs (#930). They ALWAYS run --permission-mode dontAsk with --restricted (ignores the user's, project and local settings files, so a user-level permissions.allow cannot reach them), --disallowedTools for every dangerous tool their ceiling does not name (spawn.deny_unnamed; the second layer, and what stops an allow from managed-settings.json, which --restricted does not ignore) and --settings JOB_SETTINGS (hooks off, crossSessionInbound refuse). A CA turn has --tools \"\" and only its own MCP server; a look has Read, Grep and Glob."
+        code_ref: {file: runner/crewboss_runner/ca.py, function: argv_for}
+        effects: ["launch:claude with a fixed ceiling"]
+      - id: brief
+        kind: action
+        label: Agent reads its brief
+        detail: The only way the agent gets task text; includes the rule to update the logic map.
+        code_ref: {file: app/jobs.py, function: brief}
+      - id: work
+        kind: ai
+        label: Agent builds on its branch
+        detail: "A Claude agent runs on the runner's machine under the job's allowed tools. A profile may name a Claude Code agent (--agent) and the instance may add MCP servers (a knowledge base). Before it starts, the runner walks the whole worktree for every .claude folder (any depth) and .crewboss/skills: a symlink anywhere in agents, commands or skills blocks the job (config.symlink), and every file there must be pinned by the project Owner (repo path + sha256 of its bytes) or the job is released (config.unreviewed) and the files are sent to the Owner (the end-of-job report of changed files is non-fatal: the push and finish always follow) to read and pin on the Machines page. Nothing is approved by parsing; the frontmatter reader only adds warnings. Skills the dashboard delivers stay trusted; a copy of the repo's own .crewboss skill is trusted only through its source's pin. Files the agent creates or changes during the job flag the job and wait for the Owner's review."
+        ai:
+          model: the job profile's model
+          skill: builder, chores or designer profile
+          may: ["edit files on its own branch", "comment on the task", "record checks", "ask for a deploy (never run one)"]
+      - id: permission-watch
+        kind: decision
+        question: Is the session stuck on a tool permission prompt nobody answers (a tool outside the profile's allowed tools)?
+        label: Blocked on a permission prompt?
+        detail: "The runner never approves it. Dialogs that cannot be released are avoided at the source: SendMessage, ListAgents, Workflow, EnterPlanMode, ExitPlanMode and AskUserQuestion are --disallowedTools unless a ceiling names them, and the job settings carry crossSessionInbound=refuse (no other session on the PC can message a job). The watcher also recognises the Workflow, Exit plan mode and question-picker dialogs. Only the real dialog counts (the question followed by numbered choices, the tool read from inside it), never agent prose. After a grace it stops the agent and gives the job back with the tool named in the reason; a keep-open session that already called job_finish is not given back, it ends through the normal push and finish."
+        code_ref: {file: runner/crewboss_runner/guard.py, function: watch_permission}
+        effects: ["change:jobs (released, reason names the tool)"]
+      - id: agent-finish
+        kind: action
+        label: Agent says it is done (or blocked)
+        code_ref: {file: app/jobs.py, function: agent_finish}
+        effects: ["create:task comment", "change:jobs (finishing)"]
+      - id: end
+        kind: decision
+        question: Did the runner finish cleanly?
+        label: Done or failed?
+      - id: done
+        kind: action
+        label: Record the result, release locks, kill the token
+        code_ref: {file: app/jobs.py, function: done}
+        effects: ["change:jobs (done or failed)", "delete:locks", "log:activity", "create:task comment (agent files the job changed need the Owner's review)"]
+      - id: tell
+        kind: action
+        label: Tell the person who started it
+        detail: CA toast, drawer badge and Web Push.
+        code_ref: {file: app/jobs.py, function: _tell_finished}
+        effects: ["push:the starter"]
+    edges:
+      - {from: trigger, to: claim}
+      - {from: claim, to: pins}
+      - {from: pins, to: brief, label: "all pinned"}
+      - {from: brief, to: work}
+      - {from: work, to: permission-watch}
+      - {from: permission-watch, to: agent-finish, label: "no prompt stuck"}
+      - {from: agent-finish, to: end}
+      - {from: end, to: done, label: "yes or no"}
+      - {from: done, to: tell}

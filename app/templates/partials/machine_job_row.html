@@ -1,0 +1,14 @@
+{# One job row on the Machines page (#810): the task title, its project, the machine, a state chip and the elapsed time. Fence, branch and
+   attempts are a hideable column set (the Details button), hidden until chosen. Needs: j (jobs.list_for row). #}
+<li class="px-4 py-3" id="job-{{ j.id }}" data-job="{{ j.id }}" data-state="{{ j.state }}">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <p class="font-semibold break-words min-w-0 flex-1">{{ j.task_title }} <span class="text-micro font-normal text-charcoal/55">#{{ j.task_id }} · {{ j.project_slug }}</span></p>
+    <span class="text-small text-charcoal/70">{{ j.device or 'no machine yet' }}</span>
+    <span class="chip {{ 'bg-status-ok/10 text-status-ok' if j.state in ('running', 'done') else 'bg-status-disaster/10 text-status-disaster' if j.state in ('failed', 'cancelled') else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}" data-job-state>{{ j.state }}</span>
+    {% if j.review_paths %}<span class="chip bg-status-warn/15 text-charcoal dark:text-status-warn" data-job-review title="{{ j.review_paths|join(', ') }}">changed {{ j.review_paths|length }} agent file(s): needs the Owner's review</span>{% endif %}
+    <span class="text-micro text-charcoal/55 tabular" data-elapsed>{{ j.elapsed }}</span>
+  </div>
+  <p class="text-micro text-charcoal/60">{{ j.profile }} ({{ j.model }}) · {{ j.user_name or 'unnamed user' }} · {{ 'unattended' if j.unattended else 'attended' }}{{ '' if j.approved_at else ' · not approved' }}{% if j.requires_labels %} · needs {{ j.requires_labels|join(', ') }}{% endif %}</p>
+  <p class="text-micro text-charcoal/55" data-job-cols x-cloak style="display:none" x-show="cols">fence <span class="font-mono" data-job-fence>{{ j.fence }}</span>{% if j.branch %} · branch <span class="font-mono">{{ j.branch }}</span>{% endif %} · tried {{ j.attempts }}</p>
+  {% if j.skills %}<p class="text-micro text-charcoal/55" data-job-skills x-cloak style="display:none" x-show="cols">Skills and rules it was given: {% for u in j.skills %}<span class="whitespace-nowrap" data-job-skill="{{ u.key }}" data-state="{{ u.state }}">{{ u.key }}{% if u.n %} v{{ u.n }}{% endif %}{% if u.pinned %} (held){% endif %}{% if u.imported %} (imported, reviewed{% if u.reviewer %} by {{ u.reviewer }}{% endif %}){% endif %}{% if u.state == 'missing' %} (not delivered){% endif %}</span>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+</li>

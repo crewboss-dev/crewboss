@@ -1,0 +1,22 @@
+{# The first-run how-to (#938): an outline round a real button and a small step card beside it (a bottom sheet on a phone). Empty and hidden until js/tour.js
+   (which reads the person's progress from /all/tour) starts it: automatically on a person's first page, or from "How-to" in the profile menu. The text of every
+   step is app/tour_steps.yaml, nowhere else. Look: css/tour.css. #}
+<div id="tour" class="tour" hidden data-tour-root>
+  <div class="tour-shield" data-tour-shield></div>
+  <div class="tour-ring" data-tour-ring hidden></div>
+  <section class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-text" tabindex="-1" data-tour-card>
+    <span class="tour-grab" data-sheet-grab aria-hidden="true"></span>
+    <p class="tour-count" data-tour-count></p>
+    <h2 id="tour-title" class="tour-title" data-tour-title></h2>
+    <p id="tour-text" class="tour-text" data-tour-text></p>
+    <p class="tour-note" data-tour-note hidden></p>
+    <div class="tour-actions">
+      <button type="button" class="tour-skip" data-tour-act="skip">Skip tour</button>
+      <span class="tour-spacer"></span>
+      <button type="button" class="tour-btn" data-tour-act="do" hidden></button>
+      <button type="button" class="tour-btn" data-tour-act="back">Back</button>
+      <button type="button" class="tour-btn tour-primary" data-tour-act="next">Next</button>
+    </div>
+  </section>
+  <div class="tour-sr" role="status" aria-live="polite" data-tour-live></div>
+</div>

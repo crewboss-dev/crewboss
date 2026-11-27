@@ -1,0 +1,34 @@
+{# "Inherited from <account>" (task #148): on a PROJECT's Rules / AI Skills / Knowledge page, what the account(s) above
+   it share with every project under them. Read-only here; each item links to where it's kept (the account's page).
+   Needs: inherited (shared.inherited(project)), section ('rules' | 'skills' | 'knowledge'). #}
+{% for inh in inherited if inh[section] %}
+{% set acct = inh.account %}
+{% set page = {'rules': '/rules', 'skills': '/ai-features', 'knowledge': '/knowledge'}[section] %}
+<section class="mt-6" aria-label="Inherited from {{ acct.name }}" data-inherited-from="{{ acct.slug }}">
+  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2">
+    <h2 class="text-lead font-semibold">Inherited from <a href="/{{ acct.slug }}{{ page }}" class="underline decoration-charcoal/30 hover:decoration-current">{{ acct.name }}</a></h2>
+    <span class="text-micro text-charcoal/50">applies to every project in {{ acct.name }}, this one included · change it on {{ acct.name }}'s page</span>
+  </div>
+  <div class="flex flex-col gap-2">
+    {% for e in inh[section] %}
+    <details class="card group" data-inherited-item="{{ e.id }}">
+      <summary class="press list-none cursor-pointer flex items-start gap-2 px-4 py-3 touch-target">
+        <span class="min-w-0 flex-1">
+          <span class="flex items-center gap-2 flex-wrap">
+            <span class="chip shrink-0 {{ 'bg-kind-ai/10 text-kind-ai' if e.kind == 'skill' else 'bg-charcoal/[.07] text-charcoal/70' }}">{{ {'skill': 'AI skill', 'rule': 'Rule'}.get(e.kind, e.kind) }}</span>
+            <span class="text-small font-semibold break-words">{{ e.title }}</span>
+          </span>
+          <span class="block text-small text-charcoal/65 mt-0.5 break-words">{{ e.summary }}</span>
+        </span>
+        <svg class="w-3.5 h-3.5 mt-1 opacity-50 shrink-0 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </summary>
+      <div class="px-4 pb-3">
+        {% if e.body %}<div class="kb-prose text-small break-words">{{ e.body|markdown }}</div>
+        {% else %}<p class="text-small text-charcoal/50">No detail beyond the summary.</p>{% endif %}
+        <a href="/{{ acct.slug }}{{ page }}?open={{ e.id }}#k-{{ e.id }}" class="inline-block mt-2 text-small underline text-charcoal/60">Open in {{ acct.name }}</a>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}

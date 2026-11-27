@@ -1,0 +1,39 @@
+.env
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.venv/
+data/
+scanner/out/*.json
+
+# Built at Docker image build time (Dockerfile's `frontend` stage: tailwindcss + vite + vendor
+# copy) — never hand-edited, never committed. app/static/js/app.js is hand-written and IS tracked.
+/app/static/css/app.css
+/app/static/js/htmx.min.js
+/app/static/js/alpine.min.js
+/frontend/node_modules/
+/app/static/js/knowledge-editor.js
+
+# Claude Code local worktrees/state
+.claude/*
+!.claude/skills/
+
+# The catalog export for the ERP (#393, app/catalog_export.py): a release input the ERP copies, rebuilt on every import.
+/exports/*
+!/exports/.gitkeep
+*.whl
+.env.bak*
+*.env.bak*
+
+# Release hygiene (#589): never commit these
+.env.*
+!.env.example
+*.bak
+*.dump
+*.sqlite
+*.pem
+id_*
+runner/build/
+runner/*.egg-info/
+.venv*/

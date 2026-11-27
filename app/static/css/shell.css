@@ -1,0 +1,329 @@
+/* Crewboss-only page rules that sit beside the ported design layer (css/erp-design.css, a generated copy: never edit it). */
+
+/* THE DRAWER'S RECORD SECTIONS (#771): Projects and Accounts, collapsible, under the fixed rows. The header is the ERP's .nav-head look. */
+.nav-sec{ margin-top:6px; }
+.nav-sec-head{ display:flex; align-items:center; margin:0 8px; padding:0 2px; }
+.nav-sec-toggle{ flex:1; min-width:0; display:flex; align-items:center; gap:4px; padding:6px 8px; border-radius:8px; font-size:.6875rem;
+  letter-spacing:.06em; text-transform:uppercase; color:rgb(var(--c-charcoal) / .55); text-align:left; }
+.nav-sec-toggle:hover{ background:rgb(var(--c-charcoal) / .06); color:rgb(var(--c-charcoal)); }
+.nav-sec-chev{ width:16px; height:16px; flex:none; transition:transform .15s var(--ease-out, ease); }
+.nav-sec.is-closed .nav-sec-chev{ transform:rotate(-90deg); }
+.nav-sec.is-closed .nav-sec-body{ display:none; }
+.nav-sec-add{ flex:none; width:24px; height:24px; border-radius:6px; line-height:22px; font-size:1.125rem; text-align:center; color:rgb(var(--c-charcoal) / .55); }
+.nav-sec-add:hover{ background:rgb(var(--c-charcoal) / .08); color:rgb(var(--c-charcoal)); }
+.nav-rec{ display:flex; align-items:center; min-width:0; margin:1px 8px; padding:6px 10px 6px 28px; border-radius:8px; font-size:.875rem;
+  color:rgb(var(--c-charcoal) / .85); text-decoration:none; }
+.nav-rec:hover{ background:rgb(var(--c-charcoal) / .06); color:rgb(var(--c-charcoal)); }
+.nav-rec.is-active{ background:rgb(var(--c-charcoal) / .10); color:rgb(var(--c-charcoal)); font-weight:600; }
+.nav-rec:focus-visible, .nav-more:focus-visible, .nav-sec-toggle:focus-visible, .nav-sec-add:focus-visible{ outline:2px solid rgb(var(--c-indigo)); outline-offset:-2px; }
+.nav-rec-empty{ margin:2px 8px; padding:4px 10px 4px 28px; font-size:.8125rem; color:rgb(var(--c-charcoal) / .45); }
+.nav-more{ display:block; margin:2px 8px 4px; padding:4px 10px 4px 28px; font-size:.75rem; color:rgb(var(--c-charcoal) / .5); border-radius:8px; }
+.nav-more:hover{ color:rgb(var(--c-charcoal)); text-decoration:underline; }
+@media (max-width:767px){ .nav-rec{ font-size:1rem; padding:10px 12px 10px 30px; } .nav-more{ font-size:.875rem; padding-left:30px; } }
+button.tab{ background:none; border:0; font:inherit; color:inherit; cursor:pointer; }
+.nav-rec.is-archived{ display:none; opacity:.6; }
+.nav-sec.show-archived .nav-rec.is-archived{ display:flex; }
+button.nav-more{ width:calc(100% - 16px); text-align:left; }
+
+/* THE LIST pill (#772). Theme tokens only (no new hex). The table scrolls sideways INSIDE .tl-scroll; the first three columns stick on the left. */
+.tl-toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+.tl-search{ flex:0 1 220px; min-width:140px; }
+.tl-search .field{ width:100%; }
+.tl-who{ display:inline-flex; gap:2px; padding:2px; border-radius:999px; border:1px solid rgb(var(--c-line, var(--c-charcoal) / .15)); }
+.tl-avatar{ display:inline-flex; align-items:center; gap:4px; padding:2px 8px 2px 3px; border-radius:999px; font-size:.75rem; color:rgb(var(--c-charcoal) / .7); }
+.tl-avatar:hover{ background:rgb(var(--c-charcoal) / .06); }
+.tl-avatar.is-on{ background:rgb(var(--c-charcoal) / .10); color:rgb(var(--c-charcoal)); font-weight:600; }
+.tl-av{ width:18px; height:18px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:rgb(var(--c-charcoal) / .15); color:rgb(var(--c-charcoal)); }
+.tl-av-me{ background:rgb(var(--c-flame)); color:#fff; }
+.tl-av-ai{ background:rgb(var(--c-indigodeep)); color:#fff; }
+@media (max-width:767px){ .tl-av-label{ display:none; } .tl-avatar{ padding:2px; } }
+.tl-menu, .tl-sf-menu{ position:absolute; right:0; top:100%; margin-top:6px; z-index:30; min-width:13rem; max-width:min(20rem, calc(100vw - 2rem)); padding:12px; }
+.tl-sf-menu{ left:0; right:auto; padding:6px; }
+.tl-menu[hidden], .tl-sf-menu[hidden]{ display:none; }
+.tl-sf-row{ display:flex; align-items:center; gap:2px; }
+.tl-sf-apply{ flex:1; min-width:0; padding:6px 8px; border-radius:6px; font-size:.875rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tl-sf-apply:hover, .tl-sf-btn:hover, .tl-sf-save:hover{ background:rgb(var(--c-charcoal) / .06); }
+.tl-sf-btn{ width:26px; height:26px; border-radius:6px; font-size:.8125rem; color:rgb(var(--c-charcoal) / .6); }
+.tl-sf-btn[aria-pressed=true]{ color:rgb(var(--c-flame)); }
+.tl-sf-save{ display:block; width:100%; text-align:left; padding:6px 8px; margin-top:2px; border-radius:6px; font-size:.875rem; color:rgb(var(--c-indigo)); }
+.tl-bulk{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; padding:8px 12px; border-radius:12px; border:1px solid rgb(var(--c-indigo) / .35); background:rgb(var(--c-indigo) / .06); }
+.tl-bulk[hidden]{ display:none; }
+
+.tl-scroll{ overflow-x:auto; overflow-y:visible; max-width:100%; border:1px solid rgb(var(--c-charcoal) / .12); border-radius:12px; background:rgb(var(--c-surface)); scrollbar-width:thin; }
+.tl-table{ width:100%; min-width:max-content; border-collapse:separate; border-spacing:0; font-size:.875rem; }
+.tl-table th, .tl-table td{ padding:8px 12px; text-align:left; white-space:nowrap; border-bottom:1px solid rgb(var(--c-charcoal) / .08); vertical-align:middle; }
+.tl-table thead th{ font-size:.6875rem; font-weight:500; text-transform:uppercase; letter-spacing:.05em; color:rgb(var(--c-charcoal) / .5); background:rgb(var(--c-surface)); }
+.tl-sort{ color:inherit; } .tl-sort:hover{ color:rgb(var(--c-charcoal)); }
+.tl-row{ cursor:pointer; } .tl-row:hover td{ background:rgb(var(--c-charcoal) / .03); }
+.tl-row[hidden], .tl-step[hidden]{ display:none; }
+.tl-sticky{ position:sticky; z-index:2; background:rgb(var(--c-surface)); }
+.tl-row:hover .tl-sticky{ background:rgb(var(--c-charcoal) / .03); }
+.tl-c-sel{ left:0; width:56px; min-width:56px; } .tl-c-num{ left:56px; width:96px; min-width:96px; }
+.tl-c-title{ left:152px; min-width:280px; max-width:420px; white-space:normal !important; box-shadow:1px 0 0 rgb(var(--c-charcoal) / .1); }
+.tl-title{ color:rgb(var(--c-charcoal)); font-weight:500; } .tl-title:hover{ text-decoration:underline; }
+.tl-c-end{ width:40px; text-align:center; }
+.tl-colbtn{ color:rgb(var(--c-charcoal) / .55); } .tl-colbtn:hover{ color:rgb(var(--c-charcoal)); }
+.tl-check{ accent-color:rgb(var(--c-indigodeep)); }
+.tl-chev, .tl-chev-gap{ display:inline-block; width:18px; margin-left:6px; text-align:center; color:rgb(var(--c-charcoal) / .55); transition:transform .12s ease; }
+.tl-chev[aria-expanded=true]{ transform:rotate(90deg); }
+.tl-type{ display:inline-flex; width:22px; height:22px; border-radius:6px; align-items:center; justify-content:center; margin-right:6px; vertical-align:middle; }
+.tl-pill{ position:relative; display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+.tl-select{ position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:16px; }
+.tl-pill:focus-within{ outline:2px solid rgb(var(--c-indigo)); outline-offset:1px; }
+.tl-step td{ background:rgb(var(--c-charcoal) / .025); padding:4px 12px 4px 168px; font-size:.8125rem; color:rgb(var(--c-charcoal) / .75); }
+.tl-step-done{ color:rgb(var(--c-charcoal) / .5); text-decoration:line-through; }
+.tl-group td{ background:rgb(var(--c-charcoal) / .04); padding:6px 12px; }
+.tl-group-btn{ font-weight:600; font-size:.8125rem; display:inline-flex; gap:6px; align-items:center; }
+.tl-group-btn[aria-expanded=false] .tl-gchev{ transform:rotate(-90deg); } .tl-gchev{ display:inline-block; transition:transform .12s ease; }
+/* hidden optional columns: by data-col on the header AND the cell */
+.tl-hide-type .tl-typewrap, .tl-hide-status [data-col=status], .tl-hide-priority [data-col=priority], .tl-hide-assignee [data-col=assignee],
+.tl-hide-reporter [data-col=reporter], .tl-hide-progress [data-col=progress], .tl-hide-created [data-col=created], .tl-hide-updated [data-col=updated]{ display:none; }
+.tl-foot{ display:flex; align-items:center; gap:10px; padding:8px 4px; }
+.tl-create{ display:flex; align-items:center; gap:8px; flex:1; min-width:0; }
+.tl-create-form{ display:flex; flex:1; gap:6px; min-width:0; } .tl-create-form[hidden]{ display:none; }
+.tl-create-open{ font-size:.875rem; color:rgb(var(--c-indigo)); padding:4px 6px; border-radius:6px; } .tl-create-open:hover{ background:rgb(var(--c-indigo) / .08); }
+.tl-create-open[hidden]{ display:none; }
+.tl-refresh{ width:28px; height:28px; border-radius:6px; color:rgb(var(--c-charcoal) / .6); } .tl-refresh:hover{ background:rgb(var(--c-charcoal) / .06); }
+.tl-stack{ list-style:none; margin:0; padding:0; border:1px solid rgb(var(--c-charcoal) / .12); border-radius:12px; background:rgb(var(--c-surface)); overflow:hidden; }
+.tl-card{ padding:10px 12px; border-bottom:1px solid rgb(var(--c-charcoal) / .08); cursor:pointer; } .tl-card:last-child{ border-bottom:0; }
+
+/* THE HEADER'S + CREATE (#778): a pill beside the search box (desktop), a round + on a phone. Theme tokens only. */
+.create-pill{ align-items:center; gap:4px; height:32px; padding:0 14px; border-radius:999px; font-size:.875rem; font-weight:500; white-space:nowrap;
+  background:rgb(var(--c-indigo)); color:#fff; transition:filter .12s ease; }
+.create-pill:hover{ filter:brightness(1.08); }
+.create-round{ width:32px; height:32px; border-radius:999px; font-size:1.25rem; line-height:30px; text-align:center; background:rgb(var(--c-indigo)); color:#fff; flex:none; }
+.create-pill:focus-visible, .create-round:focus-visible{ outline:2px solid rgb(var(--c-focus, var(--c-indigo))); outline-offset:2px; }
+
+/* The header jump box (#771): its input sits inside the pill and must not take the dark-mode field background that
+   theme-tokens.css gives every input (that showed as a different-coloured block inside the pill). The id outranks that rule. */
+html.dark #cmd-slot input[data-jump-input]{ background-color:transparent; }
+
+/* THE APP SWITCHER (#778): the grid icon's menu and the icon tiles (header and menu). Theme tokens only. */
+.app-tile{ display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:8px; color:#fff; flex:none; }
+.app-tile svg{ width:20px; height:20px; fill:currentColor; }
+.app-tile-sm{ width:24px; height:24px; border-radius:6px; } .app-tile-sm svg{ width:16px; height:16px; }
+.app-tile-build{ background:rgb(var(--c-indigodeep)); }
+.app-tile-assets{ background:rgb(var(--c-flame)); }
+.app-tile-admin{ background:rgb(var(--c-charcoal) / .8); }
+.app-menu-row{ display:flex; align-items:center; gap:12px; padding:8px 10px; border-radius:10px; text-decoration:none; }
+.app-menu-row:hover, .app-menu-row:focus-visible{ background:rgb(var(--c-charcoal) / .07); outline:none; }
+.app-menu-row:focus-visible{ box-shadow:inset 0 0 0 2px rgb(var(--c-indigo)); }
+.app-menu-row.is-current{ background:rgb(var(--c-charcoal) / .06); }
+.app-menu[x-cloak]{ display:none; }
+.app-menu{ background:rgb(var(--c-surface)); border:1px solid rgb(var(--c-charcoal) / .14); border-radius:12px; box-shadow:0 8px 24px rgb(0 0 0 / .18); }
+
+/* THE RECORD HEAD (#773): sits on the PAGE colour (the ERP's .hub-head is its card-pane header, surface-coloured: wrong on a full page). Sticky, translucent over
+   the page colour with the 1px divider under the tab bar; padding matches the page content (none of its own). */
+.rec-head{ position:sticky; top:0; z-index:3; padding:4px 0 0; background:rgb(var(--c-cream) / .92); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
+  border-bottom:1px solid rgb(var(--c-line)); }
+.rec-head .hub-title-block{ padding:0; }
+.rtabs{ display:flex; align-items:stretch; gap:2px; margin-top:8px; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.rtabs::-webkit-scrollbar{ display:none; }
+.rtab{ position:relative; flex:0 0 auto; display:flex; align-items:stretch; }
+.rtab-link{ display:inline-flex; align-items:center; gap:6px; padding:9px 10px 8px; font-size:.875rem; font-weight:500; white-space:nowrap; text-decoration:none;
+  color:rgb(var(--c-charcoal) / .65); border-bottom:2px solid transparent; margin-bottom:-1px; }
+.rtab-link:hover{ color:rgb(var(--c-charcoal)); background:rgb(var(--c-charcoal) / .05); border-radius:6px 6px 0 0; }
+.rtab.is-active .rtab-link{ color:rgb(var(--c-indigo)); border-bottom-color:rgb(var(--c-indigo)); }
+.rtab-link:focus-visible, .rtab-more:focus-visible, .rtab-add:focus-visible{ outline:2px solid rgb(var(--c-focus, var(--c-indigo))); outline-offset:-2px; }
+.rtab-ico{ width:16px; height:16px; flex:none; }
+/* the ICON becomes "..." when the pointer is on the icon itself, or the button has keyboard focus (managers only: the button exists only
+   for them). It sits invisibly over the icon's spot, so hovering the label leaves the icon alone (owner 11-19). */
+.rtab-more{ position:absolute; left:6px; top:50%; transform:translateY(-58%); width:24px; height:24px; padding:3px; border-radius:6px; opacity:0;
+  color:rgb(var(--c-charcoal) / .75); background:rgb(var(--c-charcoal) / .08); }
+.rtab-more svg{ width:100%; height:100%; }
+.rtab-more:hover, .rtab-more:focus-visible, .rtab-more[aria-expanded=true]{ opacity:1; }
+.rtab:has(.rtab-more:hover) .rtab-ico, .rtab:has(.rtab-more:focus-visible) .rtab-ico, .rtab:has(.rtab-more[aria-expanded=true]) .rtab-ico{ visibility:hidden; }
+.rtab-more:hover{ background:rgb(var(--c-charcoal) / .14); }
+.rtab-add{ flex:none; align-self:center; width:28px; height:28px; margin-left:4px; padding:6px; border-radius:6px; color:rgb(var(--c-charcoal) / .6); }
+.rtab-add:hover{ background:rgb(var(--c-charcoal) / .08); color:rgb(var(--c-charcoal)); }
+.rtab-add svg{ width:100%; height:100%; }
+/* a phone has no hover: the active tab shows its "..." */
+@media (hover:none){ .rtab:not(.is-active) .rtab-more:not([aria-expanded=true]){ pointer-events:none; } .rtab.is-active .rtab-more{ opacity:1; } .rtab.is-active:has(.rtab-more) .rtab-ico{ visibility:hidden; } }
+.rtab-menu, .rtab-cat{ position:absolute; z-index:70; background:rgb(var(--c-surface)); border:1px solid rgb(var(--c-charcoal) / .14); border-radius:12px; box-shadow:0 8px 24px rgb(0 0 0 / .2); }
+.rtab-menu[hidden], .rtab-cat[hidden]{ display:none; }
+.rtab-menu{ min-width:12rem; padding:6px; }
+.rtab-menu button{ display:block; width:100%; text-align:left; padding:7px 10px; border-radius:7px; font-size:.875rem; color:rgb(var(--c-charcoal)); }
+.rtab-menu button:hover, .rtab-menu button:focus-visible{ background:rgb(var(--c-charcoal) / .07); outline:none; }
+.rtab-menu button[disabled]{ opacity:.4; pointer-events:none; }
+.rtab-menu button[data-act=remove]{ color:rgb(var(--c-flame)); }
+.rtab-menu hr{ margin:5px 4px; border:0; border-top:1px solid rgb(var(--c-line)); }
+.rtab-rename{ width:9rem; font-size:.875rem; padding:3px 6px; border-radius:6px; border:1px solid rgb(var(--c-indigo)); background:rgb(var(--c-surface)); color:rgb(var(--c-charcoal)); }
+.rtab-cat{ display:flex; width:min(40rem, calc(100vw - 1.5rem)); max-height:min(26rem, 70vh); overflow:hidden; }
+.rtab-cat-list{ flex:0 0 13rem; overflow-y:auto; padding:10px 6px; border-right:1px solid rgb(var(--c-line)); }
+.rtab-cat-h{ padding:2px 10px 6px; font-size:.6875rem; letter-spacing:.06em; text-transform:uppercase; color:rgb(var(--c-charcoal) / .5); }
+.rtab-cat-item{ display:flex; align-items:center; gap:8px; width:100%; padding:7px 10px; border-radius:7px; font-size:.875rem; text-align:left; color:rgb(var(--c-charcoal) / .85); }
+.rtab-cat-item svg{ width:16px; height:16px; flex:none; }
+.rtab-cat-item:hover, .rtab-cat-item:focus-visible, .rtab-cat-item.is-on{ background:rgb(var(--c-charcoal) / .08); outline:none; }
+.rtab-cat-empty{ padding:8px 10px; font-size:.875rem; color:rgb(var(--c-charcoal) / .55); }
+.rtab-cat-view{ flex:1; min-width:0; padding:14px 16px; overflow-y:auto; }
+.rtab-cat-pane h3{ font-size:1rem; font-weight:600; margin-top:10px; }
+.rtab-cat-pane p{ font-size:.875rem; color:rgb(var(--c-charcoal) / .7); margin:4px 0 12px; }
+.rtab-cat-prev{ border-radius:10px; background:rgb(var(--c-creamwarm)); padding:8px; }
+.pv{ display:block; width:100%; height:auto; } .pv-a{ fill:rgb(var(--c-charcoal) / .14); } .pv-b{ fill:rgb(var(--c-indigo)); } .pv-f{ fill:rgb(var(--c-indigo)); }
+.pv-s{ fill:none; stroke:rgb(var(--c-indigo)); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+.rtab-cat-go{ padding:7px 14px; border-radius:8px; font-size:.875rem; font-weight:500; background:rgb(var(--c-indigo)); color:#fff; }
+.rtab-cat-go:hover{ filter:brightness(1.08); }
+.rtab-cat-go:focus-visible{ outline:2px solid rgb(var(--c-focus, var(--c-indigo))); outline-offset:2px; }
+@media (max-width:640px){ .rtab-cat{ flex-direction:column; } .rtab-cat-list{ flex:0 0 auto; max-height:11rem; border-right:0; border-bottom:1px solid rgb(var(--c-line)); } }
+
+/* THE ACCOUNTS SECTION (#778): each account is a fold group with its projects under it (flat). Theme tokens only. */
+.nav-grp{ margin-top:2px; }
+.nav-grp-head{ display:flex; align-items:center; margin:0 8px; padding-right:2px; border-radius:8px; }
+.nav-grp-head:hover{ background:rgb(var(--c-charcoal) / .05); }
+.nav-grp-toggle{ flex:none; width:24px; height:28px; display:flex; align-items:center; justify-content:center; color:rgb(var(--c-charcoal) / .55); border-radius:6px; }
+.nav-grp-toggle:hover{ color:rgb(var(--c-charcoal)); background:rgb(var(--c-charcoal) / .08); }
+.nav-grp-toggle:focus-visible, .nav-grp-add:focus-visible{ outline:2px solid rgb(var(--c-indigo)); outline-offset:-2px; }
+.nav-grp.is-closed .nav-sec-chev{ transform:rotate(-90deg); }
+.nav-grp.is-closed .nav-grp-body{ display:none; }
+.nav-grp-name{ flex:1; min-width:0; display:flex; padding:6px 6px; font-size:.875rem; font-weight:600; color:rgb(var(--c-charcoal) / .9); text-decoration:none; }
+.nav-grp-name.is-active{ color:rgb(var(--c-charcoal)); background:rgb(var(--c-charcoal) / .10); border-radius:6px; }
+.nav-grp-label{ font-weight:500; color:rgb(var(--c-charcoal) / .55); padding-left:30px; }
+.nav-grp-add{ flex:none; width:24px; height:24px; border-radius:6px; line-height:22px; font-size:1.0625rem; text-align:center; color:rgb(var(--c-charcoal) / .55); opacity:0; }
+.nav-grp-head:hover .nav-grp-add, .nav-grp-add:focus-visible{ opacity:1; }
+.nav-grp-add:hover{ background:rgb(var(--c-charcoal) / .08); color:rgb(var(--c-charcoal)); }
+@media (hover:none){ .nav-grp-add{ opacity:1; } }
+.nav-grp.is-archived{ display:none; opacity:.6; }
+.nav-sec.show-archived .nav-grp.is-archived{ display:block; }
+.nav-grp .nav-rec{ padding-left:34px; }
+.nav-grp-other .nav-rec{ padding-left:30px; }
+@media (max-width:767px){ .nav-grp-name{ font-size:1rem; padding:10px 6px; } .nav-grp-toggle{ height:40px; width:32px; } .nav-grp .nav-rec{ padding-left:38px; } }
+
+/* FAVOURITES (#778): the star (menu rows on hover, record head always), and the Favourites section. */
+.nav-recwrap{ position:relative; }
+.nav-recwrap .nav-rec{ padding-right:34px; }
+.nav-fav{ flex:none; width:22px; height:22px; padding:3px; border-radius:6px; color:rgb(var(--c-charcoal) / .5); }
+.nav-fav svg{ width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linejoin:round; }
+.nav-fav:hover{ background:rgb(var(--c-charcoal) / .08); color:rgb(var(--c-charcoal)); }
+.nav-fav.is-on{ color:rgb(var(--c-indigo)); } .nav-fav.is-on svg{ fill:currentColor; }
+.nav-fav:focus-visible{ outline:2px solid rgb(var(--c-indigo)); outline-offset:-2px; }
+.nav-recwrap .nav-fav{ position:absolute; right:12px; top:50%; transform:translateY(-50%); opacity:0; }
+.nav-recwrap:hover .nav-fav, .nav-recwrap .nav-fav:focus-visible, .nav-recwrap .nav-fav.is-on{ opacity:1; }
+.nav-recwrap .nav-fav.is-on{ opacity:.85; }
+@media (hover:none){ .nav-recwrap .nav-fav{ opacity:1; } }
+.nav-recwrap.is-archived{ display:none; } .nav-sec.show-archived .nav-recwrap.is-archived{ display:block; }
+.nav-recwrap .nav-rec.is-archived{ display:flex; }
+.head-fav{ width:28px; height:28px; padding:4px; }
+.nav-sec[data-sec=favourites] .nav-rec-empty{ display:none; }
+.nav-sec[data-sec=favourites].is-empty .nav-rec-empty{ display:block; }
+html.fav-seen .nav-sec[data-sec=favourites].is-empty{ display:none; }
+
+/* YOU, top right of the header (#786): the profile menu opens downward from the avatar, so it grows from its top-right corner. */
+header #user-menu:not(.hidden){ transform-origin:top right; }
+header #user-btn:focus-visible{ outline:2px solid rgb(var(--c-indigo)); outline-offset:2px; }
+
+/* THE PHONE MENU = A BOTTOM SHEET (owner 11-15): below 768px the Menu tab raises the drawer from the bottom bar (rounded top, a grab
+   line, swipe down to close: chrome.js wires dragSheet on it), not from the side as on a desktop. It sizes to its rows, up to the
+   screen less the bar and a strip at the top. chrome.css stays the ERP's verbatim copy, so the phone shape lives here. */
+.nav-grab{ display:none; }
+@media (max-width:767px){
+  #nav-drawer{ top:auto; left:0; right:0; bottom:var(--tabbar-h, 0px); z-index:82; width:auto; max-width:none;
+    max-height:calc(100dvh - var(--tabbar-h, 0px) - env(safe-area-inset-top) - 40px); padding-top:0; padding-bottom:0;
+    border-radius:16px 16px 0 0; overscroll-behavior:contain; transform:translateY(105%); }
+  html.nav-open #nav-drawer{ transform:none; box-shadow:0 -8px 30px rgb(0 0 0 / .25); }
+  #nav-drawer.sheet-dragging{ transition:none; }
+  #nav-drawer .nav-grab{ display:flex; }
+  #nav-scrim{ left:0; z-index:81; }
+}
+
+/* THE KEYBOARD IS UP (owner 11-15): on a phone the bottom bar and the assistant's round button step aside while the on-screen
+   keyboard is open, to give the page the room. chrome.js sets html.kb-open from the visual viewport; a hardware keyboard never sets it.
+   The page itself shrinks above the keyboard: base.html's viewport meta says interactive-widget=resizes-content (Android Chrome); where
+   a browser ignores that and lays the keyboard over the page (iOS Safari), --kb-h lifts the assistant's drawer above it. */
+@media (max-width:767px){
+  html.kb-open:not(.in-app:not(.shell2)){ --tabbar-h:0px; }
+  html.kb-open #tabbar, html.kb-open #ca-btn{ display:none !important; }
+  html.kb-open .ca-drawer, html.kb-open .ca-backdrop{ bottom:var(--kb-h, 0px); }
+  html.kb-open .ca-panel{ padding-bottom:.5rem; }   /* the raised button it made room for is hidden */
+}
+
+/* "Runs on" (#810): the project header's runner pill. A popover under the pill on a desktop; a bottom sheet with a grab handle on a phone
+   (js/runs-on.js; chrome.js's dragSheet swipes it down). */
+.ro{ position:relative; }
+.ro-pill{ display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:0 10px; border-radius:9999px; border:1px solid rgb(var(--c-line)); background:rgb(var(--c-surface)); color:rgb(var(--c-charcoal)); font-size:.8125rem; white-space:nowrap; }
+.ro-pill:hover{ border-color:rgb(var(--c-charcoal) / .3); }
+.ro-pill .ro-lbl{ color:rgb(var(--c-charcoal) / .6); }
+.ro-dot{ width:8px; height:8px; border-radius:9999px; background:rgb(var(--c-charcoal) / .3); flex:none; }
+.ro-dot.is-on{ background:rgb(46 125 82); }
+.ro-panel{ position:absolute; z-index:40; top:100%; right:0; margin-top:6px; width:min(22rem, calc(100vw - 2rem)); padding:8px; }
+.ro-panel[hidden], .ro-backdrop[hidden]{ display:none; }
+.ro-grab{ display:none; }
+.ro-h{ padding:4px 8px 6px; font-size:.75rem; color:rgb(var(--c-charcoal) / .6); }
+.ro-opt{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:8px; border-radius:8px; font-size:.875rem; }
+.ro-opt small{ display:block; font-size:.75rem; color:rgb(var(--c-charcoal) / .6); }
+.ro-opt:hover{ background:rgb(var(--c-charcoal) / .06); }
+.ro-opt.is-sel{ background:rgb(var(--c-indigo) / .08); }
+.ro-warn{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 8px 6px 26px; padding:6px 8px; border-radius:8px; background:rgb(201 162 39 / .15); font-size:.75rem; }
+.ro-add{ color:rgb(var(--c-indigo)); font-weight:600; text-decoration:underline; }
+@media (max-width:767px){
+  .ro-backdrop{ position:fixed; inset:0; z-index:81; background:rgb(0 0 0 / .4); }
+  .ro-panel{ position:fixed; left:0; right:0; bottom:0; top:auto; margin:0; width:auto; z-index:82; max-height:80dvh; overflow:auto; border-radius:16px 16px 0 0; padding:8px 8px calc(12px + env(safe-area-inset-bottom)); }
+  .ro-panel.sheet-dragging{ transition:none; }
+  .ro-grab{ display:block; width:36px; height:4px; border-radius:2px; margin:4px auto 10px; background:rgb(var(--c-charcoal) / .25); }
+  .ro-opt{ min-height:48px; }
+}
+.ro-env{ margin-left:auto; padding:1px 8px; border-radius:9999px; font-size:.6875rem; white-space:nowrap; background:rgb(var(--c-charcoal) / .06); color:rgb(var(--c-charcoal) / .7); }
+.ro-env.is-compliant{ background:rgb(46 125 82 / .12); color:rgb(46 125 82); }
+.ro-env.is-missing{ background:rgb(201 162 39 / .18); color:rgb(var(--c-charcoal)); }
+
+/* THE TASK SHEET (owner 11-18: "Tasks should always open full page, with an exit to go back to previous page. So a full page window on top
+   of the current window."). partials/task_drawer_shell.html. A window over the whole page (80: over the page, the header and the menu, under
+   the phone's sheets 82, the assistant 83 and the bar 84). It slides in from the right on a desktop and up from the bottom on a phone; with the
+   assistant open on a desktop it ends at the assistant's edge, so both stay readable side by side. */
+.task-sheet{ position:fixed; top:0; left:0; right:0; bottom:0; z-index:80; display:flex; flex-direction:column; visibility:hidden;
+  transform:translateX(100%); transition:transform .25s var(--ease-out, ease), visibility 0s linear .25s; box-shadow:0 0 44px rgb(0 0 0 / .25); }
+.task-sheet.is-open{ transform:none; visibility:visible; transition:transform .25s var(--ease-out, ease); }
+.task-sheet-head{ flex:0 0 auto; border-bottom:1px solid rgb(var(--c-line)); }
+.task-sheet-bar{ display:flex; align-items:center; gap:.5rem; max-width:1920px; margin:0 auto; padding:8px 12px; }
+.task-sheet-back{ display:inline-flex; align-items:center; gap:.35rem; min-height:40px; padding:0 .75rem 0 .5rem; border-radius:999px;
+  font-weight:600; font-size:14px; color:rgb(var(--c-charcoal)); background:rgb(var(--c-charcoal) / .06); }
+.task-sheet-back:hover{ background:rgb(var(--c-charcoal) / .1); }
+.task-sheet-no{ font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.02em; color:rgb(var(--c-charcoal) / .55); }
+.task-sheet-x{ margin-left:auto; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:8px;
+  color:rgb(var(--c-charcoal) / .6); }
+.task-sheet-x:hover{ color:rgb(var(--c-charcoal)); background:rgb(var(--c-charcoal) / .05); }
+.task-sheet-body{ flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.task-sheet-inner{ max-width:1920px; margin:0 auto; padding:12px 12px 32px; }
+@media (min-width:768px){
+  .task-sheet-inner{ padding:20px 24px 40px; }
+  /* On a desktop the window starts BELOW the app header (search, + Create, the assistant button, avatar stay visible and clickable). */
+  .task-sheet{ top:var(--hdr-h, 40px); box-shadow:0 -6px 30px rgb(0 0 0 / .18); }
+  html.ca-open .task-sheet{ right:var(--ca-w, 480px); }
+}
+@media (min-width:1024px){ .task-sheet-inner{ padding:20px 32px 48px; } }
+@media (max-width:767px){
+  .task-sheet{ bottom:var(--tabbar-h, 0px); transform:translateY(100%); padding-top:env(safe-area-inset-top); }
+  .task-sheet-head{ touch-action:none; }
+}
+@media (prefers-reduced-motion: reduce){ .task-sheet, .task-sheet.is-open{ transition:none; } }
+/* A task's own page (/<slug>/tasks/<id>) makes room for an open assistant on a desktop, like the task sheet: nothing of the record sits under it. */
+@media (min-width:768px){ html.ca-open #page-inner:has([data-task-record]){ padding-right:calc(var(--ca-w, 480px) + 1.5rem); } }
+
+/* Logic tab (#715): the flow drawn as inline SVG; tokens follow the theme, colour is always paired with the label. */
+.lg-svg{ display:block; max-width:none; height:auto; margin:0 auto; }
+.lg-edge{ fill:none; stroke:rgb(var(--c-charcoal) / .35); stroke-width:1.5; }
+.lg-arrowhead{ fill:rgb(var(--c-charcoal) / .5); }
+.lg-edge-label{ font-size:11px; fill:rgb(var(--c-charcoal) / .6); }
+.lg-node rect{ fill:rgb(var(--c-creamwarm)); stroke:rgb(var(--c-charcoal) / .22); stroke-width:1; }
+.lg-node .lg-bar{ stroke:none; fill:rgb(var(--c-charcoal) / .35); }
+.lg-node text{ font-size:12.5px; fill:rgb(var(--c-charcoal)); }
+.lg-node .lg-sub,.lg-node .lg-tag{ font-size:10.5px; fill:rgb(var(--c-charcoal) / .6); }
+.lg-node.lg-trigger .lg-bar{ fill:rgb(46 125 82); }
+.lg-node.lg-decision .lg-bar{ fill:rgb(201 162 39); }
+.lg-node.lg-ai .lg-bar{ fill:rgb(var(--c-indigo)); }
+.lg-node.lg-ai .lg-tag{ fill:rgb(var(--c-indigo)); font-weight:600; }
+.lg-node.is-sel rect:first-child{ stroke:rgb(var(--c-focus)); stroke-width:2.5; }
+.lg-node:hover rect:first-child{ stroke:rgb(var(--c-charcoal) / .5); }
+a:focus-visible .lg-node rect:first-child{ stroke:rgb(var(--c-focus)); stroke-width:2.5; }
+.lg-split{ display:grid; gap:1rem; }
+@media (min-width:1024px){ .lg-split{ grid-template-columns:18rem minmax(0,1fr); } }
+
+/* Task | Discussion tabs (#830): below 1024px the Discussion is reached by this tab (the assistant opens on that task); from 1024px it is
+   the right-hand column and the tabs are not shown. In the sheet's bar they sit between the number and the close button. */
+.task-tabs{ display:inline-flex; gap:2px; padding:2px; border-radius:999px; background:rgb(var(--c-charcoal) / .06); margin-left:auto; }
+.task-tabs button{ min-height:32px; padding:0 .8rem; border-radius:999px; font-size:13px; font-weight:600; color:rgb(var(--c-charcoal) / .65); background:none; border:0; cursor:pointer; }
+.task-tabs button[aria-selected="true"]{ background:rgb(var(--c-surface)); color:rgb(var(--c-charcoal)); box-shadow:0 1px 2px rgb(0 0 0 / .12); }
+.task-tab-n{ display:inline-block; min-width:16px; padding:0 4px; margin-left:2px; border-radius:8px; background:rgb(var(--c-indigodeep)); color:#fff; font-size:11px; line-height:16px; text-align:center; }
+.task-sheet-bar .task-tabs + .task-sheet-x{ margin-left:.25rem; }
+.task-sheet-bar .task-tabs{ margin-left:auto; }
+[data-swappable] > .task-tabs{ margin:0 0 .75rem; }
+@media (pointer:coarse){ .task-tabs button{ min-height:40px; } }

@@ -1,0 +1,17 @@
+# Scanner settings for this install: copy to $CREWBOSS_HOME/scanner/scanner.yaml (scanner/config.py documents every key).
+# All keys are optional; with no file the scanner has no repos and scans nothing until you pass --primary-repo.
+
+# The dashboard project the catalog belongs to (default: instance.yaml `catalog_project`).
+project: acme-app
+# Git ref to scan in each repo (default origin/main).
+ref: origin/main
+# Checkouts to scan. `primary` is the application; `secondary` a companion app (annotations with subproject LinkedIn);
+# `knowledge` the host-automation repo (subproject Infrastructure). A repo with no path is not scanned.
+repos:
+  primary: /srv/acme-app
+  secondary: ""
+  knowledge: ""
+# The dashboard's catalog import, the scanner-role token file the rescan job reads, and its state folder.
+import_url: http://127.0.0.1:8931/api/catalog/import
+token_file: ~/.config/crewboss/tokens/scanner
+state_dir: ~/.local/state/crewboss

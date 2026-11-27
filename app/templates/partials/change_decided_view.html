@@ -1,0 +1,11 @@
+{# A decided change as a card (#816): the change page's outcome, and what deciding on that page answers with. Needs: c. #}
+<div class="card p-4" data-change-decided data-change="{{ c.id }}">
+  <div class="flex flex-wrap items-baseline gap-2">
+    <span class="chip bg-status-ok/15 text-status-ok">{{ c.decision or c.stage }}</span>
+    <h1 class="text-lead font-semibold break-words">#{{ c.id }} {{ c.title }}</h1>
+  </div>
+  <div class="text-micro text-charcoal/55 mt-1">Recommended by {{ c.recommended_by|actor_label }} &middot; {{ c.created_at|timeago }}{% if c.decided_at %} &middot; decided {{ c.decided_at|timeago }}{% endif %}</div>
+  {% if c.recommendation %}<div class="prose-dash text-small mt-3 break-words">{{ c.recommendation|markdown }}</div>{% endif %}
+  {% if c.options %}<ul class="text-small text-charcoal/70 mt-2 list-disc pl-5">{% for o in c.options %}<li class="break-words">{{ o }}</li>{% endfor %}</ul>{% endif %}
+  {% if c.decision_note %}<div class="text-small mt-3 whitespace-pre-line break-words"><span class="text-charcoal/50">Decision note:</span> {{ c.decision_note }}</div>{% endif %}
+</div>

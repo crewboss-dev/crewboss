@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}App AI features{% endblock %}
+{% block page_title %}App AI features{% endblock %}
+{% block content %}
+{% macro skill_detail(s) %}
+<div class="flex flex-col gap-3">
+  <div>
+    <div class="text-lead font-semibold">{{ s.name }}</div>
+    <div class="text-micro font-mono text-charcoal/50 break-all mt-0.5">{{ s.file }} &middot; {{ s.capability }}{% if '(' not in s.capability %}(){% endif %}</div>
+  </div>
+  <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small">
+    <dt class="text-charcoal/50">Model</dt><dd>{{ s.model_rule or '—' }}</dd>
+    <dt class="text-charcoal/50">Output</dt><dd>{{ s.output or '—' }}{% if s.max_tokens %} <span class="text-charcoal/45 tabular">&middot; max {{ s.max_tokens }} tokens</span>{% endif %}</dd>
+    <dt class="text-charcoal/50">Prompt</dt><dd class="break-words">{{ s.prompt_name or '—' }}{% if s.prompt_location %} <span class="font-mono text-micro text-charcoal/45">({{ s.prompt_location.file }}{% if s.prompt_location.lines %}:{{ s.prompt_location.lines }}{% endif %})</span>{% endif %}</dd>
+  </dl>
+  {% if s.prompt_text %}
+  <details class="text-small">
+    <summary class="cursor-pointer text-indigo">Prompt text</summary>
+    <pre class="mt-1 rounded-lg bg-charcoal/[.05] p-2 text-micro whitespace-pre-wrap font-mono">{{ s.prompt_text }}</pre>
+  </details>
+  {% endif %}
+  {% if s.context_injected %}
+  <div class="text-small"><span class="text-charcoal/50">Fed in:</span> {{ s.context_injected|join(', ') }}</div>
+  {% endif %}
+
+  <div>
+    <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1">Used by {{ s.used_by|length }} workflow step{{ '' if s.used_by|length == 1 else 's' }}</div>
+    <ul class="flex flex-col">
+      {% for u in s.used_by %}
+      <li><a href="{{ base }}/workflows/{{ u.workflow|urlencode }}?step={{ u.step|urlencode }}" class="press flex items-baseline gap-2 py-1.5 border-b border-line last:border-0 hover:underline">
+        <span class="text-small font-medium">{{ u.workflow_name }}</span>
+        <span class="text-micro text-charcoal/50 truncate">{{ u.step_label }}</span>
+      </a></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  {% set ins = instructions.get(s.id, []) %}
+  <div>
+    <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1">AI Instructions tuning it</div>
+    {% for r in ins %}
+    <a href="{{ base }}/rules?skill={{ s.id|urlencode }}" class="block text-small py-0.5 hover:underline">{{ r.name }}{% if not r.enabled %} <span class="chip bg-charcoal/10 text-charcoal/60">off</span>{% endif %}</a>
+    {% else %}
+    <div class="text-small text-charcoal/45">None reported.</div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <a href="{{ base }}/tasks/new?workflow={{ s.used_by[0].workflow|urlencode }}&step={{ s.used_by[0].step|urlencode }}" class="btn-ghost text-small -ml-2">Request a change to this skill</a>
+  </div>
+</div>
+{% endmacro %}
+
+<p class="text-small text-charcoal/60 mb-3 max-w-2xl">An AI Skill is a reusable AI capability built in code.
+  Each one lists every workflow step that uses it. Read-only &mdash; worked out from the latest catalog scan.</p>
+
+<div class="flex flex-wrap items-center gap-2 mb-4">
+  <a href="{{ base }}/ai-features{{ '?shared=1' if shared else '' }}" class="{{ 'fchip-on' if not subproject else 'fchip' }}">All</a>
+  {% for sp in subprojects %}
+  <a href="{{ base }}/ai-features?subproject={{ sp|urlencode }}{{ '&shared=1' if shared else '' }}" class="{{ 'fchip-on' if subproject == sp else 'fchip' }}">{{ sp }}</a>
+  {% endfor %}
+  <span class="w-px h-4 bg-charcoal/15 mx-1"></span>
+  <a href="{{ base }}/ai-features?{{ ('subproject=' ~ (subproject|urlencode) ~ '&') if subproject else '' }}{{ '' if shared else 'shared=1' }}" class="{{ 'fchip-on' if shared else 'fchip' }}">Used by 2+ workflows</a>
+  <span class="text-micro text-charcoal/45 ml-auto tabular">{{ skills|length }} skill{{ '' if skills|length == 1 else 's' }}</span>
+</div>
+
+<div class="flex flex-col lg:flex-row gap-4 items-start">
+  <div class="w-full lg:w-[40%] shrink-0 card px-3 py-1">
+    {% for s in skills %}
+    {% set on = selected and selected.id == s.id %}
+    <a href="{{ base }}/ai-features?open={{ s.id|urlencode }}{{ ('&subproject=' ~ (subproject|urlencode)) if subproject else '' }}{{ '&shared=1' if shared else '' }}"
+       id="skill-{{ s.id }}"
+       class="press flex items-center gap-3 py-2.5 border-b border-line last:border-0 -mx-3 px-3
+              {{ 'bg-indigo/[.06]' if on else 'hover:bg-charcoal/[.03]' }}">
+      <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-kind-ai/10 text-kind-ai shrink-0" aria-hidden>
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg>
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="block text-small font-semibold truncate">{{ s.name }}</span>
+        <span class="block text-micro text-charcoal/50 truncate">{{ s.output or 'text' }} &middot; {{ s.subprojects|join(', ') }}</span>
+      </span>
+      <span class="chip shrink-0 {{ 'bg-indigo/10 text-indigo' if s.used_by|length > 1 else 'bg-charcoal/[.06] text-charcoal/55' }} tabular"
+            title="Workflow steps using it">{{ s.used_by|length }} use{{ '' if s.used_by|length == 1 else 's' }}</span>
+    </a>
+    {# phone: the selected skill opens right under its row (accordion) #}
+    {% if on %}<div class="lg:hidden py-3 border-b border-line">{{ skill_detail(s) }}</div>{% endif %}
+    {% else %}
+    <div class="p-8 text-center text-charcoal/40">No AI steps in the latest scan{{ ' match' if subproject or shared else '' }}.</div>
+    {% endfor %}
+  </div>
+  <div class="hidden lg:block flex-1 min-w-0 lg:sticky lg:top-20">
+    <div class="card p-4">
+      {% if selected %}{{ skill_detail(selected) }}{% else %}
+      <div class="text-small text-charcoal/45">Pick a skill to see its prompt, model and every workflow that uses it.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% with section = 'skills' %}{% include "partials/inherited_shared.html" %}{% endwith %}
+{% if selected %}
+<span hidden id="skills-open" data-target="skill-{{ selected.id }}"></span>
+<script>
+  // phone: bring the opened skill (accordion) into view. The id travels in a data attribute, never inline JS.
+  document.addEventListener("DOMContentLoaded", function () {
+    var t = document.getElementById("skills-open");
+    var el = t && document.getElementById(t.dataset.target);
+    if (el && window.matchMedia("(max-width: 1023px)").matches) el.scrollIntoView({ block: "start" });
+  });
+</script>
+{% endif %}
+{% endblock %}

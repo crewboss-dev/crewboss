@@ -1,0 +1,54 @@
+{% extends "pages/auth_layout.html" %}
+{% block title %}Set up sign-in{% endblock %}
+{% block width %}max-w-md{% endblock %}
+{% block heading %}{% if stage == "codes" %}Save your recovery codes{% elif stage == "totp" %}Set up your authenticator app{% else %}Choose a password{% endif %}{% endblock %}
+{% block content %}
+{% if error %}<p class="text-sm mb-3 rounded-md border border-line px-3 py-2" role="alert" data-auth-error>{{ error }}</p>{% endif %}
+{% if stage == "codes" %}
+{% if codes %}
+{% include "partials/recovery_codes.html" %}
+<form method="post" action="/auth/enrol/complete" class="flex flex-col gap-3" data-enrol-complete>
+  <label class="text-sm flex items-start gap-2"><input type="checkbox" name="saved" value="on" data-codes-saved> <span>I've saved them</span></label>
+  <button type="submit" class="btn-primary" data-codes-continue disabled>Continue to Crewboss</button>
+</form>
+{% else %}
+<p class="text-sm text-charcoal/70 mb-3">Your authenticator app is set up. Last step: make your recovery codes. If you ever lose your phone, one code gets you back in. They are shown once.</p>
+<form method="post" action="/auth/enrol/codes"><button type="submit" class="btn-primary w-full" data-make-codes>Show my recovery codes</button></form>
+{% endif %}
+{% elif stage == "totp" %}
+<p class="text-sm text-charcoal/70 mb-3" data-enrol-note>Step 2 of 3. Open an authenticator app on your phone (Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden and others work), choose to add an account, and scan this picture.</p>
+{% if totp %}
+<div class="my-3 flex justify-center" data-totp-qr>{{ totp.qr }}</div>
+<p class="text-xs text-charcoal/60 mb-3">Can't scan it? Type this key into the app instead: <code class="select-all" data-totp-secret>{{ totp.secret }}</code></p>
+{% endif %}
+<form method="post" action="/auth/enrol/totp" class="flex flex-col gap-2">
+  <label class="text-sm">Now type the 6-digit code the app shows
+    <input name="code" class="field w-full mt-1" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required autofocus>
+  </label>
+  <button type="submit" class="btn-primary">Check the code</button>
+</form>
+{% else %}
+{% if kind == "recovery" %}
+<p class="text-sm text-charcoal/70 mb-3" data-enrol-note>That recovery code is used up. Step 1 of 3: type your current password. Then you'll set up your authenticator app again and get a fresh set of recovery codes (the old ones stop working).</p>
+<p class="text-xs text-charcoal/60 mb-3" data-no-password-note>Don't have your password either? Ask an administrator to <strong>Reset sign-in</strong> for you (the owner runs <code>./crewboss reset-owner</code> on the server).</p>
+{% else %}
+<p class="text-sm text-charcoal/70 mb-3" data-enrol-note>Step 1 of 3. The temporary password you were given has done its job. Choose your own password (at least 12 characters; a few unrelated words is ideal). Next you'll set up an authenticator app on your phone.</p>
+{% endif %}
+<form method="post" action="/auth/enrol/password" class="flex flex-col gap-2">
+  {% if kind == "recovery" %}
+  <label class="text-sm" data-current-password>My current password
+    <input name="current" type="password" class="field w-full mt-1" autocomplete="current-password" required autofocus>
+  </label>
+  {% else %}
+  <label class="text-sm">New password
+    <input name="password" type="password" class="field w-full mt-1" autocomplete="new-password" minlength="12" required autofocus>
+  </label>
+  <label class="text-sm">Type it again
+    <input name="confirm" type="password" class="field w-full mt-1" autocomplete="new-password" required>
+  </label>
+  {% endif %}
+  <button type="submit" class="btn-primary">Continue</button>
+</form>
+{% endif %}
+<form method="post" action="/auth/logout" class="mt-4 text-center"><button type="submit" class="text-xs underline">Sign out</button></form>
+{% endblock %}

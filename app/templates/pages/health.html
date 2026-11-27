@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}System Health{% endblock %}
+{% block page_title %}System Health{% endblock %}
+{% block content %}
+
+{% if not is_health %}
+<div class="card p-8 max-w-2xl mx-auto text-center">
+  <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1">{{ current_project.name }}</div>
+  <div class="text-title font-semibold mb-2">No health source for this project yet</div>
+  <p class="text-base text-charcoal/70">
+    Production health comes from Zabbix and is shown on the
+    <a href="/{{ health_project }}/health" class="underline">{{ health_project }}</a> project.
+    This project has no production monitoring wired to it.
+  </p>
+</div>
+{% else %}
+{# Two views, one page (task #196): Overview (Zabbix, then the ERP feed) and the ERP's AI call log. #}
+<nav class="seg mb-4" aria-label="Health views">
+  {% for v, label in [('overview', 'Overview'), ('ai-calls', 'AI calls')] %}
+  <a href="{{ base }}/health{{ '?view=' ~ v if v != 'overview' }}" class="seg-opt" data-health-view="{{ v }}"{% if view == v %} aria-current="page"{% endif %}>
+    <span class="{{ 'seg-on' if view == v }}">{{ label }}</span>
+  </a>
+  {% endfor %}
+</nav>
+{% if view == 'ai-calls' %}
+{% include "partials/erp_ai_calls.html" %}
+{% else %}
+{% set st = h.state %}
+{% set dot = {'ok': 'bg-status-ok', 'waiting': 'bg-charcoal/30', 'off': 'bg-charcoal/20',
+              'stale': 'bg-status-warn', 'error': 'bg-status-disaster'}[st] %}
+{% set word = {'ok': 'Connected', 'waiting': 'Waiting for the first sync', 'off': 'Not connected',
+               'stale': 'Sync is stale', 'error': 'Last sync failed'}[st] %}
+<div id="health-body" hx-get="{{ base }}/health" hx-select="#health-body" hx-target="#health-body"
+     hx-swap="outerHTML" hx-trigger="every 60s">
+
+  {# --- source status: one line, then the detail --------------------------------------------------------------- #}
+  <div class="card p-4 mb-4" data-health-state="{{ st }}">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span class="w-2.5 h-2.5 rounded-full {{ dot }}" aria-hidden="true"></span>
+      <span class="text-small font-semibold">Zabbix · {{ word }}</span>
+      <span class="text-micro text-charcoal/50">Monitored servers (group {{ h.groups|join(', ') }})</span>
+      <span class="ml-auto text-micro text-charcoal/50 tabular">
+        {% if h.source.last_ok_at %}synced {{ h.source.last_ok_at|timeago }}{% endif %}
+        {% if h.source.last_poke_at %} · last poke {{ h.source.last_poke_at|timeago }}{% endif %}
+      </span>
+    </div>
+    {% if st == 'error' %}
+    <div class="mt-2 text-small text-status-disaster break-words">{{ h.source.last_error }}</div>
+    {% elif st == 'off' %}
+    <div class="mt-2 text-small text-charcoal/60">The read-only Zabbix token isn't mounted into the dashboard, so nothing is pulled.</div>
+    {% endif %}
+    <div class="mt-2 text-micro text-charcoal/45">
+      New problems at {{ SEVERITY[h.escalate_min] }} or worse go to the <span class="font-medium">errors</span> session.
+      Problems already open at the first sync are marked baseline and were not sent.
+    </div>
+  </div>
+
+  {# --- open problems -------------------------------------------------------------------------------------------- #}
+  <section aria-label="Open problems" class="mb-6">
+    <div class="flex items-baseline gap-2 mb-2">
+      <h2 class="text-small font-semibold">Open problems</h2>
+      <span class="text-micro tabular text-charcoal/50">{{ h.open|length }}</span>
+    </div>
+    <div class="card divide-y divide-line">
+      {% for p in h.open %}
+      <div class="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-1 px-4 py-3" data-eventid="{{ p.eventid }}">
+        <span class="chip shrink-0 {{ SEVERITY_CLASSES.get(p.severity, SEVERITY_CLASSES[0]) }}">{{ SEVERITY.get(p.severity, p.severity) }}</span>
+        <div class="min-w-0 flex-1">
+          <div class="text-small font-medium break-words">{{ p.name }}</div>
+          <div class="text-micro text-charcoal/55">{{ p.host or 'unknown host' }}
+            {% if p.baseline %}<span class="chip ml-1 bg-charcoal/[.06] text-charcoal/60">baseline</span>{% endif %}
+            {% if p.escalated_at %}<span class="chip ml-1 bg-status-disaster/10 text-status-disaster">sent to errors</span>{% endif %}
+          </div>
+        </div>
+        <span class="text-micro tabular text-charcoal/50 shrink-0" title="{{ p.started_at }}">since {{ p.started_at|timeago }}</span>
+      </div>
+      {% else %}
+      <div class="px-4 py-6 text-center text-small {{ 'text-status-ok font-medium' if st == 'ok' else 'text-charcoal/50' }}">
+        {{ 'All clear: no open problems.' if st == 'ok' else 'Nothing recorded yet.' }}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# --- recoveries, quieter --------------------------------------------------------------------------------------- #}
+  <details class="card group">
+    <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+      <span class="text-small font-semibold">Resolved in the last 7 days</span>
+      <span class="text-micro tabular text-charcoal/50">{{ h.resolved|length }}</span>
+      <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+    </summary>
+    <div class="divide-y divide-line border-t border-line">
+      {% for p in h.resolved %}
+      <div class="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-1 px-4 py-2.5">
+        <span class="chip shrink-0 bg-status-ok/15 text-status-ok">Resolved</span>
+        <div class="min-w-0 flex-1">
+          <div class="text-small break-words">{{ p.name }}</div>
+          <div class="text-micro text-charcoal/55">{{ p.host or 'unknown host' }} · {{ SEVERITY.get(p.severity, p.severity) }}</div>
+        </div>
+        <span class="text-micro tabular text-charcoal/50 shrink-0">{{ p.resolved_at|timeago }}</span>
+      </div>
+      {% else %}
+      <div class="px-4 py-3 text-small text-charcoal/50">None.</div>
+      {% endfor %}
+    </div>
+  </details>
+
+  {% include "partials/app_reports.html" %}
+  {% include "partials/drift_health.html" %}
+  {% if keys %}{% include "partials/keys_health.html" %}{% endif %}
+  {% include "partials/erp_health.html" %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

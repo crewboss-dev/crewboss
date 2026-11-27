@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Team · {{ current_project.name }}{% endblock %}
+{% block page_title %}Team{% endblock %}
+{% block content %}
+{# Team (change #77): Owner = the creator; Admin approves merges and production; Member works and requests production; Viewer reads. #}
+<div class="max-w-4xl" data-team-page>
+  <section class="mb-5" aria-label="People" data-section="people">
+    <h2 class="text-lead font-semibold mb-2">People</h2>
+    <ul class="card divide-y divide-line">
+      <li class="px-4 py-3" data-member-role="owner">{{ creator.username if creator else 'The instance owner' }} <span class="chip bg-charcoal/[.06] text-charcoal/70">owner</span></li>
+      {% for m in members %}
+      <li class="px-4 py-3 flex flex-wrap items-center gap-3" data-member="{{ m.username }}" data-member-role="{{ m.role }}">
+        <span class="flex-1">{{ m.username }} <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ m.role }}</span></span>
+        {% if can_manage %}
+        <form method="post" action="{{ base }}/team/members/remove"><input type="hidden" name="username" value="{{ m.username }}"><button class="btn-ghost text-small border border-line" type="submit">Remove</button></form>
+        <form method="post" action="{{ base }}/team/transfer"><input type="hidden" name="username" value="{{ m.username }}"><button class="btn-ghost text-small border border-line" type="submit">Make owner</button></form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% if can_manage %}
+    <form method="post" action="{{ base }}/team/members" class="flex flex-wrap items-end gap-2 mt-3">
+      <label class="block"><span class="kb-label">Username</span><input name="username" class="field text-small" required></label>
+      <label class="block"><span class="kb-label">Role</span><select name="role" class="field text-small">{% for r in roles %}<option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+      <button class="btn-primary text-small touch-target" type="submit">Add or change</button>
+    </form>
+    {% endif %}
+  </section>
+  {% if can_manage %}
+  <section class="mb-5" aria-label="Release policy" data-section="policy">
+    <h2 class="text-lead font-semibold mb-1">Release policy</h2>
+    <p class="text-small text-charcoal/65 mb-2">Standard: dev or staging first, then production. Production only: for an app with no dev environment, a runner's green preview of the exact commit stands in for dev.</p>
+    <form method="post" action="{{ base }}/team/policy" class="flex items-center gap-2">
+      <select name="policy" class="field text-small">{% for p in policies %}<option value="{{ p }}" {% if p == policy %}selected{% endif %}>{{ p }}</option>{% endfor %}</select>
+      <button class="btn-ghost text-small border border-line" type="submit">Save</button>
+    </form>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

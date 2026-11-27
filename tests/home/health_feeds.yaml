@@ -1,0 +1,5 @@
+projects:
+  acme-erp:
+    mode: pull
+    expect_every_seconds: 120
+    erp: true

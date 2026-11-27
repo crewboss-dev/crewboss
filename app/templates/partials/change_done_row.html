@@ -1,0 +1,10 @@
+{# One closed change (done, or rejected) in the Done list on the Changes page. Needs: c, is_rollup. Rendered by the page,
+   and returned by the decide route as the row a rejected change MOVES to (#582). #}
+<div class="flex flex-wrap items-baseline gap-2 px-4 py-2.5" data-change="{{ c.id }}" data-ca-entity="change:{{ c.id }}" data-ca-title="{{ c.title }}" data-fold="done:{{ c.id }}">
+  {% if c.decision == 'rejected' %}<span class="chip bg-charcoal/[.07]">rejected</span>
+  {% else %}<span class="chip bg-status-ok/15 text-status-ok">done{% if c.verified %} · verified{% endif %}</span>{% endif %}
+  {% if is_rollup %}<a href="/{{ c.project_slug }}" class="project-chip" data-project-chip="{{ c.project_slug }}">{{ c.project_name }}</a>{% endif %}
+  <span class="text-small break-words">#{{ c.id }} {{ c.title }}</span>
+  <span class="ml-auto text-micro text-charcoal/50">{{ (c.done_at or c.decided_at)|timeago }}</span>
+  {% if c.decided_via == 'session' or c.superseded_owner_words %}<div class="w-full">{% set cbase = '/' ~ c.project_slug %}{% include "partials/change_chat_decision.html" %}</div>{% endif %}
+</div>

@@ -1,0 +1,281 @@
+/* CA, the Crewboss Assistant drawer (task #702, look task #727). Plain CSS on the interface tokens (css/theme-tokens.css), so it follows
+   Light / Dark / Auto. A separate file on purpose: css/chrome.css is a guarded verbatim copy of the ERP's. The look is the ERP assistant's
+   (pa.css + the record drawer's rules in base.html), value for value. Every width above the phone: the drawer FLOATS over the right of the page with a
+   shadow (task #769, as the ERP's PA drawer); the page and header never move or resize and stay clickable beside it. Phone: a bottom sheet with a grab
+   handle that ends at the bar, as the ERP's. No purple, no colour change on focus, anywhere. */
+:root { --ca-w: 480px; --ca-rise: 14px; --ca-teal: 36 124 134; }   /* the PA panel's width: min(480px, 94vw) */
+html.dark { --ca-teal: 98 180 190; }
+
+/* THE CA MARK (one inline symbol, templates/partials/ca_drawer.html, used by the hero, the header, the header button and the phone button).
+   Accent + teal by default; a place that needs one colour sets --ca-a / --ca-b. */
+.ca-mk { display: block; flex: none; }
+
+/* ---- the shell ---- */
+.ca-drawer { position: fixed; top: 0; right: 0; bottom: var(--tabbar-h, 0px); z-index: 83;   /* owner 11-18: the assistant is ALWAYS on top of every other window (task sheet 80, sheets 82), under the bar (84), its button (85), modals (88), pickers (90) */ width: var(--ca-w); max-width: 100vw;
+  font-size: 14px; line-height: 1.5; color: rgb(var(--c-charcoal));
+  transform: translateX(104%); visibility: hidden; transition: transform .22s var(--ease-out, ease), visibility 0s linear .22s; }
+html.ca-open .ca-drawer { transform: none; visibility: visible; transition: transform .22s var(--ease-out, ease); }
+.ca-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: rgb(var(--c-surface));
+  box-shadow: inset 1px 0 0 rgb(var(--c-line)), 0 0 44px rgb(0 0 0 / .18); }
+.ca-grab, .ca-backdrop { display: none; }
+@media (min-width: 1024px) {
+  html.ca-open #toast-root { right: calc(var(--ca-w) + 1rem); }
+}
+/* THE PHONE: the ERP's sheet. The box ends at the bar and clips there, so the sheet opens, closes and is dragged from the bar's top edge,
+   never over it; square top flush under the status bar; room at the bottom for the raised button. */
+@media (max-width: 767px) {
+  .ca-drawer { left: 0; width: 100%; max-width: none; z-index: 83; transform: none; clip-path: inset(-40px -40px 0 -40px);
+    transition: visibility 0s linear .25s; }
+  html.ca-open .ca-drawer { transition: none; }
+  html.ca-open { overflow: hidden; }
+  .ca-panel { position: absolute; left: 0; right: 0; bottom: 0; top: env(safe-area-inset-top); height: auto; border-radius: 0;
+    box-shadow: 0 0 44px rgb(0 0 0 / .25); padding-bottom: calc(var(--ca-rise) + 5px + .5rem);
+    transform: translateY(100%); transition: transform .25s ease; }
+  html.ca-open .ca-panel { transform: none; }
+  .ca-panel.sheet-dragging { transition: none; }
+  .ca-grab { display: flex; position: relative; justify-content: center; align-items: center; height: 24px; flex: 0 0 auto; touch-action: none; cursor: grab; }
+  .ca-grab:active { cursor: grabbing; }
+  .ca-grab::before { content: ""; position: absolute; left: 0; right: 0; top: -20px; bottom: 0; }
+  .ca-grab > i { display: block; width: 40px; height: 5px; border-radius: 999px; background: rgb(var(--c-charcoal) / .34); }
+  .ca-backdrop { display: block; position: fixed; left: 0; right: 0; top: 0; bottom: var(--tabbar-h, 0px); z-index: 82; background: rgba(0, 0, 0, .35);
+    opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s, visibility 0s linear .2s; }
+  html.ca-open .ca-backdrop { opacity: 1; visibility: visible; transition: opacity .2s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ca-drawer, html.ca-open .ca-drawer { transition: none; }
+  @media (max-width: 767px) {
+    .ca-panel { transition: opacity .18s ease; opacity: 0; }
+    .ca-panel:not(.sheet-dragging) { transform: none !important; }
+    html.ca-open .ca-panel { opacity: 1; }
+  }
+}
+
+/* ---- the header (the record drawer's .rd-head: 9px 14px, a hairline under; mark, title, open-in-full, close) ---- */
+.ca-head { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid rgb(var(--c-line)); flex: none; }
+.ca-hico { margin: 0; }
+.ca-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: .9375rem; line-height: 1.375; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ca-icon { flex: none; align-self: center; display: inline-flex; align-items: center; justify-content: center; padding: 4px; margin: -4px; border: 0; border-radius: 6px;
+  background: none; color: rgb(var(--c-charcoal) / .45); cursor: pointer; text-decoration: none; }
+.ca-icon:hover { color: rgb(var(--c-indigo)); }
+.ca-full { color: rgb(var(--c-indigo)); }      /* a link in the PA's panel: the accent (.pa a), as in the owner's screenshot */
+@media (pointer: coarse) { .ca-icon { min-width: 44px; min-height: 44px; } }
+.ca-drawer button:focus-visible, .ca-drawer a:focus-visible { outline: 2px solid rgb(var(--c-focus)); outline-offset: 1px; }
+.ca-drawer ::selection { background: rgb(var(--c-focus) / .25); }
+.ca-drawer a { color: rgb(var(--c-indigo)); }
+
+/* a notice (the runner is offline): the PA's quiet status line (.pa-status, 12px) in the failure colour (.pa-m.failed) */
+.ca-status { flex: none; margin: 0; padding: 8px 14px 4px; font-size: 12px; line-height: 1.4; color: rgb(var(--c-flame)); }
+.ca-status code { background: rgb(var(--c-charcoal) / .08); border-radius: 4px; padding: 0 4px; font-size: inherit; }
+.ca-hero[hidden], .ca-recent[hidden], .ca-entity[hidden], .ca-files[hidden], .ca-pop[hidden], .ca-mic-group[hidden], .ca-status[hidden], .ca-tool[hidden], .ca-btn[hidden], .ca-send[hidden], .ca-stop[hidden] { display: none; }
+.ca-drawer [hidden] { display: none !important; }
+
+/* ---- the thread ---- */
+.ca-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+.ca-msgs { display: flex; flex-direction: column; gap: 14px; padding: 12px; }
+.ca-msgs:empty { padding: 0; }
+.ca-empty { margin: 24px 6px; font-size: .875rem; line-height: 1.5; color: rgb(var(--c-charcoal) / .6); }
+.ca-msg { max-width: 100%; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ca-msg.user { align-self: flex-end; max-width: 88%; padding: 6px 12px; border-radius: 14px; background: rgb(var(--c-creamwarm)); }
+.ca-msg.assistant { align-self: flex-start; font-size: 15px; }
+.ca-msg.system { align-self: center; max-width: 96%; padding: 6px 10px; border-radius: 8px; font-size: 12px; color: rgb(var(--c-charcoal) / .6);
+  background: rgb(var(--c-charcoal) / .04); text-align: center; }
+.ca-msg.live::after { content: ""; display: inline-block; width: 6px; height: 14px; margin-left: 2px; vertical-align: -2px;
+  background: rgb(var(--c-indigo)); animation: ca-blink 1s steps(2) infinite; }
+@keyframes ca-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ca-msg.live::after { animation: none; } }
+.ca-msg:empty { display: none; }
+.ca-tool { flex: none; padding: 0 12px 4px; font-size: 12px; opacity: .6; }
+
+/* cards (the PA's .pa-card: line border, page colour, 10px radius; buttons .pa-btn) */
+.ca-card { align-self: stretch; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid rgb(var(--c-line)); border-radius: 10px;
+  background: rgb(var(--c-cream)); font-size: 13px; }
+.ca-card.pending { border-color: rgb(var(--c-indigo) / .55); }
+.ca-card .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: rgb(var(--c-charcoal) / .5); margin-bottom: 4px; }
+.ca-card .q { font-weight: 600; margin-bottom: 4px; overflow-wrap: anywhere; }
+.ca-card .c { color: rgb(var(--c-charcoal) / .65); margin-bottom: 8px; overflow-wrap: anywhere; }
+.ca-card .detail { max-height: 9.5rem; overflow-y: auto; margin-bottom: 8px; padding: 6px 8px; border-radius: 6px; white-space: pre-wrap;
+  overflow-wrap: anywhere; background: rgb(var(--c-surface)); border: 1px solid rgb(var(--c-line)); font-size: 12px; line-height: 1.45; }
+.ca-card .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ca-card button { min-height: 36px; padding: 4px 10px; border-radius: 8px; border: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface));
+  color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.ca-card button:active { transform: scale(.97); }
+.ca-card button.go { background: rgb(var(--c-indigodeep)); border-color: rgb(var(--c-indigodeep)); color: #fff; }
+.ca-card button:disabled { opacity: .5; cursor: default; }
+.ca-card textarea { width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-surface)); color: inherit; font: inherit; font-size: 12px; resize: vertical; min-height: 5.5rem; }
+.ca-card textarea:focus { outline: none; }
+.ca-card .done { color: rgb(var(--c-charcoal) / .7); }
+.ca-card .fail { color: rgb(var(--c-flame)); }
+
+/* ---- the buttons that open it: header (desktop, tablet) and the round button in the middle of the phone bar ---- */
+.ca-hdr-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0;
+  border-radius: 999px; background: none; font: inherit; cursor: pointer; }
+.ca-hdr-btn:hover, html.ca-open .ca-hdr-btn { background: rgb(var(--c-indigo) / .12); }
+.ca-hdr-btn .ca-badge { position: absolute; top: 0; right: -2px; }
+.ca-badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: rgb(var(--c-flame)); color: #fff; font-size: .6875rem; font-weight: 600;
+  line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+.ca-badge[hidden] { display: none; }
+#ca-btn { display: none; }
+@media (max-width: 767px) {
+  .ca-hdr-btn { display: none; }
+  #tabbar .tab-ca-slot { flex: 1 1 0; min-width: 0; }
+  /* The PA's #pa-btn, value for value. CLOSED: a solid accent circle, white mark, ringed in the bar's colour, rising --ca-rise above the bar.
+     PRESSED: scales to .92 and dims 8%. OPEN: it is the close button, greyed: charcoal .08 over the surface, a charcoal .35 ring, a charcoal .55
+     mark (never white, never a charcoal fill: that is ivory in dark mode). */
+  #ca-btn { position: fixed; z-index: 85; left: 50%; width: 56px; height: 56px; margin-left: -28px; bottom: calc(var(--tabbar-h, 0px) - 42px);
+    display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 9999px;
+    background: rgb(var(--c-indigodeep)); color: #fff; -webkit-tap-highlight-color: transparent; cursor: pointer;
+    --ca-a: #fff; --ca-b: rgb(255 255 255 / .72);
+    box-shadow: 0 0 0 5px rgb(var(--c-surface)), 0 6px 16px rgb(0 0 0 / .34);
+    transition: transform 100ms ease-out, box-shadow 100ms ease-out; }
+  #ca-btn:active { transform: scale(.92); filter: brightness(.92); }
+  #ca-btn:focus-visible { outline: 2px solid rgb(var(--c-flame)); outline-offset: 3px; }
+  #ca-btn .ca-badge { position: absolute; top: -2px; right: -2px; }
+  html.ca-open #ca-btn { background: linear-gradient(rgb(var(--c-charcoal) / .08), rgb(var(--c-charcoal) / .08)), rgb(var(--c-surface));
+    color: rgb(var(--c-charcoal) / .55); --ca-a: rgb(var(--c-charcoal) / .55); --ca-b: rgb(var(--c-charcoal) / .55);
+    box-shadow: inset 0 0 0 2px rgb(var(--c-charcoal) / .35), 0 0 0 5px rgb(var(--c-surface)); }
+}
+@media (prefers-reduced-motion: reduce) { #ca-btn { transition: none; } }
+
+/* ---- the empty state (the PA's): the mark, the greeting, the big composer, three recent cards, centred in what is left under the header.
+   The block is anchored (js/ca.js sets a margin) once something is typed so the box grows downwards. ---- */
+.ca-hero { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: auto 0; padding: 0 10px 12px; }
+.ca-hero-mark { align-self: center; }
+.ca-greeting { margin: 0; text-align: center; font-size: 24px; line-height: 1.5; font-weight: 500; }
+.ca-compose-slot { margin-top: 8px; }
+.ca-home-head { display: flex; justify-content: space-between; font-size: 13px; opacity: .75; margin-bottom: 6px; }
+.ca-home-head a { color: inherit; }
+.ca-recent { margin-top: 10px; }
+.ca-recent-list { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.ca-rc { display: block; text-align: left; border: 1px solid rgb(var(--c-line)); border-radius: 10px; background: rgb(var(--c-surface)); padding: 8px 10px;
+  cursor: pointer; color: inherit; min-width: 0; font: inherit; }
+.ca-rc:hover { background: rgb(var(--c-charcoal) / .06); }
+.ca-rc span, .ca-rc small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ca-rc small { opacity: .6; font-size: 12px; }
+.ca-rc small.e { opacity: 1; color: rgb(var(--c-indigo)); }      /* the linked item, in the accent */
+
+/* ---- the composer: big = a bordered frame holding box + tools; active = a bordered pill box, tools below, a quiet enter icon ---- */
+.ca-dock { flex: none; }
+.ca-compose { position: relative; flex: none; display: block; padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); }
+.ca-compose-slot .ca-compose { padding: 0; }
+.ca-frame { border: 1px solid rgb(var(--c-charcoal) / .1); border-radius: 16px; background: rgb(var(--c-entry)); padding: 8px 8px 6px; }
+.ca-box { position: relative; }
+.ca-box textarea { display: block; width: 100%; resize: none; max-height: 40vh; border: 0; padding: 4px 6px; background: transparent; color: inherit;
+  outline: none; font: inherit; box-sizing: border-box; }
+.ca-enter { display: none; }
+.ca-drawer:not(.is-empty) .ca-frame { border: 0; background: none; padding: 0; }
+.ca-drawer:not(.is-empty) .ca-box { border: 1px solid rgb(var(--c-charcoal) / .1); border-radius: 22px; background: rgb(var(--c-entry)); padding: 2px 40px 2px 14px; }
+.ca-drawer:not(.is-empty) .ca-box textarea { padding: 8px 0; }
+.ca-drawer:not(.is-empty) .ca-enter { display: block; position: absolute; right: 6px; bottom: 6px; background: none; border: 0; cursor: pointer; color: inherit;
+  font-size: 18px; opacity: .35; min-width: 28px; min-height: 28px; border-radius: 999px; padding: 0; }
+.ca-drawer:not(.is-empty) .ca-enter.on { opacity: .9; }
+.ca-enter svg { display: block; margin: auto; width: 18px; height: 18px; }
+.ca-tools { display: flex; align-items: center; gap: 2px; margin-top: 4px; position: relative; }
+.ca-drawer:not(.is-empty) .ca-tools { justify-content: flex-start; margin-top: 6px; }
+.ca-spacer { flex: 1; }
+.ca-drawer:not(.is-empty) .ca-spacer, .ca-drawer:not(.is-empty) .ca-send { display: none; }
+/* Owner 10-30 (the PA's rule): the entry area is the lighter surface and clicking into it changes nothing: no ring, no background or border
+   colour. Beats any global form-field focus style. */
+#ca-drawer .ca-box textarea, #ca-drawer .ca-box textarea:focus, #ca-drawer .ca-box textarea:focus-visible { background: transparent !important;
+  border: 0 !important; outline: none !important; box-shadow: none !important; }
+#ca-drawer .ca-frame:focus-within, #ca-drawer:not(.is-empty) .ca-box:focus-within { border-color: rgb(var(--c-charcoal) / .1); outline: none; box-shadow: none; }
+#ca-drawer .ca-box textarea::placeholder { color: rgb(var(--c-charcoal) / .4); opacity: 1; font-family: inherit; font-weight: 400; font-style: normal; }
+#ca-drawer input:focus, #ca-drawer textarea:focus, #ca-drawer select:focus { outline: none; box-shadow: none; }
+
+.ca-icon-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; padding: 0; border: 0; border-radius: 999px;
+  background: none; color: inherit; font-size: 18px; cursor: pointer; }
+.ca-icon-btn svg { display: block; margin: auto; }
+.ca-icon-btn:hover { background: rgb(var(--c-charcoal) / .06); }
+.ca-icon-btn:active { transform: scale(.97); }
+.ca-icon-btn.is-on { color: rgb(var(--c-indigo)); }            /* recording: the accent, until Enter or a second tap */
+.ca-icon-btn:disabled { opacity: .4; cursor: default; }
+.ca-mic-group { position: relative; display: inline-flex; align-items: center; }
+.ca-chev { min-width: 24px; font-size: 16px; margin-left: -6px; }
+.ca-send, .ca-stop { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; min-width: 36px; min-height: 36px; padding: 0;
+  border: 0; border-radius: 999px; background: rgb(var(--c-indigodeep)); color: #fff; font-size: 18px; cursor: pointer; }
+.ca-send svg { display: block; }
+.ca-send:active, .ca-stop:active { transform: scale(.97); }
+.ca-send:disabled { opacity: .5; }
+.ca-stop:hover { background: rgb(var(--c-indigodeep) / .88); }
+.ca-drawer:not(.is-empty) .ca-box .ca-stop { position: absolute; right: 4px; bottom: 4px; min-width: 28px; min-height: 28px; width: 28px; height: 28px; }
+.ca-drawer:not(.is-empty) .ca-box .ca-stop svg { width: 14px; height: 14px; }
+.ca-drawer:not(.is-empty) .ca-box.ca-stopping .ca-enter { display: none; }
+@media (pointer: coarse) { .ca-drawer:not(.is-empty) .ca-box .ca-stop { min-width: 44px; min-height: 44px; width: 44px; height: 44px; right: 0; bottom: 0; } }
+/* Chat history (the PA's .pa-hist): bottom right of the tools row, accent text on the muted fill; a 44px target on touch screens */
+.ca-hist { margin-left: auto; display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid rgb(var(--c-line)); border-radius: 999px;
+  font-size: 12px; line-height: 1; text-decoration: none; color: rgb(var(--c-indigo)); background: rgb(var(--c-creamwarm)); white-space: nowrap; }
+.ca-hist:hover { filter: brightness(.97); }
+@media (pointer: coarse) { .ca-hist { min-height: 44px; } }
+
+/* The device popover (pa-pop / pa-dev): the surface, a hairline, 12px radius; the level meter on top; the chosen device ticked in focus blue. */
+.ca-pop { position: absolute; right: 0; bottom: 100%; margin: 0 0 6px; width: 280px; max-height: 60vh; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  background: rgb(var(--c-surface)); border: 1px solid rgb(var(--c-line)); border-radius: 12px; box-shadow: 0 10px 30px rgb(0 0 0 / .2); z-index: 5; }
+.ca-meter { display: flex; align-items: center; gap: 10px; padding: 2px 4px 8px; }
+.ca-track { flex: 1; height: 6px; border-radius: 999px; background: rgb(var(--c-charcoal) / .12); overflow: hidden; }
+.ca-fill { height: 100%; width: 0; border-radius: 999px; background: var(--focus); }
+.ca-devs { display: flex; flex-direction: column; }
+.ca-dev { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 7px 8px;
+  cursor: pointer; color: inherit; font: inherit; }
+.ca-dev:hover { background: rgb(var(--c-charcoal) / .06); }
+.ca-dev span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ca-tick { color: var(--focus); display: inline-flex; }
+
+.ca-drawer:not(.is-empty) .ca-pop { right: auto; left: 0; }
+
+/* The linked item (pa-chip / pa-linkpill) and the files (pa-tile) */
+.ca-entity { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.ca-drawer:not(.is-empty) .ca-entity { margin: -8px -10px 8px; padding: 6px 8px 0; border-top: 1px solid rgb(var(--c-line)); }   /* the PA's .pa-ctx */
+.ca-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border: 1px solid rgb(var(--c-line)); border-radius: 999px; padding: 1px 4px 1px 10px; font-size: 12px;
+  background: rgb(var(--c-creamwarm)); color: inherit; }
+.ca-chip .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ca-chip .x { background: none; border: 0; border-radius: 999px; cursor: pointer; color: inherit; font-size: 14px; min-width: 24px; min-height: 24px; line-height: 1; }
+.ca-chip .x:hover { background: rgb(var(--c-charcoal) / .06); }
+.ca-linkpill { cursor: pointer; background: none; border: 0; border-radius: 999px; color: rgb(var(--c-indigo)); padding: 1px 10px; max-width: 100%; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; display: block; font: inherit; font-size: 12px; text-align: left; }
+.ca-linkpill:hover { background: rgb(var(--c-charcoal) / .06); }
+.ca-files { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 2px 8px; }
+.ca-file { position: relative; display: inline-flex; overflow: hidden; border: 1px solid rgb(var(--c-charcoal) / .12); border-radius: 12px; background: rgb(var(--c-charcoal) / .06); font-size: .75rem; color: inherit; vertical-align: top;
+  align-items: center; gap: 8px; min-width: 112px; max-width: 200px; height: 56px; padding: 0 30px 0 10px; }
+.ca-file.img { width: 112px; height: 112px; padding: 0; min-width: 0; }
+.ca-file.img img { width: 100%; height: 100%; object-fit: cover; display: block; margin: 0; border-radius: 0; }
+.ca-file.img .n { display: none; }
+.ca-file .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: none; }
+.ca-file .x { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 999px; border: 0; cursor: pointer; line-height: 1; font-size: 16px;
+  background: rgb(var(--c-charcoal) / .7); color: rgb(var(--c-cream)); }
+.ca-file .x:hover { background: rgb(var(--c-charcoal)); }
+.ca-atts { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; margin-top: 6px; }
+.ca-att.img img { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 12px; border: 1px solid rgb(var(--c-charcoal) / .12); }
+.ca-att.file, .ca-att.removed { padding: 3px 9px; border-radius: 8px; background: rgb(var(--c-charcoal) / .06); color: inherit; font-size: .78rem; text-decoration: none; overflow-wrap: anywhere; }
+.ca-att.removed { background: none; border: 1px dashed rgb(var(--c-line)); color: rgb(var(--c-charcoal) / .55); }
+.ca-msg:empty { display: none; }
+.ca-drawer.is-drop .ca-frame, .ca-drawer.is-drop .ca-box { outline: 2px dashed rgb(var(--c-indigo) / .6); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .ca-drawer * { transition: none !important; } }
+
+/* ---- the Discussion strip of a task window (#830): a slim bar above the thread, the task's conversations under "All" ---- */
+.ca-disc { flex: none; border-bottom: 1px solid rgb(var(--c-line)); background: rgb(var(--c-creamwarm) / .5); }
+.ca-disc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; min-width: 0; }
+.ca-disc-title { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ca-disc-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 10px; border: 1px solid rgb(var(--c-line)); border-radius: 999px;
+  background: rgb(var(--c-surface)); color: inherit; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.ca-disc-btn:hover { background: rgb(var(--c-charcoal) / .06); }
+.ca-disc-btn:active { transform: scale(.97); }
+.ca-disc-btn.go { background: rgb(var(--c-indigodeep)); border-color: rgb(var(--c-indigodeep)); color: #fff; }
+.ca-disc-back { display: none; }
+@media (max-width: 1023px) { .ca-disc-back { display: inline-flex; } }
+@media (pointer: coarse) { .ca-disc-btn { min-height: 40px; } }
+.ca-disc-list { max-height: 40vh; overflow-y: auto; padding: 0 10px 8px; display: flex; flex-direction: column; gap: 4px; }
+.ca-disc-row { display: block; width: 100%; text-align: left; border: 1px solid rgb(var(--c-line)); border-radius: 10px; background: rgb(var(--c-surface)); padding: 6px 10px;
+  color: inherit; font: inherit; font-size: 13px; cursor: pointer; min-width: 0; }
+.ca-disc-row.on { border-color: rgb(var(--c-indigo) / .6); }
+.ca-disc-row.soft { cursor: default; background: none; border-style: dashed; color: rgb(var(--c-charcoal) / .6); }
+.ca-disc-row .t, .ca-disc-row small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ca-disc-row small { font-size: 11px; opacity: .6; }
+.ca-disc-empty { font-size: 12px; opacity: .6; padding: 4px 2px; }
+.ca-disc-note { margin: 0; padding: 0 12px 8px; font-size: 12px; color: rgb(var(--c-charcoal) / .65); }
+.ca-drawer.ca-ro #ca-form, .ca-drawer.ca-ro .ca-hero .ca-compose-slot { display: none; }
+.ca-drawer.ca-ro .ca-hero { margin: 0; }
+.ca-drawer.ca-ro .ca-hero .ca-greeting, .ca-drawer.ca-ro .ca-hero .ca-hero-mark { display: none; }
+.ca-by { font-size: 11px; font-weight: 600; opacity: .6; margin-bottom: 1px; }
+.ca-msg details { font-size: 12px; }
+.ca-msg summary { cursor: pointer; }
+.ca-lookbody { margin-top: 4px; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }} · Skills{% endblock %}
+{% block page_title %}{{ a.name }}{% endblock %}
+{% block content %}
+{# One skill (#718): its text at a version, licence and source, who it is built on, the files, the version history with a diff, the pin, and
+   (for those who may) the edit form. Needs: skills_base, scope_project, a, shown (the version on show), live, old, versions, diff, files,
+   fields, lic, source, blocked, can_edit, can_confirm, pin, can_pin, bases, targets, layer, error, form. #}
+<div class="max-w-5xl min-w-0" data-skill-page="{{ a.key }}" data-skill-uid="{{ a.uid }}">
+  <p class="mb-3 text-small"><a href="{{ skills_base }}" class="hover:underline">&larr; Skills</a></p>
+  {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-error>{{ error }}</p>{% endif %}
+
+  <div class="flex flex-wrap items-center gap-2 mb-2">
+    <h1 class="text-xl font-semibold break-words min-w-0">{{ a.name }}</h1>
+    <code class="text-small text-charcoal/55">{{ a.key }}</code>
+    <span class="chip bg-charcoal/[.06] text-charcoal/70" data-layer-chip>{{ layer }}</span>
+    <span class="chip bg-charcoal/[.06] text-charcoal/70 tabular" data-version-chip>v{{ shown.n }}</span>
+    {% if a.state == 'archived' %}<span class="chip bg-status-warn/15">Archived</span>{% endif %}
+    {% if pin %}<span class="chip bg-status-warn/15 text-charcoal" data-pinned>Held at v{{ pin.n }} in this project</span>{% endif %}
+  </div>
+  <p class="text-small text-charcoal/75 mb-3 break-words" data-description>{{ fields.description }}</p>
+
+  {% if old %}<p class="mb-3 text-small rounded-lg bg-status-warn/15 px-3 py-2" data-old-version>You are looking at version {{ shown.n }}. The live version is v{{ live.n }}. <a class="underline" href="{{ skills_base }}/{{ a.uid }}">Show the live one</a></p>{% endif %}
+
+  {% if hold == 'review' %}
+  <section class="rounded-xl border border-status-warn/40 bg-status-warn/10 p-3 mb-4 text-small" data-section="review" data-review="pending">
+    <p class="font-semibold">Imported, not reviewed: not used by jobs</p>
+    <p class="text-charcoal/75 mt-0.5">This text came from outside. Jobs only follow it after a person who may confirm it has read this version.{% if since %} It changed since the version you last reviewed (v{{ since.from }}); the changes are below.{% endif %}</p>
+    {% if warnings %}
+    <ul class="mt-2 space-y-1" data-scan>
+      {% for w in warnings %}<li data-scan-item="{{ w.kind }}"><strong>{{ w.what }}</strong> <code class="text-micro">{{ w.where }}</code>{% if w.text %}<br><span class="text-micro text-charcoal/70 break-words">{{ w.text }}</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% else %}<p class="text-micro text-charcoal/60 mt-1">The quick scan found nothing to flag. It only looks for a few phrases and script files; read the text yourself.</p>{% endif %}
+    {% if since %}
+    <details class="mt-2" open data-since-diff><summary class="cursor-pointer font-medium">Changes since v{{ since.from }}</summary>
+      <pre class="text-micro font-mono whitespace-pre-wrap break-words mt-1">{% for l in since.lines %}<span class="block {{ 'bg-status-ok/10' if l.kind == 'add' else 'bg-status-disaster/10' if l.kind == 'del' else 'text-charcoal/45' if l.kind == 'hdr' else '' }}">{{ '+ ' if l.kind == 'add' else '- ' if l.kind == 'del' else '  ' }}{{ l.text }}</span>{% endfor %}</pre></details>
+    {% endif %}
+    {% if can_confirm and a.state == 'active' and not old %}
+    <form method="post" action="{{ skills_base }}/{{ a.uid }}/review" class="mt-3 flex flex-wrap items-end gap-2" data-review-form>
+      <label class="block min-w-0 flex-1"><span class="kb-label">I read this version and jobs may use it <span class="kb-label-hint">optional note</span></span>
+        <input name="note" class="field text-small" maxlength="300"></label>
+      <button class="btn-primary text-small touch-target" type="submit">Reviewed: let jobs use it</button>
+    </form>
+    {% endif %}
+  </section>
+  {% elif imported and fields.review %}
+  <p class="mb-3 text-small text-charcoal/70" data-reviewed>Imported, reviewed {{ fields.review.reviewed_at[:10] }}.</p>
+  {% endif %}
+
+  {# licence, source, base #}
+  <section class="card p-3 mb-4 text-small" data-section="provenance" aria-label="Licence and source">
+    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+      <dt class="text-charcoal/50">Licence</dt>
+      <dd data-licence-line>
+        {% if lic.status == 'authored' or not lic %}Written here
+        {% elif lic.status == 'permissive' %}{{ lic.spdx }} <span class="text-charcoal/55">(found in {{ lic.evidence or 'the files' }})</span>
+        {% else %}<strong class="text-status-disaster" data-licence="blocked">Licence unknown{% if lic.confirmed_by %}</strong> <span class="text-charcoal/70">&middot; confirmed for use by an admin on {{ lic.confirmed_at[:10] }}</span>{% else %}: the owner must confirm it. This skill is not used by any job until then.</strong>{% endif %}
+        {% endif %}
+      </dd>
+      {% if source %}
+      <dt class="text-charcoal/50">Source</dt>
+      <dd class="break-all" data-source>{{ 'GitHub' if source.via == 'github' else 'Uploaded file' }}{% if source.url %}: {{ source.url }}{% endif %}{% if source.author %} &middot; by {{ source.author }}{% endif %}{% if source.ref %} &middot; {{ source.ref }}{% endif %}{% if source.fetched_at %} &middot; fetched {{ source.fetched_at[:10] }}{% endif %}</dd>
+      {% for n in source.notes or [] %}<dt class="text-charcoal/50">Note</dt><dd class="text-charcoal/70">{{ n }}</dd>{% endfor %}
+      {% endif %}
+      {% if fields.base %}<dt class="text-charcoal/50">Built on</dt><dd data-base>{{ fields.base }} <span class="text-charcoal/55">(its text goes first when a job gets this skill)</span></dd>{% endif %}
+      <dt class="text-charcoal/50">Allowed tools</dt><dd>{{ (fields.allowed_tools or [])|join(', ') or 'not restricted' }}</dd>
+    </dl>
+    {% if blocked and can_confirm and a.state == 'active' %}
+    <form method="post" action="{{ skills_base }}/{{ a.uid }}/licence" class="mt-3 flex flex-wrap items-end gap-2" data-confirm-licence>
+      <label class="block min-w-0 flex-1"><span class="kb-label">I have read the source and this licence is acceptable <span class="kb-label-hint">optional note</span></span>
+        <input name="note" class="field text-small" maxlength="300"></label>
+      <button class="btn-primary text-small touch-target" type="submit">Confirm licence</button>
+    </form>
+    {% endif %}
+  </section>
+
+  {# the text #}
+  <section class="mb-5" aria-label="The skill" data-section="text">
+    <h2 class="text-lead font-semibold mb-2">The skill</h2>
+    <div class="card p-4 kb-prose text-small break-words" data-skill-body>{{ shown.body|markdown }}</div>
+    {% if files %}
+    <h3 class="text-small font-semibold mt-3 mb-1">Files ({{ files|length }})</h3>
+    <ul class="card divide-y divide-line" data-files>
+      {% for f in files %}
+      <li class="px-4 py-2 text-small" data-file="{{ f.path }}">
+        {% if f.text is not none %}<details><summary class="cursor-pointer"><code>{{ f.path }}</code> <span class="text-charcoal/50">{{ f.bytes }} bytes</span></summary><pre class="mt-1 rounded-lg bg-charcoal/[.05] p-2 text-micro whitespace-pre-wrap break-words font-mono">{{ f.text }}</pre></details>
+        {% else %}<code>{{ f.path }}</code> <span class="text-charcoal/50">{{ f.bytes }} bytes</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  {# actions on someone else's skill: a copy of your own, a pin #}
+  {% if can_pin or (targets and not can_edit) %}
+  <section class="card p-3 mb-5 text-small" data-section="actions">
+    {% if can_pin %}
+    <div class="flex flex-wrap items-center gap-2 mb-2" data-pin-box>
+      {% if pin %}
+      <form method="post" action="{{ skills_base }}/{{ a.uid }}/unpin"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-unpin>Follow the live version again</button></form>
+      {% else %}
+      <form method="post" action="{{ skills_base }}/{{ a.uid }}/pin" class="flex flex-wrap items-end gap-2">
+        <label class="block"><span class="kb-label">Hold this project at version</span>
+          <select name="n" class="field text-small tabular">{% for v in versions %}<option value="{{ v.n }}"{% if v.n == shown.n %} selected{% endif %}>v{{ v.n }}</option>{% endfor %}</select></label>
+        <input name="reason" class="field text-small" maxlength="300" placeholder="Why (optional)">
+        <button class="btn-ghost text-small touch-target border border-line" type="submit" data-pin>Hold at this version</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if targets and not can_edit %}
+    <form method="post" action="{{ skills_base }}/{{ a.uid }}/copy" class="flex flex-wrap items-end gap-2" data-copy-box>
+      <label class="block"><span class="kb-label">Make my own copy in</span>
+        <select name="install_to" class="field text-small">{% for t in targets %}<option value="{{ t.value }}">{{ t.label }}</option>{% endfor %}</select></label>
+      <button class="btn-ghost text-small touch-target border border-line" type="submit" data-copy>Make a copy to change</button>
+    </form>
+    <p class="text-micro text-charcoal/55 mt-1">The copy has the same name, so it replaces this skill in that layer and below, and you can edit it.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# versions #}
+  <section class="mb-5" aria-label="Versions" data-section="versions">
+    <h2 class="text-lead font-semibold mb-2">Versions <span class="text-small font-normal text-charcoal/50">({{ versions|length }})</span></h2>
+    <ul class="card divide-y divide-line" data-versions>
+      {% for v in versions %}
+      <li class="px-4 py-2 text-small flex flex-wrap items-center gap-x-3 gap-y-1" data-version="{{ v.n }}">
+        <a href="{{ skills_base }}/{{ a.uid }}?v={{ v.n }}" class="font-semibold tabular hover:underline">v{{ v.n }}</a>
+        {% if v.id == live.id %}<span class="chip bg-status-ok/10 text-status-ok">live</span>{% endif %}
+        <span class="text-charcoal/70 min-w-0 flex-1 break-words">{{ v.note or '—' }}</span>
+        <span class="text-micro text-charcoal/50">{{ v.created_by }} &middot; {{ v.created_via }} &middot; {{ v.created_at.strftime('%d %b %Y %H:%M') }}</span>
+        {% if v.n > 1 %}<a href="{{ skills_base }}/{{ a.uid }}?from={{ v.n - 1 }}&to={{ v.n }}" class="text-micro underline" data-diff-link>What changed</a>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% if diff %}
+    <div class="card p-3 mt-3" data-diff>
+      <p class="text-small font-semibold mb-1">Changes from v{{ diff.from }} to v{{ diff.to }}</p>
+      <pre class="text-micro font-mono whitespace-pre-wrap break-words">{% for l in diff.lines %}<span class="block {{ 'bg-status-ok/10' if l.kind == 'add' else 'bg-status-disaster/10' if l.kind == 'del' else 'text-charcoal/45' if l.kind == 'hdr' else '' }}" data-diff-line="{{ l.kind }}">{{ '+ ' if l.kind == 'add' else '- ' if l.kind == 'del' else '  ' }}{{ l.text }}</span>{% endfor %}</pre>
+    </div>
+    {% endif %}
+  </section>
+
+  {# edit #}
+  {% if can_edit %}
+  <section class="mb-5" aria-label="Edit" data-section="edit">
+    <h2 class="text-lead font-semibold mb-1">Change it</h2>
+    <p class="text-micro text-charcoal/60 mb-2">Every save is a new version; old ones stay. You can also ask CA in plain words ("in {{ a.key }}, make the headings shorter") and tap the card it proposes.</p>
+    <form method="post" action="{{ skills_base }}/{{ a.uid }}/edit" enctype="multipart/form-data" class="grid gap-3" data-edit-form>
+      <input type="hidden" name="base_version_id" value="{{ live.id }}">
+      <label class="block"><span class="kb-label">Description</span>
+        <textarea name="description" class="field text-small" rows="2" required maxlength="1024">{{ form.description if form.description is defined else live.fields.description }}</textarea></label>
+      <label class="block"><span class="kb-label">The skill (SKILL.md text)</span>
+        <textarea name="body" class="field text-small font-mono" rows="16" required>{{ form.body if form.body is defined else live.body }}</textarea></label>
+      <label class="block"><span class="kb-label">Built on</span>
+        <select name="base" class="field text-small"><option value="">None</option>{% for b in bases %}<option value="{{ b.key }}"{% if (form.base if form.base is defined else live.fields.base) == b.key %} selected{% endif %}>{{ b.name }} ({{ b.key }})</option>{% endfor %}</select></label>
+      {% if live.files %}<fieldset><legend class="kb-label">Remove files</legend>{% for f in live.files %}<label class="flex items-center gap-2 text-small"><input type="checkbox" name="remove_files" value="{{ f.path }}"> <code>{{ f.path }}</code></label>{% endfor %}</fieldset>{% endif %}
+      <label class="block"><span class="kb-label">Add files <span class="kb-label-hint">a file with the same name replaces it</span></span>
+        <input name="files" type="file" multiple class="field text-small"></label>
+      <label class="block"><span class="kb-label">What changed <span class="kb-label-hint">optional: shown in the history</span></span>
+        <input name="note" class="field text-small" maxlength="300" value="{{ form.note or '' }}"></label>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn-primary text-small touch-target" type="submit" data-save>Save as a new version</button>
+      </div>
+    </form>
+    {% if a.origin != 'builtin' %}
+    <form method="post" action="{{ skills_base }}/{{ a.uid }}/archive" class="mt-3" data-archive-form>
+      <button class="btn-ghost text-small touch-target border border-line text-status-disaster" type="submit" data-archive>Archive this skill</button>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

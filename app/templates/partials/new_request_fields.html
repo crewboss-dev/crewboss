@@ -1,0 +1,41 @@
+{# A NEW REQUEST is blank: say what you need (title), optionally describe it and list steps. The owning AI
+   session triages it — decides whether it's a Rule, an AI Skill, a Workflow, a fix… — so there is no
+   "new rule" or "new skill" form anywhere. Used by /tasks/new, a workflow's Tasks tab and a step's "+". #}
+{% set fid = form_id|default('nr') %}
+<div class="flex flex-col gap-3">
+  <div>
+    <label for="{{ fid }}-title" class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">What do you need?</label>
+    <input id="{{ fid }}-title" name="title" required maxlength="300" placeholder="e.g. Ignore out-of-office replies in triage" class="field" data-prefill="title">
+  </div>
+  <div>
+    <label for="{{ fid }}-body" class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">Description <span class="normal-case tracking-normal">(optional)</span></label>
+    <textarea id="{{ fid }}-body" name="body" rows="3" maxlength="20000" class="field text-small" placeholder="Any detail, in your own words" data-prefill="description"></textarea>
+  </div>
+  <div>
+    <label for="{{ fid }}-subtasks" class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">Steps <span class="normal-case tracking-normal">(optional — one per line)</span></label>
+    <textarea id="{{ fid }}-subtasks" name="subtasks" rows="3" class="field text-small" placeholder="Check it on the phone&#10;Try it with a real email" data-prefill="subtasks"></textarea>
+  </div>
+  <fieldset>
+    <legend class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">For</legend>
+    <div class="seg" role="radiogroup">
+      <label class="seg-opt"><input type="radio" name="assignee" value="ai" checked data-prefill="assignee"><span>The AI</span></label>
+      <label class="seg-opt"><input type="radio" name="assignee" value="owner" data-prefill="assignee"><span>Me</span></label>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">Which session</legend>
+    <div class="seg" role="radiogroup">
+      {% for s in ['feature', 'bug', 'tweak', 'review', 'error'] %}
+      <label class="seg-opt"><input type="radio" name="stream" value="{{ s }}" {% if s == (default_stream|default('feature')) %}checked{% endif %} data-prefill="stream"><span>{{ STREAM_META.get(s, UNKNOWN_META).label }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">Priority <span class="normal-case tracking-normal">(the AI may suggest another)</span></legend>
+    <div class="seg" role="radiogroup">
+      {% for pr in ['must', 'should', 'could'] %}
+      <label class="seg-opt"><input type="radio" name="priority" value="{{ pr }}" {% if pr == 'should' %}checked{% endif %}><span>{{ PRIORITY_META.get(pr, UNKNOWN_META).label }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+</div>

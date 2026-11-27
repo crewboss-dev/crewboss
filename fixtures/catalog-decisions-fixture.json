@@ -1,0 +1,328 @@
+{
+ "_fixture": "FIXTURE ONLY — decision (2-way, 4-way + rejoin) and loop/condition scope shapes for the canvas (tests + screenshots). Mirrors the scanner's additive `decision`/`loop` kinds, `question`, `parent`, `branch`.",
+ "project": "mallen-erp",
+ "commit": "fixture-decisions",
+ "generated_at": "2026-09-30T12:00:00+10:00",
+ "workflows": [
+  {
+   "id": "email.triage.route",
+   "name": "Email and AiOS › Triage › Route",
+   "group": "Email and AiOS",
+   "subproject": "AiOS",
+   "summary": "FIXTURE — AiOS email triage: classify each new mail, then route it by what it is (lead / case / fyi / ignore); every path rejoins to advance the delta cursor.",
+   "trigger": {
+    "type": "timer",
+    "detail": "every 5 min (triage-loop.sh)"
+   },
+   "has_ai": true,
+   "confidence": "annotated",
+   "steps": [
+    {
+     "id": "timer",
+     "kind": "trigger",
+     "label": "Timer",
+     "system": "internal",
+     "detail": ""
+    },
+    {
+     "id": "fetch",
+     "kind": "action",
+     "label": "Fetch new mail since the delta cursor",
+     "system": "graph",
+     "detail": ""
+    },
+    {
+     "id": "classify",
+     "kind": "ai",
+     "label": "AI: classify_email()",
+     "system": "claude",
+     "detail": "",
+     "code_ref": {
+      "file": "aios/.claude/skills/email-triage/classify.py",
+      "function": "classify_email"
+     },
+     "ai": {
+      "provider": "anthropic",
+      "model_rule": "auto-newest Haiku, Sonnet below 0.7",
+      "prompt_name": "_system_prompt",
+      "output": "forced-tool-schema",
+      "max_tokens": 1024
+     }
+    },
+    {
+     "id": "what",
+     "kind": "decision",
+     "label": "Route by classification",
+     "system": "internal",
+     "detail": "",
+     "question": "What is it?"
+    },
+    {
+     "id": "lead",
+     "kind": "action",
+     "label": "Raise a lead",
+     "system": "db",
+     "detail": ""
+    },
+    {
+     "id": "lead-card",
+     "kind": "action",
+     "label": "Now card: New lead",
+     "system": "push",
+     "detail": ""
+    },
+    {
+     "id": "case",
+     "kind": "action",
+     "label": "Open a case and thread the mail",
+     "system": "db",
+     "detail": ""
+    },
+    {
+     "id": "fyi",
+     "kind": "action",
+     "label": "Stamp Outlook category FYI",
+     "system": "graph",
+     "detail": ""
+    },
+    {
+     "id": "advance",
+     "kind": "logic",
+     "label": "Advance the delta cursor",
+     "system": "db",
+     "detail": ""
+    }
+   ],
+   "edges": [
+    {
+     "from": "what",
+     "to": "lead",
+     "label": "lead"
+    },
+    {
+     "from": "lead",
+     "to": "lead-card"
+    },
+    {
+     "from": "lead-card",
+     "to": "advance"
+    },
+    {
+     "from": "what",
+     "to": "case",
+     "label": "case"
+    },
+    {
+     "from": "case",
+     "to": "advance"
+    },
+    {
+     "from": "what",
+     "to": "fyi",
+     "label": "fyi"
+    },
+    {
+     "from": "fyi",
+     "to": "advance"
+    },
+    {
+     "from": "what",
+     "to": "advance",
+     "label": "ignore"
+    }
+   ],
+   "side_effects": [
+    "db:leads",
+    "db:cases",
+    "graph-mail"
+   ],
+   "source_refs": [
+    {
+     "file": "aios/.claude/skills/email-triage/run.py"
+    }
+   ]
+  },
+  {
+   "id": "billing.supplier-invoice.intake",
+   "name": "Billing › Supplier invoice › Intake",
+   "group": "Billing",
+   "subproject": "ERP",
+   "summary": "FIXTURE — for each attachment on a supplier email: if it's a PDF, AI-extract the invoice and draft the bill; then send a summary.",
+   "trigger": {
+    "type": "email",
+    "detail": "When a new email arrives in accounts@"
+   },
+   "has_ai": true,
+   "confidence": "annotated",
+   "steps": [
+    {
+     "id": "get-attachments",
+     "kind": "action",
+     "label": "Get attachments",
+     "system": "graph",
+     "detail": ""
+    },
+    {
+     "id": "each",
+     "kind": "loop",
+     "label": "For each attachment",
+     "system": "internal",
+     "detail": ""
+    },
+    {
+     "id": "is-pdf",
+     "kind": "decision",
+     "label": "PDF check",
+     "system": "internal",
+     "detail": "",
+     "parent": "each",
+     "question": "Is it a PDF?"
+    },
+    {
+     "id": "extract",
+     "kind": "ai",
+     "label": "AI: extract_invoice()",
+     "system": "claude",
+     "detail": "",
+     "parent": "is-pdf",
+     "branch": "True",
+     "code_ref": {
+      "file": "app/clients/claude.py",
+      "function": "extract_invoice"
+     },
+     "ai": {
+      "provider": "anthropic",
+      "model_rule": "auto-newest Sonnet",
+      "prompt_name": "_INVOICE_EXTRACT_SYSTEM",
+      "output": "json-parsed-text",
+      "max_tokens": 2048
+     }
+    },
+    {
+     "id": "draft-bill",
+     "kind": "action",
+     "label": "Draft the bill in Xero",
+     "system": "xero",
+     "detail": "",
+     "parent": "is-pdf",
+     "branch": "True"
+    },
+    {
+     "id": "summary",
+     "kind": "action",
+     "label": "Send a summary to accounts@",
+     "system": "graph",
+     "detail": ""
+    }
+   ],
+   "edges": [
+    {
+     "from": "is-pdf",
+     "to": "extract",
+     "label": "True"
+    },
+    {
+     "from": "is-pdf",
+     "to": "summary",
+     "label": "False"
+    }
+   ],
+   "side_effects": [
+    "xero",
+    "graph-mail"
+   ],
+   "source_refs": [
+    {
+     "file": "app/workers/supplier_invoices.py"
+    }
+   ]
+  },
+  {
+   "id": "monitoring.alert-gate.check",
+   "name": "Monitoring › Alert gate › Check",
+   "group": "Monitoring",
+   "subproject": "ERP",
+   "summary": "FIXTURE — a 2-way decision: raise a case only when the device is effectively monitored; both paths log the event.",
+   "trigger": {
+    "type": "webhook",
+    "detail": "POST /webhook/zabbix"
+   },
+   "has_ai": false,
+   "confidence": "annotated",
+   "steps": [
+    {
+     "id": "hook",
+     "kind": "trigger",
+     "label": "Zabbix webhook",
+     "system": "zabbix",
+     "detail": ""
+    },
+    {
+     "id": "match",
+     "kind": "action",
+     "label": "Match the device",
+     "system": "db",
+     "detail": ""
+    },
+    {
+     "id": "gate",
+     "kind": "decision",
+     "label": "Monitoring gate",
+     "system": "internal",
+     "detail": "",
+     "question": "Is the device monitored?"
+    },
+    {
+     "id": "raise",
+     "kind": "action",
+     "label": "Raise or update the case",
+     "system": "db",
+     "detail": ""
+    },
+    {
+     "id": "page",
+     "kind": "action",
+     "label": "Push the on-call",
+     "system": "push",
+     "detail": ""
+    },
+    {
+     "id": "log",
+     "kind": "action",
+     "label": "Record the event",
+     "system": "db",
+     "detail": ""
+    }
+   ],
+   "edges": [
+    {
+     "from": "gate",
+     "to": "raise",
+     "label": "Yes"
+    },
+    {
+     "from": "raise",
+     "to": "page"
+    },
+    {
+     "from": "page",
+     "to": "log"
+    },
+    {
+     "from": "gate",
+     "to": "log",
+     "label": "No"
+    }
+   ],
+   "side_effects": [
+    "db:cases",
+    "push"
+   ],
+   "source_refs": [
+    {
+     "file": "app/routes/zabbix_webhook.py"
+    }
+   ]
+  }
+ ]
+}

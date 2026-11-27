@@ -1,0 +1,50 @@
+{# One knowledge entry (or objective) as a COLLAPSED card: the title (one line) + the summary (two lines)
+   = three lines of text, whatever the body holds. The whole head is one button: press it to expand the
+   body inline, press again to collapse. The body + actions load the first time it opens (htmx), except
+   for ?open=<id>, which renders that one expanded. Needs: e, open_id, requests (kid -> [task ids]). #}
+{% set is_open = (open_id == e.id) %}
+{% set archived = e.archived_at is not none %}
+{% set open_requests = (requests or {}).get(e.id, []) %}
+<article id="k-{{ e.id }}" class="card kb-card{% if archived %} kb-archived{% endif %}"
+         x-data="{ open: {{ 'true' if is_open else 'false' }} }" :class="open && 'kb-open'"
+         data-ca-title="{{ e.title }}" :data-ca-entity="open ? 'knowledge:{{ e.id }}' : null"
+         {% if not is_open %}hx-get="{{ base }}/knowledge/{{ e.id }}/body" hx-trigger="kb-open once"
+         hx-target="find .kb-more" hx-swap="innerHTML"{% endif %}>
+  <button type="button" class="kb-head" aria-controls="k-{{ e.id }}-more"
+          :aria-expanded="open ? 'true' : 'false'" aria-expanded="{{ 'true' if is_open else 'false' }}"
+          @click="open = !open; if (open) $dispatch('kb-open')">
+    <span class="kb-title-row">
+      <span class="kb-title">{{ e.title }}</span>
+      {% if e.kind == 'objective' and e.target_value is not none %}
+      <span class="kb-target tabular" title="Target">{{ format_target(e.target_value, e.target_unit, e.target_period) }}</span>
+      {% endif %}
+      <svg class="kb-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
+    </span>
+    {% if e.summary %}
+    <span class="kb-summary">{{ e.summary }}</span>
+    {% else %}
+    <span class="kb-summary kb-summary-empty">No summary yet.</span>
+    {% endif %}
+    {% if e.kind == 'objective' %}
+    {% set p = e.progress %}
+    <span class="kb-progress" data-objective-progress>
+      <span class="kb-progress-label">Progress</span>
+      <span class="kb-progress-track" aria-hidden="true"><span class="kb-progress-fill" {% if p %}style="width: {{ [[p.pct, 0]|max, 100]|min }}%"{% endif %}></span></span>
+      <span class="kb-progress-value tabular">{% if p %}{{ p.label }}{% else %}&mdash;{% endif %}</span>
+    </span>
+    {% endif %}
+    <span class="kb-meta">
+      {% if e.kind != 'objective' %}<span class="kb-kind">{{ e.kind }}</span>{% endif %}
+      {% for sp in e.subprojects %}<span class="kb-tag">{{ sp }}</span>{% endfor %}
+      {% if e.needs_review %}<span class="kb-flag kb-flag-review"><span class="kb-dot" aria-hidden="true"></span>Needs review</span>{% endif %}
+      {% if open_requests %}<span class="kb-flag kb-flag-ai">AI asked &middot; #{{ open_requests|join(', #') }}</span>{% endif %}
+      {% if archived %}<span class="kb-flag">Archived</span>{% endif %}
+      <span class="kb-when">{{ e.updated_at|timeago }}</span>
+    </span>
+  </button>
+  <div id="k-{{ e.id }}-more" class="kb-more" x-show="open" x-cloak>
+    {% if is_open %}{% include "partials/knowledge_body.html" %}{% else %}
+    <div class="kb-skeleton" aria-hidden="true"><span></span><span></span><span class="w-2/3"></span></div>
+    {% endif %}
+  </div>
+</article>

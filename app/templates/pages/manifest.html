@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Manifest & backups · {{ server.name }}{% endblock %}
+{% block page_title %}Manifest &amp; backups{% endblock %}
+{% block content %}
+{# Manifest & backups (#726): what is deployed on one server and what must be backed up, generated from the apps' recipes. Never hand-edited:
+   change a recipe on the project's Where it lives page and regenerate. Crewboss does not run or monitor backups. Needs: server, st, m (the manifest),
+   skill, stored, tokens, new_token, webhook. #}
+<div class="max-w-5xl min-w-0" data-manifest-page data-manifest-state="{{ st.state }}">
+  <p class="mb-3 text-small"><a class="underline" href="{{ base }}/machines?tab=servers#cs-{{ server.id }}">&larr; Machines, Servers</a></p>
+  <h2 class="text-lead font-semibold">{{ server.name }}</h2>
+  <p class="text-small text-charcoal/70 mb-3">What Crewboss deployed here and what must be backed up, generated from each app's recipe. It is a list for the tool that looks after this server:
+    Crewboss does not take or monitor the backups itself.</p>
+
+  <div class="card p-4 mb-4" data-manifest-status>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="chip {{ 'bg-status-ok/10 text-status-ok' if st.state == 'current' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}" data-manifest-chip>{{ {'current': 'Up to date', 'drift': 'A recipe changed since this was generated', 'never': 'Not generated yet'}[st.state] }}</span>
+      {% if stored %}<span class="text-micro text-charcoal/60" data-generated>Generated {{ stored.generated_at.strftime('%d %b %Y %H:%M') }} UTC ({{ stored.reason }}) · hash <span class="font-mono" data-hash>{{ stored.content_hash[:12] }}</span></span>{% endif %}
+      {% if webhook %}<span class="text-micro text-charcoal/60" data-webhook>Push to the consumer: {% if stored and stored.pushed_at %}last sent {{ stored.pushed_at.strftime('%d %b %H:%M') }} UTC{% elif stored and stored.push_error %}failed ({{ stored.push_error }}){% else %}not sent yet{% endif %}</span>{% endif %}
+    </div>
+    <div class="flex flex-wrap items-center gap-2 mt-3" data-downloads>
+      <form method="post" action="{{ base }}/servers/{{ server.id }}/manifest/regenerate"><button class="btn-primary text-small touch-target" type="submit" data-regenerate>Regenerate now</button></form>
+      <a class="btn-ghost text-small touch-target border border-line" href="{{ base }}/servers/{{ server.id }}/manifest/file?kind=yaml" data-download="yaml">Download YAML</a>
+      <a class="btn-ghost text-small touch-target border border-line" href="{{ base }}/servers/{{ server.id }}/manifest/file?kind=json" data-download="json">Download JSON</a>
+      <a class="btn-ghost text-small touch-target border border-line" href="{{ base }}/servers/{{ server.id }}/manifest/file?kind=skill" data-download="skill">Download the server skill (.md)</a>
+    </div>
+    <p class="text-micro text-charcoal/55 mt-2">It regenerates after every successful deploy to this server. The downloads are the last generated copy.</p>
+  </div>
+
+  <section class="mb-6" aria-label="Apps" data-section="apps">
+    <h3 class="text-lead font-semibold mb-2">Apps on this server <span class="text-small font-normal text-charcoal/50">({{ m.apps|length }})</span></h3>
+    {% if m.apps %}
+    <ul class="space-y-3">
+      {% for a in m.apps %}{% set b = a.backup %}
+      <li class="card p-4 min-w-0" data-app="{{ a.project }}" data-stage="{{ a.stage }}">
+        <div class="flex flex-wrap items-center gap-2">
+          <h4 class="font-semibold">{{ a.name }}</h4>
+          <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ 'production' if a.stage == 'prod' else a.stage }}</span>
+          {% if a.state_declared %}<span class="chip bg-status-ok/10 text-status-ok">State declared</span>{% else %}<span class="chip bg-status-warn/15 text-charcoal dark:text-status-warn" data-undeclared>State not declared</span>{% endif %}
+        </div>
+        <p class="text-micro font-mono text-charcoal/65 break-all mt-1">{{ a.folder }} · {{ a.branch }}</p>
+        <p class="text-small mt-1" data-deployed>{% if a.deployed %}Last deploy <span class="font-mono">{{ a.deployed.commit[:12] }}</span> at {{ a.deployed.at }}{% else %}No deploy recorded yet.{% endif %}</p>
+        {% if a.domains or a.ports or a.health_url or a.log_endpoint %}
+        <p class="text-small text-charcoal/75 break-words">{% if a.domains %}Domains {{ a.domains|join(', ') }}. {% endif %}{% if a.ports %}Ports {{ a.ports|join(', ') }}. {% endif %}{% if a.health_url %}Health {{ a.health_url }}. {% endif %}{% if a.log_endpoint %}Logs {{ a.log_endpoint }}.{% endif %}</p>
+        {% endif %}
+        {% if b['items'] %}
+        <p class="text-small font-medium mt-2" data-backup>Back up {{ b.schedule }}, keep {{ b.retention }}.
+          {% if b.rpo_minutes or b.rto_minutes %}<span class="font-normal text-charcoal/65">Lose at most {{ b.rpo_minutes or '?' }} min, be back in {{ b.rto_minutes or '?' }} min.</span>{% endif %}</p>
+        <ul class="text-small list-disc pl-5 break-words">
+          {% for i in b['items'] %}<li>{{ i.kind|capitalize }}
+            {%- if i.name %} <strong>{{ i.name }}</strong>{% endif %}{% if i.engine %} ({{ i.engine }}){% endif %}{% if i.path %} <span class="font-mono text-micro">{{ i.path }}</span>{% endif %}{% if i.location %}: kept at {{ i.location }}{% endif %}{% if i.dump_command %}: <code class="text-micro">{{ i.dump_command }}</code>{% endif %}</li>{% endfor %}
+        </ul>
+        {% elif a.stateless %}<p class="text-small text-charcoal/65 mt-2">Declared stateless: nothing to back up.</p>
+        {% else %}<p class="text-small text-charcoal/65 mt-2">Nothing declared. <a class="underline" href="/{{ a.project }}/where">Say what must be backed up</a>.</p>{% endif %}
+        <details class="mt-2"><summary class="press cursor-pointer text-small font-medium touch-target flex items-center">How to restore and verify</summary>
+          <p class="kb-label mt-1">Restore</p><ol class="text-small list-decimal pl-5">{% for step in a.restore %}<li>{{ step }}</li>{% endfor %}</ol>
+          <p class="kb-label mt-2">Verify</p><ol class="text-small list-decimal pl-5">{% for step in (a.verify or ['Open the app and confirm it starts.']) %}<li>{{ step }}</li>{% endfor %}</ol>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="card px-4 py-3 text-small text-charcoal/65" data-no-apps>No app deploys to this server yet. Add a deploy target from a project's Releases tab, then regenerate.</p>
+    {% endif %}
+  </section>
+
+  <section class="mb-6" aria-label="Server skill" data-section="skill">
+    <details class="card p-3"><summary class="press cursor-pointer text-small font-medium touch-target flex items-center">Server skill (generated, for an AI ops agent)</summary>
+      <pre class="mt-2 text-micro font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto" data-skill>{{ skill }}</pre></details>
+  </section>
+
+  <section class="mb-6" aria-label="Read tokens" data-section="tokens">
+    <h3 class="text-lead font-semibold mb-1">Read tokens</h3>
+    <p class="text-small text-charcoal/70 mb-2">A tool that looks after this server reads <code>GET {{ request.url.scheme }}://{{ request.url.netloc }}/api/servers/{{ server.id }}/manifest</code> with
+      <code>Authorization: Bearer &lt;token&gt;</code> (add <code>?format=yaml</code> or <code>?format=skill</code>). A token opens this one server's manifest and nothing else.</p>
+    {% if new_token %}
+    <div class="card p-3 mb-3 border border-status-warn" data-new-token role="status">
+      <p class="text-small font-medium">Copy this token now. It is shown once and Crewboss keeps only a hash of it.</p>
+      <pre class="font-mono text-micro break-all select-all mt-1" data-token-value>{{ new_token }}</pre>
+    </div>
+    {% endif %}
+    {% if tokens %}
+    <ul class="card divide-y divide-line mb-3" data-token-list>
+      {% for t in tokens %}
+      <li class="px-4 py-2 flex flex-wrap items-center gap-2 text-small" data-token="{{ t.id }}">
+        <span class="flex-1 min-w-0 break-words">{{ t.label or 'Token ' ~ t.id }} <span class="text-micro text-charcoal/55">made {{ t.created_at.strftime('%d %b %Y') }}{% if t.last_used_at %} · last used {{ t.last_used_at.strftime('%d %b %Y %H:%M') }}{% endif %}</span>
+          {% if t.revoked_at %}<span class="chip bg-charcoal/[.06] text-charcoal/70">revoked</span>{% endif %}</span>
+        {% if not t.revoked_at %}<form method="post" action="{{ base }}/servers/{{ server.id }}/manifest/tokens/{{ t.id }}/revoke"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-revoke>Revoke</button></form>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="text-small text-charcoal/65 mb-3" data-no-tokens>No token yet.</p>{% endif %}
+    <form method="post" action="{{ base }}/servers/{{ server.id }}/manifest/tokens" class="flex flex-wrap items-end gap-2" data-token-form>
+      <label class="block"><span class="kb-label">Label</span><input name="label" class="field text-small" maxlength="80" placeholder="e.g. ops tool"></label>
+      <button class="btn-primary text-small touch-target" type="submit">Make a read token</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

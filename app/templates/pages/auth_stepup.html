@@ -1,0 +1,16 @@
+{% extends "pages/auth_layout.html" %}
+{% block title %}Confirm it's you{% endblock %}
+{% block heading %}Confirm it's you{% endblock %}
+{% block content %}
+<p class="text-sm text-charcoal/70 mb-3" data-stepup-page>That needs a fresh 6-digit code from your authenticator app. Confirm below, then go back and repeat what you were doing.</p>
+<form class="flex flex-col gap-2" data-stepup-page-code>
+  <label class="text-sm">6-digit code
+    <input name="code" class="field w-full mt-1" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required autofocus>
+  </label>
+  <button type="submit" class="btn-primary">Confirm</button>
+</form>
+{% if passkeys_enabled %}<button type="button" class="btn-ghost border border-line w-full mt-3" data-stepup-page-go hidden>Use my passkey instead</button>{% endif %}
+<p class="text-xs text-charcoal/55 mt-2 text-center" data-passkey-status aria-live="polite"></p>
+<p class="text-xs text-charcoal/55 mt-3 text-center"><a href="/" class="underline">Back to Crewboss</a></p>
+{% endblock %}
+{% block scripts %}<script src="{{ asset('js/stepup.js') }}" data-stepup-passkey-src="{{ asset('js/passkey.js') }}" defer></script>{% endblock %}

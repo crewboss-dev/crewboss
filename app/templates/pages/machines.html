@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Machines · {{ current_project.name }}{% endblock %}
+{% block page_title %}Machines{% endblock %}
+{% block content %}
+{# Machines (#810, tabs #838): ONE page, two tabs. Runners ("build code", ?tab=runners, the default) and Servers ("run your apps", ?tab=servers).
+   A machine that plays both roles is listed on BOTH tabs with a mark ("also a server" / "also a runner"); each tab shows that tab's block.
+   Adding is two separate actions (+ Add a runner / + Add a server); joining a runner and a server into one machine is a link on a card.
+   Per machine: "Runs jobs" (a runner:
+   it connects OUT, writes code in a throw-away worktree, pushes a branch) and "Receives deploys" (a server: Crewboss connects IN with a
+   one-hour pass, only after your OK). Scope is access and deploying code; monitoring and reboots are Tech Assist's.
+   Needs: machines (machines_pages.build, this tab's only), total (this tab), tab, free_servers, free_runners, role, roles, counts, cs, devices, live_jobs, recent_jobs, locks, code ({code, expires_at}),
+   error, add_error, add_form, can_enrol, is_owner, modes, max_labels, label_hints, runner_repo(_private), added, checked, agent_cards (app/agent_pins.card: the Owner's review of unpinned agent files). #}
+<div class="max-w-5xl min-w-0" data-machines-page data-servers-page data-runners-page data-tab="{{ tab }}">
+  {% include "partials/deploy_flow.html" %}
+
+  {# the two tabs: real links (they work without JS), one is current #}
+  {% set tabs = [('runners', 'Runners', 'build code', counts.runners), ('servers', 'Servers', 'run your apps', counts.servers)] %}
+  <div class="flex gap-1 mb-4 border-b border-line" role="tablist" aria-label="Machine types" data-machine-tabs>
+    {% for key, label, hint, n in tabs %}
+    <a href="{{ base }}/machines?tab={{ key }}" role="tab" id="tab-{{ key }}" aria-selected="{{ 'true' if tab == key else 'false' }}" aria-controls="panel-machines"
+       tabindex="{{ 0 if tab == key else -1 }}" data-tab-link="{{ key }}"
+       class="press px-3 py-2 text-small font-medium border-b-2 touch-target {{ 'border-indigo text-indigo' if tab == key else 'border-transparent text-charcoal/60' }}">
+      {{ label }} <span class="text-charcoal/50 tabular">{{ n }}</span><span class="block text-micro font-normal text-charcoal/60">{{ hint }}</span></a>
+    {% endfor %}
+  </div>
+  <script>
+    // arrow keys move between the tabs (each tab is a link, so Enter opens it); without JS the links still work
+    document.querySelector('[data-machine-tabs]').addEventListener('keydown', function (e) {
+      var links = Array.prototype.slice.call(this.querySelectorAll('[role=tab]')), i = links.indexOf(document.activeElement);
+      if (i < 0 || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Home' && e.key !== 'End')) return;
+      e.preventDefault();
+      var n = e.key === 'Home' ? 0 : e.key === 'End' ? links.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + links.length) % links.length;
+      links[n].focus(); links[n].click();
+    });
+  </script>
+
+  <div role="tabpanel" id="panel-machines" aria-labelledby="tab-{{ tab }}" data-tab-panel="{{ tab }}">
+
+  {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-error>{{ error }}</p>{% endif %}
+
+  {# an orphaned lock (a job died holding it) is a banner, not a list #}
+  {% if tab == 'runners' and locks %}
+  <div class="mb-4 rounded-lg bg-status-warn/15 px-3 py-2 text-small" role="alert" data-locks>
+    {% for l in locks %}
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1" data-lock="{{ l.kind }}" data-lock-state="{{ l.state }}">
+      <p class="min-w-0 flex-1">A {{ l.kind }} lock on <strong>{{ l.slug or l.resource }}</strong> is stuck: job {{ l.job_id or 'gone' }} died holding it (fence {{ l.fence }}). Nothing retries it; a person clears it.</p>
+      <form method="post" action="{{ base }}/runners/locks/clear">
+        <input type="hidden" name="kind" value="{{ l.kind }}"><input type="hidden" name="resource" value="{{ l.resource }}">
+        <button class="btn-ghost text-small touch-target border border-line" type="submit" data-clear-lock>Clear</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if tab == 'runners' and code %}
+  <div class="card p-4 mb-4" data-new-code>
+    <p class="kb-label">Enrolment code <span class="kb-label-hint">shown once</span></p>
+    <p class="font-mono text-small break-all select-all mt-1" data-code>{{ code.code }}</p>
+    <p class="text-micro text-charcoal/55 mt-2">Expires {{ code.expires_at.strftime('%H:%M:%S') }} UTC (5 minutes from now). Once used, or after it expires, it is dead. Give it to the runner on the PC; it proves it is talking to this dashboard from the fingerprint inside the code.</p>
+  </div>
+  {% endif %}
+
+  {# this tab's add action: its own sheet, never one step of the other #}
+  {% if tab == 'runners' %}
+    {% if can_enrol %}
+    <details class="card p-3 mb-4" data-sheet="runner" data-add-panel{% if code or not total %} open{% endif %}>
+      <summary class="press list-none cursor-pointer touch-target flex flex-wrap items-baseline gap-x-3"><span class="font-semibold text-small" data-add-btn="runner">+ Add a runner</span><span class="text-micro text-charcoal/60">A PC that builds code: your laptop or desktop</span></summary>
+      <div class="mt-3">{% set devices = [] %}{% include 'partials/machine_enrol.html' %}</div>
+    </details>
+    {% else %}
+    <p class="text-small text-charcoal/65 mb-4">Sign in with a person's account to enrol a runner (with sign-in off there is nobody to issue a code for).</p>
+    {% endif %}
+  {% elif is_owner %}
+    <details class="card p-3 mb-4" data-sheet="server" data-add-panel{% if add_error or not total %} open{% endif %}>
+      <summary class="press list-none cursor-pointer touch-target flex flex-wrap items-baseline gap-x-3"><span class="font-semibold text-small" data-add-btn="server">+ Add a server</span><span class="text-micro text-charcoal/60">Where your apps run and get deployed</span></summary>
+      <div class="mt-3">
+        <p class="text-micro text-charcoal/60 mb-2">Give its address and a login user, paste the one line it gives you on the server, then check access.</p>
+        {% include "partials/server_add_form.html" %}
+      </div>
+    </details>
+  {% endif %}
+
+  {% if total %}
+  <div class="flex flex-wrap items-center gap-2 mb-3" data-filters role="group" aria-label="Filter machines">
+    {% for key, label in roles.items() %}
+    <a href="{{ base }}/machines?tab={{ tab }}{{ '&role=' ~ key if key != 'all' }}" class="fchip {{ 'fchip-on' if role == key }}" aria-current="{{ 'true' if role == key else 'false' }}" data-filter="{{ key }}">{{ label }}{% if key != 'all' %} <span class="text-charcoal/50">{{ counts[key] }}</span>{% endif %}</a>
+    {% endfor %}
+    <span class="ml-auto">{% set sf_page = 'machines' %}{% set sf_project = '' %}{% include "partials/saved_filters.html" %}</span>
+  </div>
+  {% endif %}
+
+  {% if not total %}
+  {% if tab == 'runners' %}
+  <div class="card p-4 mb-4" data-section="empty" data-no-devices>
+    <p class="text-small text-charcoal/75"><strong>No runners enrolled yet.</strong> A runner is a PC that runs Claude Code jobs for this account: it connects out to Crewboss, builds and tests code in a throw-away worktree and pushes a branch. A server that receives deploys is a separate job; see the Servers tab once something needs to ship.</p>
+  </div>
+  {% else %}
+  <div class="card p-4 mb-4" data-section="empty" data-servers-empty>
+    <p class="text-small text-charcoal/75"><strong>No servers yet.</strong> A server is where your apps run: Crewboss connects in with a one-hour pass, only after your OK, and the server pulls the approved release.{% if not is_owner %} The owner adds servers.{% endif %}</p>
+  </div>
+  {% endif %}
+  {% elif not machines %}
+  <p class="card px-4 py-3 text-small text-charcoal/65 mb-4" data-none-match>No machine matches this filter. <a class="underline" href="{{ base }}/machines?tab={{ tab }}">Show all</a>.</p>
+  {% endif %}
+
+  <div class="grid gap-3 md:grid-cols-2 mb-4" data-machine-cards data-access-cards data-fold-section>
+    {% for m in machines %}
+    {% set c = m.server %}
+    <article class="card p-3 min-w-0" id="{{ ('cs-' ~ c.id) if c else ('m-' ~ m.devices[0].id) }}" data-machine="{{ m.key }}"
+             {% if c %}data-fold="srv:{{ c.id }}" data-commissioned="{{ c.name }}" data-status="{{ c.status }}" data-state="{{ c.state }}" data-envs="{{ c.targets|map(attribute='env')|unique|join(' ') }}"{% endif %}>
+      <div class="flex items-center gap-2 flex-wrap">
+        <h3 class="font-semibold break-words min-w-0" data-machine-name>{{ m.name }}</h3>
+        {% if tab == 'runners' %}
+        <span class="chip bg-charcoal/[.06] text-charcoal/70" data-role-chip="jobs">Runs jobs</span>
+        {% if c %}<a class="chip bg-charcoal/[.06] text-charcoal/70 underline" href="{{ base }}/machines?tab=servers#cs-{{ c.id }}" data-also="server">also a server</a>{% endif %}
+        {% else %}
+        <span class="chip bg-charcoal/[.06] text-charcoal/70" data-role-chip="deploys">Receives deploys</span>
+        {% if m.devices %}<a class="chip bg-charcoal/[.06] text-charcoal/70 underline" href="{{ base }}/machines?tab=runners#dev-{{ m.devices[0].id }}" data-also="runner">also a runner</a>{% endif %}
+        {% endif %}
+      </div>
+      {% if tab == 'runners' and m.suggest %}
+      {# a SUGGESTION only: the card asks, a person says yes, nothing is joined automatically #}
+      <form method="post" action="{{ base }}/machines/{{ m.devices[0].id }}/join" class="mt-2 rounded-lg bg-indigo/5 px-3 py-2 text-small" data-join-suggestion>
+        <input type="hidden" name="server_id" value="{{ m.suggest.id }}"><input type="hidden" name="tab" value="{{ tab }}">
+        <span>Is <strong>{{ m.devices[0].name }}</strong> the same machine as <strong>{{ m.suggest.name }}</strong>?</span>
+        <button class="btn-ghost text-small touch-target border border-line ml-1" type="submit" data-join>Yes, join them</button>
+      </form>
+      {% endif %}
+      {% if tab == 'servers' %}{% include 'partials/machine_server.html' %}
+      {% else %}{% for d in m.devices %}{% include 'partials/machine_runner.html' %}{% endfor %}{% endif %}
+      {# joining is a link on the card, never a step in adding (owner only; always a person's choice) #}
+      {% if is_owner and tab == 'runners' and not c and free_servers %}
+      <details class="mt-3 text-small" data-link-server>
+        <summary class="press cursor-pointer touch-target flex items-center underline">Also use this as a server</summary>
+        <form method="post" action="{{ base }}/machines/{{ m.devices[0].id }}/join" class="flex flex-wrap items-end gap-2 mt-1">
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <label class="block min-w-0"><span class="kb-label">Link to a server</span>
+            <select name="server_id" class="field text-small">{% for s in free_servers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></label>
+          <button class="btn-ghost text-small touch-target border border-line" type="submit" data-join>Link to a server</button>
+        </form>
+      </details>
+      {% elif is_owner and tab == 'runners' and not c %}
+      <p class="mt-3 text-micro text-charcoal/60" data-link-server-none>Also a server? <a class="underline" href="{{ base }}/machines?tab=servers">Add it on the Servers tab</a>, then link the two here.</p>
+      {% elif is_owner and tab == 'servers' and not m.devices and free_runners %}
+      <details class="mt-3 text-small" data-link-runner>
+        <summary class="press cursor-pointer touch-target flex items-center underline">Also use this as a runner</summary>
+        <div class="mt-1 flex flex-wrap gap-2">
+          {% for r in free_runners %}
+          <form method="post" action="{{ base }}/machines/{{ r.id }}/join"><input type="hidden" name="server_id" value="{{ c.id }}"><input type="hidden" name="tab" value="{{ tab }}">
+            <button class="btn-ghost text-small touch-target border border-line" type="submit" data-join>Link to runner {{ r.name }}</button></form>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+
+  {% if tab == 'runners' and agent_cards %}{% include 'partials/agent_files_review.html' %}{% endif %}
+
+  {% if tab == 'runners' %}
+  {# JOBS: running and queued first; recent folded #}
+  <section class="mb-5" aria-label="Jobs" data-section="jobs" x-data="{ cols: false }">
+    <div class="flex items-center gap-2 mb-2">
+      <h2 class="text-lead font-semibold">Running and queued <span class="text-small font-normal text-charcoal/50">({{ live_jobs|length }})</span></h2>
+      <button type="button" class="btn-ghost text-micro border border-line ml-auto" x-cloak style="display:none" x-show="true" @click="cols = !cols" :aria-pressed="cols" data-cols-toggle>Details</button>
+    </div>
+    {% if live_jobs %}
+    <ul class="card divide-y divide-line" data-live-jobs>
+      {% for j in live_jobs %}{% include 'partials/machine_job_row.html' %}{% endfor %}
+    </ul>
+    {% else %}
+    <p class="card px-4 py-3 text-small text-charcoal/65" data-no-jobs>Nothing running or queued.</p>
+    {% endif %}
+    {% if recent_jobs %}
+    <details class="mt-3" data-recent-jobs>
+      <summary class="press cursor-pointer text-small font-medium touch-target flex items-center">Recent ({{ recent_jobs|length }})</summary>
+      <ul class="card divide-y divide-line mt-1">
+        {% for j in recent_jobs %}{% include 'partials/machine_job_row.html' %}{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </section>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

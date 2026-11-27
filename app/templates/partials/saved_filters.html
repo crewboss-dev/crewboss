@@ -1,0 +1,11 @@
+{# SAVED FILTERS (#772): next to Filter on List, Board and Recent. `sf_page` = list | board | recent, `sf_project` = the project's slug (blank for Recent).
+   js/saved-filters.js (loaded by base.html) fills it from /all/filters: one click applies a saved set; rename, delete and "default" are on each row;
+   "Save filter" stores the page's current filters under a name. Stored on the server, per person, so they follow the person across devices. #}
+<div class="relative" data-saved-filters data-page="{{ sf_page }}" data-project="{{ sf_project|default('') }}">
+  <button type="button" class="btn-ghost text-small touch-target border border-line" data-sf-open aria-haspopup="true" aria-expanded="false">Saved <span aria-hidden="true">&#9662;</span></button>
+  <div class="popover tl-sf-menu" data-sf-menu hidden>
+    <ul class="flex flex-col" data-sf-list aria-label="Saved filters"></ul>
+    <p class="px-2 py-1.5 text-2xs text-charcoal/50" data-sf-empty hidden>Nothing saved yet.</p>
+    <button type="button" class="tl-sf-save" data-sf-save>+ Save filter&hellip;</button>
+  </div>
+</div>

@@ -1,0 +1,102 @@
+# Who may write through the assistant, move a task, or open a server shell (OSS security review F1-F3).
+workflows:
+  - id: ca.card-write
+    name: A write the assistant proposes and a person taps
+    summary: The assistant can only propose a comment, a ticked step, an answer to a question or a decision on a change; the person's right to change that project is checked when the card is made and again when it is tapped, and the record names that person.
+    trigger:
+      type: button
+      control: "The assistant's card: Confirm / Answer"
+      detail: A person taps a confirm or question card in the assistant drawer
+      route: "POST /ca/cards/{card_id}"
+      code_ref: {file: app/ca_tools.py, function: resolve_card}
+    data: ["table:ca_cards", "table:task_comments", "table:subtasks", "table:task_questions", "table:change_log", "table:activity"]
+    steps:
+      - id: propose
+        kind: action
+        label: The assistant proposes the write
+        detail: A viewer of the project gets a refusal here and no card; answering a question or deciding a change also needs the project's Admin or Owner.
+        code_ref: {file: app/ca_tools.py, function: propose_answer}
+        data: ["table:ca_cards"]
+        effects: ["create:ca_cards"]
+      - id: recheck
+        kind: decision
+        question: Can the person who taps still change this project (Admin or Owner for an answer or a decision)?
+        label: Rights checked again at the tap
+        code_ref: {file: app/ca_tools.py, function: _run_confirm}
+      - id: write
+        kind: action
+        label: Record the comment, tick, answer or decision as that person
+        detail: The row names the person (ca:<id>), never the owner; a demoted person's tap fails and changes nothing.
+        code_ref: {file: app/ca_tools.py, function: _run_answer}
+        data: ["table:task_comments", "table:subtasks", "table:task_questions", "table:change_log", "table:activity"]
+        effects: ["change:task_questions (answer)", "change:change_log (decision)", "create:task_comments", "change:subtasks (done)", "log:activity"]
+    edges:
+      - {from: trigger, to: propose}
+      - {from: propose, to: recheck}
+      - {from: recheck, to: write, label: "yes"}
+    covers:
+      - {file: app/ca_tools.py, function: _need_edit}
+      - {file: app/ca_tools.py, function: _need_admin}
+      - {file: app/users.py, function: set_role}
+
+  - id: task.move-project
+    name: A task moves to another project
+    summary: Whoever moves a task must be able to change the destination project; a destination they cannot see answers the same not-found as one that does not exist.
+    trigger:
+      type: button
+      control: "Task drawer: Move to"
+      detail: A person picks another project for the task
+      route: "POST /{slug}/tasks/{task_id}"
+      code_ref: {file: app/routers/pages.py, function: update_task_form}
+    data: ["table:tasks", "table:activity"]
+    steps:
+      - id: dest
+        kind: decision
+        question: Can the person see and change the destination project?
+        label: Destination checked
+        detail: Not visible = the same 404 as a missing project (hidden, archived or another account look identical).
+        code_ref: {file: app/routers/pages.py, function: update_task_form}
+      - id: move
+        kind: action
+        label: Move the task with its checklist, comments and history
+        code_ref: {file: app/repo.py, function: update_task}
+        data: ["table:tasks"]
+        effects: ["change:tasks (project)", "log:activity"]
+    edges:
+      - {from: trigger, to: dest}
+      - {from: dest, to: move, label: "yes"}
+
+  - id: server.session-pass
+    name: An AI session asks for a shell on a server
+    summary: A session token gets a 60-minute shell pass only for a server whose switch the owner turned on (off by default, owner only, passkey tap to turn on); a server reached through another needs both on.
+    trigger:
+      type: event
+      control: "A session token calls the API"
+      detail: A standing AI session asks for a pass
+      route: "POST /api/servers/{server_id}/ssh-cert"
+      code_ref: {file: app/routers/api.py, function: api_ssh_cert}
+    data: ["table:commissioned_servers", "table:ssh_cert_issues"]
+    steps:
+      - id: switch
+        kind: decision
+        question: Is "AI sessions may open a shell" on for this server (and its jump server)?
+        label: Per-server switch
+        code_ref: {file: app/server_access.py, function: issue_pass}
+      - id: sign
+        kind: action
+        label: Sign the one-hour pass and record it
+        code_ref: {file: app/ssh_ca.py, function: sign}
+        data: ["table:ssh_cert_issues"]
+        effects: ["create:ssh_cert_issues"]
+      - id: toggle
+        kind: action
+        label: The owner turns the switch on or off
+        detail: Machines > Servers > Access and setup; turning it on needs a fresh passkey tap.
+        code_ref: {file: app/server_access.py, function: set_session_passes}
+        data: ["table:commissioned_servers"]
+        effects: ["change:commissioned_servers (sessions_may_request_passes)", "log:activity"]
+    edges:
+      - {from: trigger, to: switch}
+      - {from: switch, to: sign, label: "on"}
+    covers:
+      - {file: app/routers/servers_pages.py, function: set_server_session_passes}

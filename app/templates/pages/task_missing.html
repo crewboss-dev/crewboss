@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{% if number %}No task #{{ number }}{% else %}Not a task number{% endif %}{% endblock %}
+{% block page_title %}{% if number %}No task #{{ number }}{% else %}Not a task number{% endif %}{% endblock %}
+{% block content %}
+{# /all/tasks/<n> found nothing (task #197): say so plainly and offer the way on. Never a bare 404. #}
+<div class="card p-5 max-w-lg" data-task-missing>
+  {% if number %}
+  <h2 class="text-lead font-semibold">No task #{{ number }}</h2>
+  <p class="text-small text-charcoal/65 mt-1">There's no task with that number in any project. Check the number, or it may have been deleted.</p>
+  {% else %}
+  <h2 class="text-lead font-semibold">“{{ ref }}” isn't a task number</h2>
+  <p class="text-small text-charcoal/65 mt-1">Type a number like 123 or #123 in the project finder at the top to open that task.</p>
+  {% endif %}
+  <div class="mt-4 flex flex-wrap gap-2">
+    <a href="/" class="btn-primary text-small touch-target">All projects</a>
+    <button type="button" x-data @click="history.back()" class="btn-ghost text-small touch-target border border-line">Back</button>
+  </div>
+</div>
+{% endblock %}

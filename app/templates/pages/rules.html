@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Rules &amp; AI Instructions{% endblock %}
+{% block page_title %}Rules &amp; AI Instructions{% endblock %}
+{% block content %}
+<p class="text-small text-charcoal/60 mb-3 max-w-2xl">What steers the workflows. A <strong>Rule</strong> is a
+  fixed WHEN / IF &rarr; THEN policy at a step; an <strong>AI Instruction</strong> is plain-language guidance that tunes an
+  AI Skill's judgement; a <strong>Built-in</strong> is a rule written into the code. Read-only &mdash; to change one, request it.</p>
+
+{% if origin == 'fixture' %}
+<div role="note" class="mb-3 rounded-lg border border-status-warn/40 bg-status-warn/10 px-3 py-2 text-small">
+  Sample data (fixture) &mdash; the scanner doesn't report rules yet.
+</div>
+{% endif %}
+
+<div class="flex flex-wrap items-center gap-2 mb-3">
+  <a href="{{ href(kind='') }}" class="{{ 'fchip-on' if not kind else 'fchip' }}">All</a>
+  {% for k, label in kind_label.items() %}
+  <a href="{{ href(kind=k) }}" class="{{ 'fchip-on' if kind == k else 'fchip' }}">{{ label }}s</a>
+  {% endfor %}
+  <span class="w-px h-4 bg-charcoal/15 mx-1"></span>
+  <a href="{{ href(disabled='' if show_disabled else '1') }}" class="{{ 'fchip-on' if show_disabled else 'fchip' }}" aria-pressed="{{ 'true' if show_disabled else 'false' }}">Show turned-off</a>
+  {% if workflow %}
+  <a href="{{ href(workflow='', step='') }}" class="chip press bg-indigo/10 text-indigo normal-case" title="Clear this filter">
+    {{ workflow }}{% if step %} · {{ step }}{% endif %} <span aria-hidden>&times;</span><span class="sr-only">clear</span></a>
+  {% endif %}
+  {% if skill %}
+  <a href="{{ href(skill='') }}" class="chip press bg-kind-ai/10 text-kind-ai normal-case" title="Clear this filter">
+    tunes {{ skills[skill].name if skill in skills else skill }} <span aria-hidden>&times;</span><span class="sr-only">clear</span></a>
+  {% endif %}
+  <span class="text-micro text-charcoal/45 ml-auto tabular">{{ rules|length }} shown</span>
+</div>
+
+<div class="card px-4 py-1">
+  {% for r in rules %}
+  <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 py-3 border-b border-line last:border-0 {{ 'opacity-60' if not r.enabled }}"
+       id="rule-{{ r.id }}">
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <span class="chip {{ 'bg-kind-ai/10 text-kind-ai' if r.kind == 'instruction' else 'bg-kind-logic/15 text-charcoal' }}">{{ kind_label[r.kind] }}</span>
+        <span class="text-small font-semibold">{{ r.name }}</span>
+        {% if not r.enabled %}<span class="chip bg-charcoal/10 text-charcoal/60">Turned off</span>{% endif %}
+      </div>
+      <div class="text-small text-charcoal/75 mt-1 leading-snug">
+        <span class="text-micro uppercase tracking-wide text-charcoal/45">When</span> {{ r.conditions or '—' }}
+        <span class="text-charcoal/35 mx-0.5" aria-hidden>&rarr;</span>
+        <span class="text-micro uppercase tracking-wide text-charcoal/45">{{ 'Guidance' if r.kind == 'instruction' else 'Then' }}</span> {{ r.action or '—' }}
+      </div>
+      <div class="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-micro text-charcoal/50">
+        {% if r.workflow_step and r.workflow_step.workflow %}
+        <a href="{{ base }}/workflows/{{ r.workflow_step.workflow|urlencode }}{% if r.workflow_step.step %}?step={{ r.workflow_step.step|urlencode }}{% endif %}" class="hover:underline">
+          {{ r.workflow_step.workflow }}{% if r.workflow_step.step %} · {{ r.workflow_step.step }}{% endif %}</a>
+        {% else %}<span>not tied to a step</span>{% endif %}
+        {% if r.skill %}<a href="{{ base }}/ai-features?open={{ r.skill|urlencode }}" class="hover:underline">tunes {{ skills[r.skill].name if r.skill in skills else r.skill }}</a>{% endif %}
+        {% if r.source_file %}<span class="font-mono break-all">{{ r.source_file }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="flex sm:flex-col items-center sm:items-end gap-2 shrink-0">
+      <span class="text-micro text-charcoal/45 tabular" title="Times it fired (from phase 3)">hits: {{ r.hits if r.hits is not none else '—' }}</span>
+      <a href="{{ base }}/tasks/new?rule={{ r.id|urlencode }}" class="btn-ghost text-small">Request a change</a>
+    </div>
+  </div>
+  {% else %}
+  <div class="p-8 text-center text-charcoal/45">
+    {% if origin == 'none' %}The scanner doesn't report rules or AI instructions yet &mdash; they'll list here once it does.
+    {% else %}Nothing matches these filters.{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% with section = 'rules' %}{% include "partials/inherited_shared.html" %}{% endwith %}
+{% endblock %}

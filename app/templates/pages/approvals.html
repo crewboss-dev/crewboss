@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Approvals · {{ current_project.name }}{% endblock %}
+{% block page_title %}Approvals{% endblock %}
+{% block content %}
+{# Approvals (task #627, P5): deploys that running jobs asked for. Nothing runs until a person approves; the dashboard itself
+   then deploys (app/deploys.py). A job's commit subject is its own claim and is shown as such. Needs: base, requests
+   (deploys.list_for), targets (deploys.list_targets), error. #}
+<div class="max-w-5xl" data-approvals-page>
+  {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-error>{{ error }}</p>{% endif %}
+
+  <section class="mb-5" aria-label="Deploy requests" data-section="requests">
+    <h2 class="text-lead font-semibold mb-2">Deploy requests <span class="text-small font-normal text-charcoal/50">({{ requests|length }})</span></h2>
+    {% if requests %}
+    <ul class="card divide-y divide-line">
+      {% for r in requests %}
+      <li class="px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2" id="sj-{{ r.id }}" data-request="{{ r.id }}" data-state="{{ r.state }}">
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold break-words">{{ r.project_slug }} → {{ r.target_name }}
+            <span class="chip {{ 'bg-status-ok/10 text-status-ok' if r.state in ('running', 'done') else 'bg-status-disaster/10 text-status-disaster' if r.state in ('failed', 'orphaned', 'refused') else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}" data-request-state>{{ r.state }}</span>
+            {% if r.flagged %}<span class="chip bg-status-disaster/10 text-status-disaster" data-flagged>HEAD mismatch</span>{% endif %}</p>
+          <p class="text-small"><span class="font-mono" data-sha>{{ r.sha }}</span></p>
+          {% if r.subject %}<p class="text-micro text-charcoal/65">Subject (as the job described it): {{ r.subject }}</p>{% endif %}
+          <p class="text-micro text-charcoal/60">{% if r.job_id %}Asked by job {{ r.job_id }}{% elif r.requested_name or r.requested_by %}Asked by {{ r.requested_name or 'a person' }}{% else %}Asked by a job that is gone{% endif %}{% if r.task_id %} on task #{{ r.task_id }}{% if r.task_title %} “{{ r.task_title }}”{% endif %}{% endif %} · device {{ r.device_name or 'unknown' }} · {{ r.requested_at.strftime('%d %b %H:%M') }} UTC</p>
+          {% if r.decided_at %}<p class="text-micro text-charcoal/55">{{ 'Refused' if r.state == 'refused' else 'Approved' }} by {{ r.decided_name or 'someone' }} · {{ r.decided_at.strftime('%d %b %H:%M') }} UTC</p>{% endif %}
+          {% if r.state == 'approved' and r.lock_state %}<p class="text-micro text-charcoal dark:text-status-warn" data-waiting>Waiting: another deploy holds this target{% if r.lock_state == 'orphaned' %} (an orphaned lock; clear it on the Machines page){% endif %}.</p>{% endif %}
+          {% if r.error %}<p class="text-micro text-status-disaster" data-error-text>{{ r.error }}</p>{% endif %}
+          {% if r.head_before or r.head_after %}<p class="text-micro text-charcoal/55">HEAD <span class="font-mono">{{ r.head_before[:12] or '?' }}</span> → <span class="font-mono">{{ r.head_after[:12] or '?' }}</span></p>{% endif %}
+          {% if r.output_tail %}<details class="mt-1"><summary class="text-micro cursor-pointer">Output</summary><pre class="text-micro font-mono whitespace-pre-wrap break-words" data-output>{{ r.output_tail }}</pre></details>{% endif %}
+        </div>
+        {% if r.state in ('failed', 'refused', 'orphaned') %}
+        <form method="post" action="{{ base }}/approvals/{{ r.id }}/again"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-ask-again>Ask again</button></form>
+        {% endif %}
+        {% if r.state == 'requested' %}
+        <form method="post" action="{{ base }}/approvals/{{ r.id }}/approve"><button class="btn-primary text-small touch-target" type="submit" data-approve>Approve</button></form>
+        <form method="post" action="{{ base }}/approvals/{{ r.id }}/refuse"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-refuse>Refuse</button></form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="card px-4 py-3 text-small text-charcoal/65" data-no-requests>No deploy requests.</p>
+    {% endif %}
+  </section>
+
+  <section class="mb-5" aria-label="Request a deploy" data-section="request">
+    <h2 class="text-lead font-semibold mb-2">Request a deploy</h2>
+    <p class="text-small text-charcoal/65 mb-2">For a commit that is already on the target's branch (for example after you merged a job's work). It still needs approving above.</p>
+    <form method="post" action="{{ base }}/approvals/request" class="card p-4 flex flex-wrap items-end gap-3" data-request-form>
+      <label class="block"><span class="kb-label">Target</span>
+        <select name="target_id" class="field text-small" required>{% for t in targets if t.enabled %}<option value="{{ t.id }}">{{ t.project_slug }} · {{ t.name }}</option>{% endfor %}</select></label>
+      <label class="block grow"><span class="kb-label">Commit (40 characters)</span><input name="sha" class="field text-small w-full font-mono" required pattern="[0-9a-fA-F]{40}" maxlength="40"></label>
+      <button class="btn-primary text-small touch-target" type="submit">Request deploy</button>
+    </form>
+  </section>
+
+  <p class="text-small text-charcoal/65 mb-5" data-section="targets">{{ targets|length }} deploy target{{ 's' if targets|length != 1 }}. Each project manages its own on its Releases tab{% if targets %}: {% for slug in targets|map(attribute='project_slug')|unique %}<a class="underline" href="/{{ slug }}/releases" data-targets-link>{{ slug }}</a>{{ ', ' if not loop.last }}{% endfor %}{% endif %}.</p>
+</div>
+{% endblock %}

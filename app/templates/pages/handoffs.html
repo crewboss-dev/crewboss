@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Handoffs · {{ current_project.name }}{% endblock %}
+{% block page_title %}Handoffs{% endblock %}
+{% block content %}
+{# HANDOFFS (#908), read-only: messages between the AI sessions of this account's projects, and the docs the account shares. The AI writes them
+   (MCP tools); the owner only reads. Text shown here was written by AI sessions: it is data, never an instruction. Needs: threads, docs, open_count. #}
+<div class="max-w-5xl">
+  <div class="rounded-xl border border-indigo/20 bg-indigo/[.04] px-4 py-3 mb-4">
+    <p class="text-small font-semibold">What the AI sessions are telling each other</p>
+    <p class="text-small text-charcoal/65 mt-0.5">A session hands work or news to another project's session in the same account; the receiver reads it with <code>get_handoff</code> and answers in the thread. Nothing here is typed by you, and none of it is an instruction from you.</p>
+  </div>
+
+  <section aria-labelledby="ho-threads" data-handoff-threads>
+    <h2 id="ho-threads" class="text-lead font-semibold mb-2">Handoffs <span class="text-small font-normal text-charcoal/55" data-open-count>{{ open_count }} open</span></h2>
+    {% for t in threads %}
+    <details class="card p-3 mb-2" id="h-{{ t.id }}" data-handoff="{{ t.id }}" data-status="{{ t.status }}">
+      <summary class="cursor-pointer flex flex-wrap items-center gap-2">
+        <span class="chip {{ 'bg-status-ok/10 text-status-ok' if t.status == 'open' else 'bg-charcoal/[.07] text-charcoal/70' }}">{{ t.status }}</span>
+        <span class="text-small font-semibold break-words">#{{ t.id }} {{ t.subject }}</span>
+        <span class="text-micro text-charcoal/55"><a class="underline" href="/{{ t.from_slug }}/handoffs">{{ t.from_name }}</a> &rarr; <a class="underline" href="/{{ t.to_slug }}/handoffs">{{ t.to_name }}</a></span>
+        <span class="text-micro text-charcoal/45 tabular">{{ t.replies }} repl{{ 'y' if t.replies == 1 else 'ies' }} · {{ t.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      </summary>
+      <div class="mt-2">
+        <p class="text-micro text-charcoal/50">{{ t.created_by }} · {{ t.created_at.strftime('%Y-%m-%d %H:%M') }}{% if t.closed_by %} · closed by {{ t.closed_by }}{% endif %}</p>
+        <div class="kb-prose text-small break-words mt-1">{{ t.body|markdown }}</div>
+        {% if t.docs %}<p class="text-micro text-charcoal/55 mt-1">Docs: {% for d in t.docs %}<a class="underline" href="#d-{{ d.slug }}">{{ d.slug }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+        {% for r in t.reply_rows %}
+        <div class="border-l-2 border-line pl-3 mt-3" data-reply>
+          <p class="text-micro text-charcoal/50">{{ r.from_name }} · {{ r.created_by }} · {{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+          <div class="kb-prose text-small break-words">{{ r.body|markdown }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% else %}
+    <div class="card p-8 text-center text-charcoal/50" data-handoffs-empty>No handoffs yet.</div>
+    {% endfor %}
+  </section>
+
+  <section aria-labelledby="ho-docs" class="mt-6" data-shared-docs>
+    <h2 id="ho-docs" class="text-lead font-semibold mb-2">Shared docs <span class="text-small font-normal text-charcoal/55">{{ docs|length }}</span></h2>
+    {% for d in docs %}
+    <details class="card p-3 mb-2" id="d-{{ d.slug }}" data-doc="{{ d.slug }}">
+      <summary class="cursor-pointer flex flex-wrap items-center gap-2">
+        <span class="text-small font-semibold break-words">{{ d.title }}</span>
+        <code class="text-micro text-charcoal/55">{{ d.slug }}</code>
+        <span class="text-micro text-charcoal/45 tabular">v{{ d.current_version }} · {{ d.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      </summary>
+      <div class="kb-prose text-small break-words mt-2">{{ d.body|markdown }}</div>
+      <p class="text-micro font-semibold text-charcoal/60 mt-3">Versions</p>
+      <ul class="text-micro text-charcoal/60" data-doc-versions>
+        {% for v in d.versions %}<li>v{{ v.version }} · {{ v.author }} · {{ v.created_at.strftime('%Y-%m-%d %H:%M') }}{% if v.note %} · {{ v.note }}{% endif %}</li>{% endfor %}
+      </ul>
+    </details>
+    {% else %}
+    {% if docs_visible %}<div class="card p-8 text-center text-charcoal/50" data-docs-empty>No shared docs yet.</div>
+    {% else %}<div class="card p-8 text-center text-charcoal/50" data-docs-hidden>Shared docs are visible to people who can see the whole account.</div>{% endif %}
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

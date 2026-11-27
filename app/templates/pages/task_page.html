@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}#{{ task.id }} {{ task.title }}{% endblock %}
+{% block page_title %}Task #{{ task.id }}{% endblock %}
+{% block content %}
+{# THE TASK'S FULL PAGE (#816, owner 11-16: "we should have full page links, not just drawers"). The same record as the drawer, from the same
+   partials (partials/task_drawer.html with full_page): the body and subtasks on the left, questions / comments / history on the right from
+   1024px; stacked on a phone. The id is #drawer-content so every write in the record (hx-target) refreshes THIS page in place. data-ca-page
+   names the item for the assistant's thread rule. data-swappable: the assistant's links may swap this page in without a document load
+   (js/pagenav.js). #}
+<div data-swappable data-ca-page data-ca-entity="task:{{ task.id }}" data-ca-title="{{ task.title }}">
+  <nav class="flex items-center gap-2 text-small text-charcoal/60 mb-3" aria-label="Where this task is">
+    <a href="{{ base }}/board" class="inline-flex items-center gap-1 hover:text-charcoal hover:underline" data-back-link>&larr; {{ current_project.name }}</a>
+    <span aria-hidden="true">/</span><span>Task #{{ task.id }}</span>
+  </nav>
+  {% include "partials/task_tabs.html" %}
+  <h1 class="text-lead font-semibold mb-3 break-words" data-record-title>{{ task.title }}</h1>
+  <div id="drawer-content">
+    {% include "partials/task_drawer.html" %}
+  </div>
+</div>
+{% endblock %}

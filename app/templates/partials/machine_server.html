@@ -1,0 +1,149 @@
+{# The "Receives deploys" block of a machine card (#810): the server's address, its state in words ("Ready", "Not answering", "Needs setup"),
+   what deploys here ("Used by" chips, read-only: a deploy target belongs to its project's Releases tab), and Access and setup (the one
+   paste line, setup commands, Check access, Connect via, Remove). Folded when Ready; open when it needs setup. A designer sees the
+   server read-only. Never any CA private material (app/ssh_ca.py keeps it). Needs: base, c (a server_access.page_model card), cs, added, checked. #}
+{% macro copy_button(label) -%}
+<button type="button" class="btn-ghost text-small touch-target border border-line mt-1"
+        @click="(navigator.clipboard ? navigator.clipboard.writeText($refs.src.textContent) : Promise.reject()).then(() => { copied = true; setTimeout(() => copied = false, 1500) }, () => window.getSelection().selectAllChildren($refs.src))"
+        x-text="copied ? 'Copied' : {{ label|tojson|forceescape }}">{{ label }}</button>
+{%- endmacro %}
+{% set ok = c.status == 'commissioned' %}
+<section class="mt-3 border-t border-line pt-3" data-block="deploys" aria-label="Receives deploys">
+  <div class="flex items-center gap-2 flex-wrap">
+    <span class="w-2 h-2 rounded-full {{ 'bg-status-ok' if c.state == 'ready' else 'bg-status-disaster' if c.status == 'failed' else 'bg-status-warn' }}" aria-hidden="true"></span>
+    <h4 class="font-semibold text-small">Receives deploys</h4>
+    {# the state is a word as well as a dot #}
+    <span class="chip {{ 'bg-status-ok/10 text-status-ok' if c.state == 'ready' else 'bg-status-disaster/10 text-status-disaster' if c.status == 'failed' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}" data-status-chip data-state-chip="{{ c.state }}">{{ {'ready': 'Ready', 'not_answering': 'Not answering', 'needs_setup': 'Needs setup'}[c.state] }}</span>
+  </div>
+  <p class="text-micro text-charcoal/55 mt-0.5" data-trust>Crewboss connects IN with a one-hour, single-command pass, only after your OK. One pinned host key; a changed key stops everything.</p>
+      <p class="text-micro font-mono text-charcoal/55 mt-0.5 break-all">{{ c.login_user }}@{{ c.address }}{% if c.port != 22 %} port {{ c.port }}{% endif %}</p>
+      {% if c.via_name %}<p class="text-micro text-charcoal/55" data-via>via {{ c.via_name }}</p>{% endif %}
+      <p class="text-small text-charcoal/70 mt-0.5 break-words" data-summary>
+        {% if c.state == 'ready' %}{{ c.os or 'OS unknown' }} · sudo {{ 'ok' if c.sudo_nopasswd else 'no' }} · key pinned {{ c.commissioned_when }}{% if c.probe_when %} · answered {{ c.probe_when }}{% endif %}
+        {% elif c.state == 'not_answering' %}<span data-not-answering>Not answering for {{ c.unreachable_min }} min.</span> Setup stays folded: a reboot is not a rebuild.
+        {% elif c.status == 'failed' %}Check failed {{ c.checked_when }}: {{ c.last_check_error }}
+        {% elif c.status == 'commissioned' %}{{ c.state_reason }}
+        {% else %}Paste the line below on the server, then Check access.{% endif %}
+      </p>
+      {% if c.state == 'not_answering' and not c.readonly %}
+      <form method="post" action="{{ base }}/servers/{{ c.id }}/check" class="mt-1"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-check-now>Check now</button></form>
+      {% endif %}
+
+      {# Host signal (#828): one compact row, each status a WORD as well as a colour (app/host_signal.py). #}
+      {% if c.signal %}
+      {% set tone = {'ok': 'bg-status-ok/10 text-status-ok', 'warn': 'bg-status-warn/15 text-charcoal dark:text-status-warn', 'bad': 'bg-status-disaster/10 text-status-disaster', 'none': 'bg-charcoal/[.06] text-charcoal/60'} %}
+      <ul class="flex flex-wrap gap-1.5 mt-2" data-host-signal aria-label="Host signal">
+        {% for key, label in (('reachable', 'Reachable'), ('disk', 'Disk'), ('tls', 'TLS'), ('deploy', 'Last deploy')) %}
+        {% set s = c.signal[key] %}
+        <li class="chip {{ tone[s.tone] }}" data-signal="{{ key }}" data-tone="{{ s.tone }}" title="{{ label }}{% if s.get('hosts') %} ({{ s.hosts|join(', ') }}){% endif %}{% if s.get('problem') %}: {{ s.problem }}{% endif %}">
+          <span class="opacity-70">{{ label }}:</span> {{ s.word }}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      {# "Used by" (#810): targets belong to the project; add and edit them on its Releases tab. #}
+      <div class="mt-3 border-t border-line pt-2" data-targets-of="{{ c.id }}">
+        {% if c.targets %}
+        <p class="text-micro text-charcoal/60 mb-1">Used by</p>
+        <ul class="flex flex-wrap gap-1.5" data-used-by>
+          {% for t in c.targets %}
+          <li data-target="{{ t.id }}" data-env="{{ t.env }}" data-enabled="{{ 'true' if t.enabled else 'false' }}">
+            <a class="chip bg-charcoal/[.06] text-charcoal/80 hover:bg-charcoal/10" href="/{{ t.project_slug }}/releases" title="{{ t.repo_path }} · branch {{ t.branch }}"{% if not t.enabled %} data-off{% endif %}>{{ t.project_slug }} · {{ t.env }}{% if not t.enabled %} · off{% endif %}</a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-micro text-charcoal/55" data-no-targets>Nothing deploys here yet. Add a place to deploy from a project's Releases tab.</p>
+        {% endif %}
+      </div>
+
+      {# Manifest & backups (#726): what is deployed here and what must be backed up, generated from the apps' recipes. #}
+      {% if c.manifest %}
+      <div class="mt-3 border-t border-line pt-2" data-manifest-block data-manifest-state="{{ c.manifest.state }}">
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="text-micro text-charcoal/60">Manifest &amp; backups</p>
+          <span class="chip {{ 'bg-status-ok/10 text-status-ok' if c.manifest.state == 'current' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}" data-manifest-chip>{{ {'current': 'Up to date', 'drift': 'Recipe changed: regenerate', 'never': 'Not generated yet'}[c.manifest.state] }}</span>
+          {% if c.manifest.undeclared %}<span class="chip bg-status-warn/15 text-charcoal dark:text-status-warn">{{ c.manifest.undeclared }} app{{ 's' if c.manifest.undeclared != 1 }} with no state declared</span>{% endif %}
+        </div>
+        <p class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-small"><a class="underline" href="{{ base }}/servers/{{ c.id }}/manifest" data-manifest-open>View manifest and backups</a>
+          <a class="underline" href="{{ base }}/servers/{{ c.id }}/manifest/file?kind=yaml">YAML</a>
+          <a class="underline" href="{{ base }}/servers/{{ c.id }}/manifest/file?kind=json">JSON</a>
+          <a class="underline" href="{{ base }}/servers/{{ c.id }}/manifest/file?kind=skill">Server skill (.md)</a></p>
+      </div>
+      {% endif %}
+
+      {% if not c.readonly %}
+      <details class="mt-2 border-t border-line pt-1" data-access{% if c.state == 'needs_setup' or added == c.id|string or checked == c.id|string %} open{% endif %}>
+        <summary class="press cursor-pointer text-small font-medium touch-target flex items-center">Access and setup</summary>
+        <div class="mt-1 space-y-3 text-small">
+          {% if ok %}
+          <div class="space-y-1" data-facts>
+            <p><span class="kb-label">Server</span> {{ c.hostname or '?' }} · kernel {{ c.kernel or '?' }}</p>
+            <p class="break-all"><span class="kb-label">Host key (pinned)</span> <span class="font-mono text-micro">{{ c.host_key_fingerprint }}</span></p>
+            <p class="text-micro text-charcoal/55">Last checked {{ c.checked_when }}.</p>
+            {% if not c.sudo_nopasswd %}<p class="text-micro text-status-disaster">sudo asks for a password: add /etc/sudoers.d/{{ c.login_user }} (in the setup commands below), then Check access again.</p>{% endif %}
+          </div>
+          {% endif %}
+          {% if c.line %}
+          <div x-data="{ copied: false }">
+            <span class="kb-label">{{ 'Its line (in' if ok else 'Paste this line into' }} ~{{ c.login_user }}/.ssh/authorized_keys{{ ')' if ok }}</span>
+            <pre x-ref="src" class="card px-3 py-2 text-micro font-mono whitespace-pre-wrap break-all select-all" data-paste-line>{{ c.line }}</pre>
+            {{ copy_button('Copy line') }}
+          </div>
+          {% if not ok %}
+          <div x-data="{ copied: false }" data-append-cmd>
+            <span class="kb-label">Or run this on the server, signed in as {{ c.login_user }} <span class="kb-label-hint">no sudo: it adds the line and sets the owner and modes SSH insists on</span></span>
+            <pre x-ref="src" class="card px-3 py-2 text-micro font-mono whitespace-pre-wrap break-all select-all">install -d -m 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod go-w ~
+grep -qxF '{{ c.line }}' ~/.ssh/authorized_keys || echo '{{ c.line }}' &gt;&gt; ~/.ssh/authorized_keys</pre>
+            {{ copy_button('Copy commands') }}
+            <p class="text-micro text-charcoal/55 mt-1">It's a line for the file, not a command: pasting the bare line into a shell does nothing. Don't edit the file with sudo: if ~/.ssh or the file ends up owned by root or writable by others, SSH silently ignores every key in it (yours too). Keep your session open until Check access passes.</p>
+          </div>
+          {% endif %}
+          <div>
+            <span class="kb-label">Or set the server up from scratch <span class="kb-label-hint">creates {{ c.login_user }}, passwordless sudo, ~/.ssh, and adds the line</span></span>
+            {% for f in c.setup %}
+            <details class="mt-1" x-data="{ copied: false }" data-setup="{{ f.key }}">
+              <summary class="press cursor-pointer text-small py-1">{{ f.label }} <span class="text-micro text-charcoal/50">({{ f.how }})</span></summary>
+              <pre x-ref="src" class="card px-3 py-2 text-micro font-mono whitespace-pre-wrap break-all select-all">{{ f.script }}</pre>
+              {{ copy_button('Copy commands') }}
+            </details>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-small text-status-disaster" data-ca-error>{{ cs.ca_error or "The paste line isn't available yet." }}</p>
+          {% endif %}
+          {% if c.via_name %}
+          <p class="text-micro text-charcoal/65" data-via-note>Reached through <strong>{{ c.via_name }}</strong> (a special case). Paste the line above on <strong>this</strong> server; {{ c.via_name }} must already trust its own line. A pass for this server also opens {{ c.via_name }} for that hour, and {{ c.via_name }}'s sshd must allow TCP forwarding.</p>
+          {% endif %}
+          {% if c.via_name or c.via_options %}
+          <form method="post" action="{{ base }}/servers/{{ c.id }}/via" class="flex flex-wrap items-end gap-2" data-via-form>
+            <label class="block"><span class="kb-label">Connect via</span>
+              <select name="via_server_id" class="field text-small">
+                <option value="">Directly</option>
+                {% for o in c.via_options %}<option value="{{ o.id }}"{% if o.id == c.via_server_id %} selected{% endif %}>{{ o.name }}</option>{% endfor %}
+              </select></label>
+            <button class="btn-ghost text-small touch-target border border-line" type="submit">Save route</button>
+          </form>
+          {% endif %}
+          <p class="text-micro text-charcoal/50">Check access connects from the dashboard, read-only: host name, OS, kernel, and whether sudo works without a password. The first good check pins the server's host key; a changed key later stops every connection.</p>
+
+          <form method="post" action="{{ base }}/servers/{{ c.id }}/session-passes" class="flex flex-wrap items-center gap-2" data-session-passes data-on="{{ 'true' if c.sessions_may_request_passes else 'false' }}">
+            <input type="hidden" name="allow" value="{{ '0' if c.sessions_may_request_passes else '1' }}">
+            <span class="kb-label">AI sessions: {{ 'allowed' if c.sessions_may_request_passes else 'not allowed' }}</span>
+            <button class="btn-ghost text-small touch-target border border-line" type="submit" data-session-passes-toggle>{{ 'Turn off' if c.sessions_may_request_passes else 'Turn on' }}</button>
+            <p class="text-micro text-charcoal/55 w-full">Lets AI sessions open a 60-minute shell here without asking you.{% if not c.sessions_may_request_passes %} Off: a session can't get a pass; a deploy or read you approve still works. Turning it on needs a fresh passkey tap.{% endif %}</p>
+          </form>
+
+      <div class="flex flex-wrap items-center gap-2 pt-1" data-actions>
+            <form method="post" action="{{ base }}/servers/{{ c.id }}/check"><button class="btn-primary text-small touch-target" type="submit" data-check>{{ "Check again" if ok else "Check access" }}</button></form>
+            {# #582: Remove folds the server's card away in place (hx-post; the 303 + flash stays the no-JS path). #}
+            <form method="post" action="{{ base }}/servers/{{ c.id }}/remove"
+                  hx-post="{{ base }}/servers/{{ c.id }}/remove" hx-target="closest [data-fold]" hx-swap="outerHTML"
+                  hx-confirm="{{ 'Remove ' ~ c.name ~ '? Then delete its line from ~' ~ c.login_user ~ '/.ssh/authorized_keys on the server to revoke access.' }}">
+              <button class="btn-ghost text-small touch-target border border-line" type="submit" data-remove>Remove</button></form>
+          </div>
+        </div>
+      </details>
+      {% endif %}
+</section>

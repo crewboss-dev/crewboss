@@ -1,0 +1,293 @@
+{
+  "v": 1,
+  "generated_at": "2026-10-05T03:00:00+00:00",
+  "events": [
+    {
+      "id": 9101,
+      "severity": "critical",
+      "source": "backup",
+      "title": "Nightly restic backup failed",
+      "detail": "restic: repository locked",
+      "first_seen": "2026-10-05T02:31:00+00:00",
+      "last_seen": "2026-10-05T02:31:00+00:00",
+      "count": 1
+    },
+    {
+      "id": 9102,
+      "severity": "error",
+      "source": "invoicing",
+      "title": "Xero push failed for INV-0412",
+      "detail": {
+        "status": 400,
+        "error": "ValidationException"
+      },
+      "first_seen": "2026-10-05T01:10:00+00:00",
+      "last_seen": "2026-10-05T02:50:00+00:00",
+      "count": 4
+    },
+    {
+      "id": 9103,
+      "severity": "warning",
+      "source": "sla",
+      "title": "SLA worker slow cycle",
+      "detail": null,
+      "first_seen": "2026-10-05T02:00:00+00:00",
+      "last_seen": "2026-10-05T02:58:00+00:00",
+      "count": 12
+    }
+  ],
+  "failures": {
+    "invoices_failed": {
+      "count": 2,
+      "items": [
+        {
+          "id": 412,
+          "label": "INV-0412 \u00b7 Acme Pty Ltd",
+          "detail": "Xero 400 ValidationException"
+        },
+        {
+          "id": 415,
+          "label": "INV-0415 \u00b7 Beta Co",
+          "detail": "Xero 429 rate limited"
+        }
+      ]
+    },
+    "provision_errors": {
+      "count": 1,
+      "items": [
+        {
+          "id": 77,
+          "label": "Gamma Ltd",
+          "detail": "Crayon: tenant not found"
+        }
+      ]
+    },
+    "raw_events_errors": {
+      "count": 0,
+      "items": []
+    },
+    "billing_holding_unmatched": {
+      "count": 3,
+      "items": [
+        {
+          "id": 5,
+          "label": "PingCo line 2026-09 #5"
+        },
+        {
+          "id": 6,
+          "label": "PingCo line 2026-09 #6"
+        },
+        {
+          "id": 7,
+          "label": "PingCo line 2026-09 #7"
+        }
+      ]
+    },
+    "alert_devices_failed": {
+      "count": 0,
+      "items": []
+    },
+    "escalations_failed": {
+      "count": 0,
+      "items": []
+    },
+    "snoozes_failed": {
+      "count": 0,
+      "items": []
+    }
+  },
+  "heartbeats": [
+    {
+      "name": "worker:casegen",
+      "last_run": "2026-10-05T02:59:00+00:00",
+      "age_minutes": 1
+    },
+    {
+      "name": "worker:invoicing",
+      "last_run": "2026-10-04T22:00:00+00:00",
+      "age_minutes": 300
+    },
+    {
+      "name": "worker:sla",
+      "last_run": "2026-10-05T02:58:00+00:00",
+      "age_minutes": 2
+    }
+  ],
+  "webhooks": [
+    {
+      "source": "zabbix",
+      "count": 412,
+      "errors": 0,
+      "last_at": "2026-10-05T02:59:30+00:00"
+    },
+    {
+      "source": "stripe",
+      "count": 3,
+      "errors": 1,
+      "last_at": "2026-10-05T01:00:00+00:00"
+    }
+  ],
+  "xero": {
+    "breaker": "closed",
+    "pushes_today": 17
+  },
+  "ai_usage": {
+    "today": {
+      "calls": 42,
+      "input_tokens": 81234,
+      "output_tokens": 9120,
+      "cost_usd": 0.61
+    },
+    "month": {
+      "calls": 1311,
+      "input_tokens": 2450001,
+      "output_tokens": 280112,
+      "cost_usd": 19.4
+    },
+    "by_model": [
+      {
+        "model": "claude-sonnet",
+        "calls": 30,
+        "cost_usd": 0.55
+      },
+      {
+        "model": "claude-haiku",
+        "calls": 12,
+        "cost_usd": 0.06
+      }
+    ]
+  },
+  "ai_models": {
+    "window_days": 30,
+    "since": "2026-09-05",
+    "admin_url": "https://erp.example.com/admin/models",
+    "fx": {
+      "aud_per_usd": 1.4318,
+      "as_of": "2026-10-04"
+    },
+    "workflows": [
+      {
+        "key": "compose_quote",
+        "name": "Quote drafting (Overview & Approach)",
+        "client_facing": true,
+        "host": "erp",
+        "group": "Writing for clients",
+        "switchable": true,
+        "configured": {
+          "tier": "standard",
+          "model": "claude-sonnet-5-5",
+          "source": "default",
+          "pin": null,
+          "choice": null
+        },
+        "used_30d": [
+          {
+            "model": "claude-sonnet-5-5",
+            "calls": 11,
+            "input_tokens": 52000,
+            "output_tokens": 9000,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "usd": 0.55,
+            "aud": 0.79,
+            "last_used": "2026-10-04"
+          }
+        ],
+        "drift": {
+          "flag": false,
+          "reason": ""
+        },
+        "admin_url": "https://erp.example.com/admin/models?edit=compose_quote#wf-compose_quote"
+      },
+      {
+        "key": "classify_email",
+        "name": "Email triage: classify",
+        "client_facing": false,
+        "host": "aios",
+        "group": "Email triage",
+        "switchable": true,
+        "configured": {
+          "tier": "fast",
+          "model": "claude-haiku-5-5",
+          "source": "default",
+          "pin": null,
+          "choice": null
+        },
+        "used_30d": [
+          {
+            "model": "claude-haiku-4-5",
+            "calls": 1267,
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "usd": 2.0,
+            "aud": 2.86,
+            "last_used": "2026-09-20"
+          },
+          {
+            "model": "claude-haiku-5-5",
+            "calls": 40,
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "usd": 0.1,
+            "aud": 0.14,
+            "last_used": "2026-10-05"
+          }
+        ],
+        "drift": {
+          "flag": true,
+          "reason": "older than the newest haiku"
+        },
+        "admin_url": "https://erp.example.com/admin/models?edit=classify_email"
+      },
+      {
+        "key": "triage_escalated",
+        "name": "Email triage: escalated",
+        "client_facing": false,
+        "host": "aios",
+        "group": "Email triage",
+        "switchable": true,
+        "configured": {
+          "tier": "standard",
+          "model": "claude-sonnet-5-5",
+          "source": "env",
+          "pin": "TRIAGE_MODEL",
+          "choice": null
+        },
+        "used_30d": [
+          {
+            "model": "claude-sonnet-5",
+            "calls": 48,
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "usd": null,
+            "aud": null,
+            "last_used": "2026-10-04"
+          }
+        ],
+        "drift": {
+          "flag": true,
+          "reason": "not the model in force"
+        },
+        "admin_url": "javascript:alert(1)"
+      }
+    ],
+    "unattributed_30d": [
+      {
+        "job": "-c:?",
+        "calls": 2,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "usd": 0.07,
+        "aud": 0.1
+      }
+    ]
+  }
+}

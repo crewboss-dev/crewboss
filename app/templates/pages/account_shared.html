@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% set is_skill = kind == 'skill' %}
+{% block title %}{{ 'App AI features' if is_skill else 'Rules & AI Instructions' }} · {{ current_project.name }}{% endblock %}
+{% block page_title %}{{ 'App AI features' if is_skill else 'Rules & AI Instructions' }}{% endblock %}
+{% block content %}
+{# An ACCOUNT's shared AI skills or rules (task #148): AUTHORED here (an account has no code to scan), stored at the
+   account, and inherited by every project under it: each one's page lists them under "Inherited from <account>",
+   and every session working one of them is briefed with them. Cards are the knowledge cards (expand, edit, ask the
+   AI). Needs: kind ('skill' | 'rule'), entries, projects, open_id, requests, show_archived. #}
+<div class="kb-page">
+  <div class="rounded-xl border border-indigo/20 bg-indigo/[.04] px-4 py-3 mb-4" data-applies-to>
+    <p class="text-small font-semibold">{{ 'AI skills' if is_skill else 'Rules' }} shared with every project in {{ current_project.name }}</p>
+    <p class="text-small text-charcoal/65 mt-0.5">
+      {% if is_skill %}A shared AI skill is a set of instructions any AI working on {{ current_project.name }}'s software can apply: its name, what it's for (the summary) and the instructions (the body).
+      {% else %}A shared rule is plain-language guidance every AI working on {{ current_project.name }}'s software follows.{% endif %}
+      Each project's {{ 'App AI features' if is_skill else 'Rules' }} page shows these as inherited, and every session working one of them is briefed with them.
+    </p>
+    {% if projects %}
+    <p class="text-micro text-charcoal/55 mt-1.5 break-words">Applies to:
+      {% for p in projects %}<a href="/{{ p.slug }}{{ '/ai-features' if is_skill else '/rules' }}" class="hover:underline">{{ p.name }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>
+    {% endif %}
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    <a href="{{ base }}{{ '/ai-features' if is_skill else '/rules' }}{{ '' if show_archived else '?archived=1' }}" class="{{ 'fchip-on' if show_archived else 'fchip' }}" aria-pressed="{{ 'true' if show_archived else 'false' }}">Show archived</a>
+    <span class="text-micro text-charcoal/45 tabular">{{ entries|length }} shown</span>
+    <a href="{{ base }}/knowledge/new?kind={{ kind }}" class="btn-primary text-small ml-auto touch-target" data-add-shared>
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      Add {{ 'an AI skill' if is_skill else 'a rule' }}
+    </a>
+  </div>
+
+  <div class="kb-list" data-shared-list="{{ kind }}">
+    {% for e in entries %}
+    {% include "partials/knowledge_card.html" %}
+    {% else %}
+    <div class="card p-8 text-center text-charcoal/50">
+      {% if is_skill %}No shared AI skills yet. Add one (for example a "Humanizer" that rewrites AI text in a plain human voice) and every project under {{ current_project.name }} inherits it.
+      {% else %}No shared rules yet. Add one and every project under {{ current_project.name }} inherits it.{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

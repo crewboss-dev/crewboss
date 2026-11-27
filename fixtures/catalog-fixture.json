@@ -1,0 +1,176 @@
+{
+  "project": "mallen-erp",
+  "commit": "a1b2c3d4e5f6789abc123def456abc789012345",
+  "generated_at": "2026-09-30T09:00:00+10:00",
+  "workflows": [
+    {
+      "id": "billing.xero-token.refresh",
+      "name": "Billing › Xero token › Refresh",
+      "group": "Billing",
+      "subproject": "ERP",
+      "summary": "Keeps the stored Xero OAuth token alive by refreshing it before it expires.",
+      "trigger": {"type": "timer", "detail": "every 10 min", "system": "internal"},
+      "has_ai": false,
+      "steps": [
+        {
+          "id": "load-token",
+          "kind": "precode",
+          "label": "Load stored Xero token",
+          "detail": "Reads the current refresh token from the xero_tokens table.",
+          "system": "db",
+          "code_ref": {"file": "app/xero_sync.py", "lines": "40-52", "function": "load_token"}
+        },
+        {
+          "id": "call-xero",
+          "kind": "action",
+          "label": "Call Xero: refresh token",
+          "detail": "POSTs to Xero's OAuth token endpoint with the refresh_token grant.",
+          "system": "xero",
+          "code_ref": {"file": "app/xero_sync.py", "lines": "55-88", "function": "refresh_token"}
+        },
+        {
+          "id": "update-db",
+          "kind": "action",
+          "label": "Store refreshed token",
+          "detail": "Writes the new access/refresh token pair and expiry back to xero_tokens.",
+          "system": "db",
+          "code_ref": {"file": "app/xero_sync.py", "lines": "90-101", "function": "save_token"}
+        }
+      ],
+      "edges": [
+        {"from": "load-token", "to": "call-xero"},
+        {"from": "call-xero", "to": "update-db"}
+      ],
+      "side_effects": ["db:xero_tokens", "xero"],
+      "source_refs": [{"file": "app/xero_sync.py", "lines": "40-101"}],
+      "confidence": "auto"
+    },
+    {
+      "id": "sales.lead.qualify-from-email-reply",
+      "name": "Sales › Lead › Qualify from email reply",
+      "group": "Sales",
+      "subproject": "AiOS",
+      "summary": "Reads a reply on a lead's email thread and lets Claude decide whether the lead is qualified.",
+      "trigger": {"type": "email", "detail": "reply on a lead's email thread", "system": "graph"},
+      "has_ai": true,
+      "steps": [
+        {
+          "id": "fetch-thread",
+          "kind": "precode",
+          "label": "Fetch email thread",
+          "detail": "Pulls the latest message on the thread via Microsoft Graph.",
+          "system": "graph",
+          "code_ref": {"file": "app/aios/triage.py", "lines": "80-110", "function": "fetch_reply"}
+        },
+        {
+          "id": "classify",
+          "kind": "ai",
+          "label": "Classify intent + qualify",
+          "detail": "Claude decides qualified / needs_info / not_interested with a confidence score.",
+          "system": "claude",
+          "code_ref": {"file": "app/aios/triage.py", "lines": "120-165", "function": "qualify_reply"},
+          "ai": {
+            "provider": "anthropic",
+            "model_rule": "auto-newest Haiku, escalates to Sonnet below 0.7 confidence",
+            "prompt_name": "_LEAD_QUALIFY_SYSTEM",
+            "prompt_location": {"file": "app/aios/triage.py", "lines": "20-38"},
+            "prompt_text": "You are triaging an inbound reply on a sales lead's email thread. Decide one of: qualified, needs_info, not_interested. Reply with JSON only: {\"decision\": ..., \"confidence\": 0.0-1.0, \"reason\": \"one sentence\"}.",
+            "context_injected": [
+              "the thread's subject line",
+              "whether the sender matches an existing contact record (yes/no)",
+              "the plain-text body of the latest reply only"
+            ],
+            "max_tokens": 400,
+            "temperature": null,
+            "output": "json-parsed-text",
+            "tools": []
+          }
+        },
+        {
+          "id": "update-lead",
+          "kind": "action",
+          "label": "Update lead status",
+          "detail": "Writes the decision + confidence back onto the lead record.",
+          "system": "db",
+          "code_ref": {"file": "app/aios/triage.py", "lines": "168-180", "function": "apply_decision"}
+        },
+        {
+          "id": "notify",
+          "kind": "action",
+          "label": "Now card: New lead",
+          "detail": "Surfaces a card on the sales team's Now page for a qualified lead.",
+          "system": "internal",
+          "code_ref": {"file": "app/now.py", "lines": "210-225", "function": "push_new_lead_card"}
+        }
+      ],
+      "edges": [
+        {"from": "fetch-thread", "to": "classify"},
+        {"from": "classify", "to": "update-lead"},
+        {"from": "update-lead", "to": "notify", "label": "qualified"}
+      ],
+      "side_effects": ["db:leads", "push"],
+      "source_refs": [{"file": "app/aios/triage.py", "lines": "20-225"}],
+      "confidence": "annotated"
+    },
+    {
+      "id": "monitoring.zabbix-alert.triage",
+      "name": "Monitoring › Zabbix alert › Triage",
+      "group": "Monitoring",
+      "subproject": "ERP",
+      "summary": "Turns an inbound Zabbix webhook into a case, once the monitoring gate confirms it's a live, non-flapping device.",
+      "trigger": {"type": "webhook", "detail": "POST /webhook/zabbix", "system": "zabbix"},
+      "has_ai": false,
+      "steps": [
+        {
+          "id": "parse-alert",
+          "kind": "precode",
+          "label": "Parse Zabbix payload",
+          "detail": "Validates and normalises the incoming alert payload.",
+          "system": "zabbix",
+          "code_ref": {"file": "app/monitoring/webhook.py", "lines": "30-55", "function": "parse_payload"}
+        },
+        {
+          "id": "gate-check",
+          "kind": "logic",
+          "label": "Monitoring gate",
+          "detail": "enabled + not paused + not flapping (>20 alarms/week auto-disables).",
+          "system": "db",
+          "code_ref": {"file": "app/monitoring/gate.py", "lines": "12-60", "function": "should_alert"}
+        },
+        {
+          "id": "create-case",
+          "kind": "action",
+          "label": "Create or append case",
+          "detail": "Opens a new case, or appends to the existing one for a non-resetting alarm.",
+          "system": "db",
+          "code_ref": {"file": "app/monitoring/case.py", "lines": "40-90", "function": "upsert_case"}
+        },
+        {
+          "id": "push-alert",
+          "kind": "action",
+          "label": "Push web alert",
+          "detail": "Web-push notification to the on-call staff.",
+          "system": "push",
+          "code_ref": {"file": "app/monitoring/case.py", "lines": "92-105", "function": "notify_oncall"}
+        },
+        {
+          "id": "skip",
+          "kind": "logic",
+          "label": "Skip (not monitored)",
+          "detail": "Device is disabled, paused, or flap-guarded — alert is dropped, no case raised.",
+          "system": "internal",
+          "code_ref": {"file": "app/monitoring/gate.py", "lines": "55-60", "function": "should_alert"}
+        }
+      ],
+      "edges": [
+        {"from": "parse-alert", "to": "gate-check"},
+        {"from": "gate-check", "to": "create-case", "label": "yes"},
+        {"from": "gate-check", "to": "skip", "label": "no"},
+        {"from": "create-case", "to": "push-alert"}
+      ],
+      "side_effects": ["db:cases", "push", "zabbix"],
+      "source_refs": [{"file": "app/monitoring/webhook.py", "lines": "1-105"}],
+      "confidence": "auto"
+    }
+  ]
+}

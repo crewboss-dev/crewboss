@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Materials · {{ current_project.name }}{% endblock %}
+{% block page_title %}Materials{% endblock %}
+{% block content %}
+{# Materials (task #295): shared resources (logos, email/document templates, fonts…) kept here or inherited from the
+   account(s) above, nearest winning per slot. AI sessions read them via the dashboard MCP (list_materials /
+   get_material) and apps copy what they need at build time. Needs: effective, overridden, history, kinds, kind_label,
+   error, form, prefill_slot, added, max_mb. #}
+{% set is_acct = level == 'account' %}
+<div class="max-w-5xl">
+  <div class="rounded-xl border border-indigo/20 bg-indigo/[.04] px-4 py-3 mb-4">
+    <p class="text-small font-semibold">The real logos, templates and brand files for {{ current_project.name }}</p>
+    <p class="text-small text-charcoal/65 mt-0.5">
+      AI sessions building {{ 'any app in ' ~ current_project.name if is_acct else 'this project' }} use these instead of generic ones, and apps copy what they need when they're built.
+      {% if is_acct %}Every project in {{ current_project.name }} inherits them; a project can keep its own version of any slot (for example a sub-app logo).
+      {% else %}Items marked "from …" are inherited; upload one with the same slot to use your own version here.{% endif %}
+    </p>
+  </div>
+
+  {% if added %}<p class="mb-3 text-small rounded-lg bg-status-ok/10 text-status-ok px-3 py-2" role="status" data-material-added>Saved.</p>{% endif %}
+
+  <section aria-label="Materials" data-materials-list>
+    {% for m in effective %}
+    <article id="m-{{ m.slot }}" class="card p-3 mb-2 flex gap-3 items-start" data-material="{{ m.slot }}" data-material-id="{{ m.id }}"{% if m.inherited %} data-inherited-from="{{ m.from.slug }}"{% endif %}>
+      <div class="w-16 h-16 shrink-0 rounded-lg border border-line flex items-center justify-center overflow-hidden bg-[repeating-conic-gradient(#0000000d_0_25%,transparent_0_50%)] bg-[length:12px_12px]">
+        {% if m.is_image %}<img src="{{ m.url }}" alt="{{ m.title }}" class="max-w-full max-h-full object-contain" loading="lazy">
+        {% else %}<span class="text-micro font-semibold uppercase text-charcoal/55">{{ m.filename.rsplit('.', 1)[-1] }}</span>{% endif %}
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-small font-semibold break-words">{{ m.title }}</span>
+          <span class="chip bg-charcoal/[.07] text-charcoal/70">{{ m.kind_label }}</span>
+          <code class="text-micro text-charcoal/55">{{ m.slot }}</code>
+          {% if m.inherited %}<span class="chip bg-indigo/10 text-indigo">from <a class="underline" href="/{{ m.from.slug }}/materials#m-{{ m.slot }}">{{ m.from.name }}</a></span>
+          {% elif m.version > 1 %}<span class="text-micro text-charcoal/45">v{{ m.version }}</span>{% endif %}
+        </div>
+        <p class="text-small text-charcoal/75 mt-0.5 break-words">{{ m.purpose }}</p>
+        {% if m.usage_notes %}<details class="mt-1"><summary class="text-micro cursor-pointer text-charcoal/55">Usage rules</summary><div class="kb-prose text-small break-words mt-1">{{ m.usage_notes|markdown }}</div></details>{% endif %}
+        <p class="text-micro text-charcoal/45 mt-1 break-all">{{ m.filename }} · {{ (m.bytes / 1024)|round(1) }} KB · <a class="underline" href="{{ m.url }}?download=1">Download</a>
+          {% if m.inherited %} · <a class="underline" href="?slot={{ m.slot }}#upload" data-override="{{ m.slot }}">Use my own version here</a>
+          {% else %} · <a class="underline" href="?slot={{ m.slot }}#upload" data-replace="{{ m.slot }}">Replace</a>{% endif %}</p>
+      </div>
+    </article>
+    {% else %}
+    <div class="card p-8 text-center text-charcoal/50" data-materials-empty>
+      No materials yet. Upload the logo, an email signature or a document template below, and say what each is for.
+    </div>
+    {% endfor %}
+  </section>
+
+  {% if overridden %}
+  <details class="mt-4"><summary class="text-small cursor-pointer text-charcoal/60">{{ overridden|length }} inherited item{{ 's' if overridden|length != 1 }} replaced by this {{ 'account' if is_acct else 'project' }}'s own version</summary>
+    <ul class="mt-2 text-small text-charcoal/65">{% for m in overridden %}<li><code>{{ m.slot }}</code> from {{ m.from.name }}: {{ m.title }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+
+  <section id="upload" class="card p-4 mt-6" aria-label="Upload a material">
+    <h2 class="text-lead font-semibold mb-2">Upload</h2>
+    {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-material-error>{{ error }}</p>{% endif %}
+    <form method="post" action="{{ base }}/materials" enctype="multipart/form-data" class="grid gap-3 sm:grid-cols-2">
+      <label class="block sm:col-span-2"><span class="kb-label">File</span>
+        <input type="file" name="file" required class="field text-small" data-material-file>
+        <span class="kb-label-hint">Up to {{ max_mb }} MB: images, SVG, HTML/text templates, Office files, PDF, fonts, CSS. Never secrets.</span></label>
+      <label class="block"><span class="kb-label">Slot</span>
+        <input name="slot" required pattern="[a-z0-9][a-z0-9._\-]{0,63}" value="{{ form.slot or prefill_slot }}" placeholder="logo.primary" class="field text-small font-mono">
+        <span class="kb-label-hint">A short key. The same slot lower down overrides this one.</span></label>
+      <label class="block"><span class="kb-label">Kind</span>
+        <select name="kind" class="field text-small">{% for k in kinds %}<option value="{{ k }}"{% if (form.kind or '') == k %} selected{% endif %}>{{ kind_label[k] }}</option>{% endfor %}</select></label>
+      <label class="block sm:col-span-2"><span class="kb-label">Title</span>
+        <input name="title" required maxlength="120" value="{{ form.title or '' }}" placeholder="Company logo" class="field text-small"></label>
+      <label class="block sm:col-span-2"><span class="kb-label">What it's for</span>
+        <textarea name="purpose" required maxlength="500" rows="2" placeholder="The primary logo for every app header and email; works on light and dark." class="field text-small">{{ form.purpose or '' }}</textarea></label>
+      <label class="block sm:col-span-2"><span class="kb-label">Usage rules <span class="kb-label-hint">(optional, Markdown)</span></span>
+        <textarea name="usage_notes" maxlength="4000" rows="3" placeholder="Never recolour. Minimum width 120px." class="field text-small">{{ form.usage_notes or '' }}</textarea></label>
+      <div class="sm:col-span-2"><button class="btn-primary text-small touch-target" type="submit" data-material-submit>Save material</button></div>
+    </form>
+  </section>
+
+  {% if history %}
+  <details class="mt-4"><summary class="text-small cursor-pointer text-charcoal/60">Previous versions ({{ history|length }})</summary>
+    <ul class="mt-2 text-small text-charcoal/65">{% for m in history %}<li><code>{{ m.slot }}</code> v{{ m.version }}: {{ m.filename }} · <a class="underline" href="{{ m.url }}?download=1">Download</a></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block page_title %}Users{% endblock %}
+{% block content %}
+{# Users (task #713, #809): owner only. Needs: people (users.list_users + shares + servers + owned), projects, servers, roles, share_roles, error,
+   temp_password/temp_for/temp_reset (shown once), session_choices, session_minutes. #}
+<div class="max-w-5xl" data-users-page>
+  {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-error>{{ error }}</p>{% endif %}
+
+  <section class="mb-5 scroll-mt-16" id="invite" aria-label="Add a person" data-section="invite">
+    <h2 class="text-lead font-semibold mb-1">Add a person</h2>
+    <p class="text-small text-charcoal/65 mb-3">Crewboss makes them a one-time temporary password, good for 24 hours. Give it to them yourself (there is no email). They use it once: they choose their own password, set up an authenticator app on their phone and save their recovery codes. After that they sign in with their email, password and a 6-digit code. A passkey is an optional upgrade.</p>
+    {% if temp_password %}
+    <div class="card p-4 mb-3" data-temp-password>
+      <p class="kb-label">{{ 'New temporary password' if temp_reset else 'Temporary password' }} for {{ temp_for }} <span class="kb-label-hint">shown once, 24 hours, one use</span></p>
+      <p class="font-mono text-small break-all select-all mt-1" data-temp-password-value>{{ temp_password }}</p>
+      <p class="text-micro text-charcoal/55 mt-2">They go to the sign-in page, enter their username, type this as the password and leave the code empty. Then they choose a password and set up their authenticator app.</p>
+    </div>
+    {% endif %}
+    <form method="post" action="/admin/users/create" class="flex flex-wrap items-end gap-3" data-user-create>
+      <label class="block"><span class="kb-label">Username</span>
+        <input name="username" class="field text-small" maxlength="64" autocapitalize="off" spellcheck="false" required></label>
+      <label class="block"><span class="kb-label">Sign-in email <span class="kb-label-hint">optional</span></span>
+        <input name="email" type="email" class="field text-small" maxlength="320" autocomplete="off"></label>
+      <label class="block"><span class="kb-label">Role</span>
+        <select name="role" class="field text-small">{% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select></label>
+      <button class="btn-primary text-small touch-target" type="submit">Add person</button>
+    </form>
+  </section>
+
+  <section class="mb-5" aria-label="Sign-in length" data-section="session-length">
+    <h2 class="text-lead font-semibold mb-1">Sign-in lasts</h2>
+    <p class="text-small text-charcoal/65 mb-3">How long someone stays signed in before they sign in again. Shortening it signs people out early; lengthening it never extends a sign-in already issued.</p>
+    <form method="post" action="/admin/settings/session-length" class="flex flex-wrap items-end gap-3" data-session-length>
+      <select name="minutes" class="field text-small" aria-label="Sign-in lasts">{% for m, label in session_choices %}<option value="{{ m }}" {% if m == session_minutes %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <button class="btn-ghost text-small border border-line" type="submit">Save</button>
+    </form>
+  </section>
+
+  <section class="mb-5" aria-label="People" data-section="people">
+    <h2 class="text-lead font-semibold mb-2">People <span class="text-small font-normal text-charcoal/50">({{ people|length }})</span></h2>
+    <ul class="card divide-y divide-line">
+      {% for u in people %}
+      <li class="px-4 py-3" data-user="{{ u.id }}" data-role="{{ u.role }}">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div class="min-w-0 flex-1">
+            <p class="font-semibold break-words">{{ u.username }}
+              <span class="chip bg-charcoal/[.05] text-charcoal/70">{{ u.role }}</span>
+              {% if u.disabled_at %}<span class="chip bg-status-disaster/10 text-status-disaster">disabled</span>{% endif %}</p>
+            <p class="text-micro text-charcoal/60" data-email-line>{% if u.email %}{{ u.email }}{% else %}no sign-in email{% endif %}{% if u.temp_pending %} · temporary password pending (expires {{ u.password_expires_at.strftime('%d %b %H:%M') }} UTC){% endif %} · {{ u.passkeys }} passkey{{ '' if u.passkeys == 1 else 's' }} · {{ u.sessions }} live session{{ '' if u.sessions == 1 else 's' }} · owns {{ u.owned }} project{{ '' if u.owned == 1 else 's' }}</p>
+          </div>
+          {% if u.role != 'owner' %}
+          <form method="post" action="/admin/users/{{ u.id }}/role" class="flex items-center gap-2">
+            <select name="role" class="field text-small" aria-label="Role for {{ u.username }}">{% for r in roles %}<option value="{{ r }}" {% if r == u.role %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+            <button class="btn-ghost text-small border border-line" type="submit">Set role</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/{{ 'enable' if u.disabled_at else 'disable' }}"><button class="btn-ghost text-small border border-line" type="submit" data-toggle-disabled>{{ 'Enable' if u.disabled_at else 'Disable' }}</button></form>
+          <form method="post" action="/admin/users/{{ u.id }}/revoke-sessions"><button class="btn-ghost text-small border border-line" type="submit">Sign out everywhere</button></form>
+          {% if u.email %}<form method="post" action="/admin/users/{{ u.id }}/clear-email"><button class="btn-ghost text-small border border-line" type="submit" data-clear-email>Clear email</button></form>{% endif %}
+          <form method="post" action="/admin/users/{{ u.id }}/reset-signin"><button class="btn-ghost text-small border border-line" type="submit" data-reset-signin>Reset sign-in</button></form>
+          {% endif %}
+        </div>
+        {% if u.role != 'owner' %}
+        <div class="mt-3 grid gap-3 md:grid-cols-2">
+          <div>
+            <p class="kb-label">Projects shared with them <span class="kb-label-hint">only that project, not its sub-projects</span></p>
+            <ul class="text-small mb-2">{% for s in u.shares %}
+              <li class="flex items-center gap-2">{{ s.name }} <span class="chip bg-charcoal/[.05] text-charcoal/70">{{ s.role }}</span>
+                <form method="post" action="/admin/users/{{ u.id }}/unshare"><input type="hidden" name="project" value="{{ s.slug }}"><button class="btn-ghost text-micro border border-line" type="submit">Stop</button></form></li>
+              {% else %}<li class="text-charcoal/55">None. They see only projects they make.</li>{% endfor %}</ul>
+            <form method="post" action="/admin/users/{{ u.id }}/share" class="flex flex-wrap items-center gap-2">
+              <select name="project" class="field text-small" aria-label="Project to share">{% for p in projects %}<option value="{{ p.slug }}">{{ p.name }}</option>{% endfor %}</select>
+              <select name="role" class="field text-small" aria-label="Share as">{% for r in share_roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select>
+              <button class="btn-ghost text-small border border-line" type="submit">Share</button>
+            </form>
+          </div>
+          {% if u.role == 'designer' %}
+          <div>
+            <p class="kb-label">Servers pinned to one of their projects <span class="kb-label-hint">its Owner defines the targets; Members only deploy</span></p>
+            <ul class="text-small mb-2">{% for s in u.servers %}
+              <li class="flex items-center gap-2">{{ s.name }} <span class="text-micro text-charcoal/55">{{ s.account }} → {{ s.pinned }}</span>
+                <form method="post" action="/admin/users/{{ u.id }}/servers/remove"><input type="hidden" name="server_id" value="{{ s.server_id }}"><input type="hidden" name="project_id" value="{{ s.project_id }}"><button class="btn-ghost text-micro border border-line" type="submit">Remove</button></form></li>
+              {% else %}<li class="text-charcoal/55">None. They can't deploy anywhere yet.</li>{% endfor %}</ul>
+            {% if servers and u.owned_projects %}
+            <form method="post" action="/admin/users/{{ u.id }}/servers" class="flex flex-wrap items-center gap-2">
+              <select name="server_id" class="field text-small" aria-label="Server to assign">{% for s in servers %}<option value="{{ s.id }}">{{ s.name }} ({{ s.account }})</option>{% endfor %}</select>
+              <select name="project_id" class="field text-small" aria-label="Pin to which of their projects">{% for p in u.owned_projects %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
+              <button class="btn-ghost text-small border border-line" type="submit">Pin server</button>
+            </form>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="mb-5" aria-label="Audit" data-section="audit">
+    <h2 class="text-lead font-semibold mb-2">Audit <span class="text-small font-normal text-charcoal/50">(owner only)</span></h2>
+    <ul class="card divide-y divide-line text-small" data-audit>
+      {% for a in audit %}<li class="px-4 py-2">{{ a.at.strftime('%d %b %H:%M') }} UTC · {{ a.actor or 'owner' }} · {{ a.summary }}</li>
+      {% else %}<li class="px-4 py-2 text-charcoal/55">Nothing yet.</li>{% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

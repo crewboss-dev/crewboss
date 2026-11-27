@@ -1,0 +1,56 @@
+# Throwaway deployment test (task #589, change #85): docs/deploy-test.md
+workflows:
+  - id: deploy-test.trial
+    name: Release trial install, checked and deleted
+    summary: A fresh install from the exact snapshot of a commit, with its own folder, port and empty database, checks itself and is deleted afterwards.
+    trigger:
+      type: cli
+      control: "./crewboss deploy-test"
+      detail: A maintainer runs the trial before a release
+      code_ref: {file: scripts/deploy_test.py, function: cmd_run}
+    data: ["folder:temp trial folder", "docker:compose project crewboss-trial-<id>"]
+    steps:
+      - id: safety
+        kind: decision
+        question: Is the project name a trial name (never `crewboss`) and every folder under temp and clear of any live path?
+        label: Safety rules
+        detail: The environment is cleaned of COMPOSE_*, CREWBOSS_*, POSTGRES_* and APP_PORT first. Nothing bypasses the refusals.
+        code_ref: {file: scripts/deploy_test.py, function: check_paths}
+      - id: snapshot
+        kind: action
+        label: Copy the tracked files of the commit (git archive)
+        code_ref: {file: scripts/deploy_test.py, function: snapshot}
+        effects: ["create:temp trial folder"]
+      - id: install
+        kind: action
+        label: Run the ordinary outsider install of the copy
+        detail: Its own instance folder, compose project, free port, fresh secrets and empty database.
+        code_ref: {file: scripts/deploy_test.py, function: cmd_run}
+        effects: ["create:trial containers and volumes", "create:trial owner account"]
+      - id: http
+        kind: action
+        label: Check /healthz, the sign-in page and the owner
+        code_ref: {file: scripts/deploy_test.py, function: http_checks}
+      - id: browser
+        kind: action
+        label: Browser run (sign in, add a passkey, save codes, create a project, first-run tour walk-through)
+        code_ref: {file: scripts/deploy_test_browser.py, function: main}
+        effects: ["create:trial project"]
+      - id: keep
+        kind: decision
+        question: Was --keep given and did every check pass?
+        label: Keep it up on the LAN?
+        code_ref: {file: scripts/deploy_test.py, function: expose_on_lan}
+      - id: teardown
+        kind: action
+        label: Remove the trial's containers, volumes, network, image and folder (by its project label only)
+        code_ref: {file: scripts/deploy_test.py, function: teardown}
+        effects: ["delete:trial containers and volumes", "delete:temp trial folder"]
+    edges:
+      - {from: trigger, to: safety}
+      - {from: safety, to: snapshot, label: safe}
+      - {from: snapshot, to: install}
+      - {from: install, to: http}
+      - {from: http, to: browser}
+      - {from: browser, to: keep}
+      - {from: keep, to: teardown, label: "no, or the --keep time is up, or `deploy-test down`"}

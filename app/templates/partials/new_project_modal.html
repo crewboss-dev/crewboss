@@ -1,0 +1,85 @@
+<div x-data="{ open: false, type: 'internal', kind: 'project', dev: false, sessions: 'none' }"
+     x-init="$watch('kind', k => sessions = (k === 'account' ? 'all' : 'none'))"
+     @open-new-project.window="open = true; if ($event.detail && $event.detail.parent) { kind = 'project'; $nextTick(() => { const sel = $el.querySelector('[data-parent-select]'); if (sel) sel.value = $event.detail.parent; }); }" x-cloak>
+  <div x-show="open" class="fixed inset-0 z-50 flex items-center justify-center p-4"
+       x-transition:enter="transition ease-physics duration-200" x-transition:enter-start="opacity-0"
+       x-transition:leave="transition ease-physics-out duration-150" x-transition:leave-end="opacity-0">
+    <div class="absolute inset-0 bg-charcoal/40" @click="open = false"></div>
+    <form method="post" action="/projects"
+          class="relative popover p-5 w-full max-w-sm max-h-[90vh] overflow-y-auto"
+          x-transition:enter="transition ease-physics duration-200"
+          x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100">
+      <div class="text-lead font-semibold mb-3">New project</div>
+      <label class="block text-small font-medium mb-1">Name</label>
+      <input name="name" required class="field mb-3" placeholder="e.g. Acme Retail">
+      <label class="block text-small font-medium mb-1">Slug</label>
+      <input name="slug" required pattern="[a-z0-9]([a-z0-9\-]{0,48}[a-z0-9])?" maxlength="50" class="field mb-1" placeholder="acme-retail" autocapitalize="off" autocomplete="off" spellcheck="false">
+      <p class="text-micro text-charcoal/50 mb-3">Lowercase letters, digits and hyphens. It becomes the address: /acme-retail</p>
+      <label class="block text-small font-medium mb-1" for="np-short">Short name</label>
+      <input id="np-short" name="short_name" required pattern="[a-z0-9]([a-z0-9\-]{0,10}[a-z0-9])" minlength="2" maxlength="12"
+             class="field mb-1" placeholder="acme" autocapitalize="off" autocomplete="off" spellcheck="false">
+      <p class="text-micro text-charcoal/50 mb-3">2-12 characters. Names its Claude sessions: acme, or acme-bugs, acme-review…</p>
+      {# --- where it sits in the tree (task #132) --- #}
+      <fieldset class="mb-3">
+        <legend class="block text-small font-medium mb-1">This is</legend>
+        <div class="seg" role="radiogroup">
+          <label class="seg-opt"><input type="radio" name="kind" value="project" x-model="kind"><span>A project</span></label>
+          <label class="seg-opt"><input type="radio" name="kind" value="account" x-model="kind"><span>An account (customer)</span></label>
+        </div>
+      </fieldset>
+      <label class="block text-small font-medium mb-1" for="np-parent">Sits under</label>
+      <select id="np-parent" name="parent" class="field mb-1" data-parent-select>
+        {% for p in all_projects if not p.archived_at %}
+        <option value="{{ p.slug }}" {% if loop.first %}selected{% endif %}>{{ '  ' * p.depth }}{{ p.name }}{% if p.kind == 'account' %} (account){% endif %}</option>
+        {% endfor %}
+      </select>
+      <p class="text-micro text-charcoal/50 mb-3">An account sits directly under the dashboard. A project sits under its account or a parent project, which works it unless it gets its own session.</p>
+      <div x-show="kind === 'project'">
+        <div class="grid grid-cols-3 gap-2 mb-3">
+          <div class="col-span-2">
+            <label class="block text-small font-medium mb-1" for="np-repo">Repo</label>
+            <input id="np-repo" name="repo" class="field" placeholder="e.g. my-website" autocapitalize="off" autocomplete="off" spellcheck="false">
+          </div>
+          <div>
+            <label class="block text-small font-medium mb-1" for="np-path">Folder</label>
+            <input id="np-path" name="repo_path" class="field" placeholder="optional" autocapitalize="off" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+        {# Environments: prod always; dev only when ticked. Servers come from config.KNOWN_SERVERS for now; later
+           from the ERP's Guacamole connections (the servers the owner can open). #}
+        <label class="block text-small font-medium mb-1" for="np-prod">Production server</label>
+        <select id="np-prod" name="prod_server" class="field mb-2">
+          <option value="">Choose later</option>
+          {% for s in known_servers %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+        <label class="flex items-center gap-2 text-small font-medium press cursor-pointer mb-1">
+          <input type="checkbox" name="dev_env" value="1" x-model="dev" class="rounded border-charcoal/30" data-dev-env> Dev environment
+        </label>
+        <p class="text-micro text-charcoal/50 mb-2">Ticked: the project gets dev AND prod, kept in sync. Unticked: it's worked on live (prod only).</p>
+        <div x-show="dev" class="mb-3">
+          <label class="block text-small font-medium mb-1" for="np-dev">Dev server</label>
+          <select id="np-dev" name="dev_server" class="field">
+            <option value="">Choose later</option>
+            {% for s in known_servers %}<option value="{{ s }}" {% if loop.first %}selected{% endif %}>{{ s }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <fieldset class="mb-3">
+        <legend class="block text-small font-medium mb-1">Claude session</legend>
+        <div class="seg" role="radiogroup">
+          <label class="seg-opt"><input type="radio" name="sessions" value="none" checked x-model="sessions"><span>None (its parent's works it)</span></label>
+          <label class="seg-opt"><input type="radio" name="sessions" value="all" x-model="sessions"><span>Its own</span></label>
+        </div>
+      </fieldset>
+      <label class="block text-small font-medium mb-1">Type</label>
+      <select name="type" class="field mb-4" x-model="type">
+        <option value="internal">Internal</option>
+        <option value="client">Client</option>
+      </select>
+      <div class="flex justify-end gap-2">
+        <button type="button" @click="open = false" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Create project</button>
+      </div>
+    </form>
+  </div>
+</div>

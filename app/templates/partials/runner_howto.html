@@ -1,0 +1,278 @@
+{# "How to set up a runner" (task #806): three OS cards (Linux / Windows / macOS), the Windows card has PowerShell + WSL2 tabs.
+   THE "use for" LINES live here, in one place. To flip which Windows tab is the default / recommended for Android, change
+   `win_default` ('ps' = native PowerShell, 'wsl' = WSL2). Each tab's own "use for" line is `win_tabs[].use`.
+   Without JS every system's steps show (the hidden attributes are set by the script at the bottom). Needs: devices. #}
+{% set win_default = 'ps' %}
+{% set repo = runner_repo or 'https://github.com/ORG/crewboss.git' %}
+{% set os_cards = [
+  {'key': 'linux', 'label': 'Linux', 'use': 'Web apps, Android, anything Linux-built.'},
+  {'key': 'windows', 'label': 'Windows', 'use': 'Windows EXE/MSI (PowerShell). Android and web apps on either PowerShell or WSL2, picked per project.'},
+  {'key': 'macos', 'label': 'macOS', 'use': 'iOS and macOS builds (needs Xcode).'}] %}
+{% set win_tabs = [
+  {'key': 'ps', 'label': 'PowerShell', 'use': 'Windows EXE/MSI, and Android built natively with Android Studio on a Dev Drive.'},
+  {'key': 'wsl', 'label': 'WSL2', 'use': 'Web apps and anything Linux-built; Android inside WSL (a Linux Gradle build).'}] %}
+{# A command block with a copy icon in its corner (Alpine, like server_access.html). Without JS or the clipboard API the
+   click selects the block instead, and select-all still selects it on a tap. #}
+{% macro pre() %}<div class="relative mt-1 group" x-data="{ copied: false }"><pre class="font-mono text-micro select-all p-2 pr-10 rounded-lg bg-charcoal/[.05] overflow-x-auto"><code x-ref="src">{{ caller() }}</code></pre><button type="button" class="os-copy" aria-label="Copy to clipboard" title="Copy" x-cloak
+  @click="(navigator.clipboard ? navigator.clipboard.writeText($refs.src.textContent) : Promise.reject()).then(() => { copied = true; setTimeout(() => copied = false, 1500) }, () => window.getSelection().selectAllChildren($refs.src))"
+  :aria-label="copied ? 'Copied' : 'Copy to clipboard'" :title="copied ? 'Copied' : 'Copy'" data-copy><svg x-show="!copied" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/></svg><svg x-show="copied" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></div>{% endmacro %}
+{% macro ico(key) %}{% if key == 'linux' %}<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7 10l3 2.5L7 15M12.5 15H17"/></svg>{% elif key == 'windows' %}<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="7.8" height="7.8" rx="1.2"/><rect x="12.7" y="3.5" width="7.8" height="7.8" rx="1.2"/><rect x="3.5" y="12.7" width="7.8" height="7.8" rx="1.2"/><rect x="12.7" y="12.7" width="7.8" height="7.8" rx="1.2"/></svg>{% else %}<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="5" width="15" height="10.5" rx="1.8"/><path d="M2.5 19h19M9.5 10.2h1.6v1.6H9.5zM12.9 10.2h1.6v1.6h-1.6zM11.1 11h1.8"/></svg>{% endif %}{% endmacro %}
+<style>
+  .os-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: .75rem; }
+  .os-card { text-align: left; display: flex; flex-direction: column; gap: .35rem; padding: .75rem; border-radius: .75rem;
+             border: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface)); color: rgb(var(--c-charcoal)); cursor: pointer;
+             transition: border-color .12s, background-color .12s; }
+  .os-card:hover { border-color: rgb(var(--c-charcoal) / .3); }
+  .os-card[aria-selected="true"] { border-color: rgb(var(--c-indigo)); background: rgb(var(--c-indigo) / .08); }
+  .os-card:focus-visible, .os-wtab:focus-visible { outline: 2px solid rgb(var(--c-focus)); outline-offset: 2px; }
+  .os-card .os-ico { color: rgb(var(--c-charcoal) / .7); }
+  .os-card[aria-selected="true"] .os-ico { color: rgb(var(--c-indigo)); }
+  .os-wtabs { display: inline-flex; gap: .25rem; padding: .25rem; border-radius: 9999px; border: 1px solid rgb(var(--c-line)); background: rgb(var(--c-charcoal) / .04); }
+  .os-wtab { padding: .25rem .75rem; border-radius: 9999px; font-size: .8125rem; font-weight: 500; color: rgb(var(--c-charcoal) / .7); cursor: pointer; }
+  .os-wtab[aria-selected="true"] { background: rgb(var(--c-indigodeep)); color: #fff; }
+  .os-copy { position: absolute; top: .3rem; right: .3rem; display: inline-flex; align-items: center; justify-content: center;
+             width: 1.9rem; height: 1.9rem; border-radius: .5rem; border: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface));
+             color: rgb(var(--c-charcoal) / .65); cursor: pointer; transition: color .12s, border-color .12s, transform .08s; }
+  .os-copy:hover { color: rgb(var(--c-charcoal)); border-color: rgb(var(--c-charcoal) / .3); }
+  .os-copy:active { transform: scale(.94); }
+  .os-copy:focus-visible { outline: 2px solid rgb(var(--c-focus)); outline-offset: 2px; }
+  .os-copy[title="Copied"] { color: rgb(var(--c-indigo)); }
+  .os-hint { border-left: 3px solid rgb(var(--c-indigo)); padding-left: .6rem; }
+  [data-os][hidden], [data-wtab][hidden] { display: none; }
+  .os-copy[x-cloak] { display: none; }   /* no JS: no dead button (select-all still selects the block) */
+  @media (prefers-reduced-motion: reduce) { .os-card, .os-copy { transition: none; } }
+</style>
+<details class="card p-4 mb-5" aria-label="How to set up a runner" data-section="howto"{% if not devices %} open{% endif %}>
+  <summary class="text-lead font-semibold cursor-pointer">How to set up a runner</summary>
+  <p class="mt-3 text-small text-charcoal/75"><span class="kb-label">1. Pick this PC's system</span> Only the install and start-at-login steps differ; the rest is the same everywhere. Jobs run only while the runner is running.</p>
+  <div class="os-cards mt-2" role="tablist" aria-label="Operating system" data-os-cards>
+    {% for c in os_cards %}
+    <button type="button" role="tab" class="os-card" id="os-tab-{{ c.key }}" aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ 0 if loop.first else -1 }}" data-os-pick="{{ c.key }}">
+      <span class="os-ico">{{ ico(c.key) }}</span>
+      <span class="font-semibold text-small">{{ c.label }}</span>
+      <span class="text-micro text-charcoal/65">{{ c.use }}</span>
+    </button>
+    {% endfor %}
+  </div>
+
+  {# ---------- 2. install, per system ---------- #}
+  <div class="mt-4 space-y-3 text-small text-charcoal/75" data-os="linux" role="tabpanel" aria-labelledby="os-tab-linux">
+    <p class="kb-label">2. Linux: install</p>
+    <div>Install Claude Code and sign in to your own Claude account (subscription mode uses that login; the runner never sends it to the dashboard):
+      {% call pre() %}curl -fsSL https://claude.ai/install.sh | bash
+claude   # sign in once, then /exit{% endcall %}</div>
+    <div>Install pipx, git and the GitHub CLI (Debian/Ubuntu first, Arch and Omarchy second), then close and reopen the terminal:
+      {% call pre() %}sudo apt install pipx git gh                         # Debian / Ubuntu
+sudo pacman -S --needed python-pipx git github-cli   # Arch / Omarchy
+pipx ensurepath{% endcall %}</div>
+    {% if runner_repo_private %}<div>Sign git in to GitHub (needed only while the repo is private; GitHub refuses a typed password for git). Choose GitHub.com, HTTPS, and "Login with a web browser":
+      {% call pre() %}gh auth login
+gh auth setup-git{% endcall %}
+      If you use SSH keys instead, skip this and clone the <code class="font-mono">git@github.com:</code> form of the same address.</div>{% endif %}
+    <div>Get the code and install the runner:
+      {% call pre() %}git clone {{ repo }} crewboss
+cd crewboss
+pipx install ./runner
+crewboss-runner --version{% endcall %}</div>
+  </div>
+
+  <div class="mt-4 space-y-3 text-small text-charcoal/75" data-os="windows" role="tabpanel" aria-labelledby="os-tab-windows" hidden>
+    <p class="kb-label">2. Windows: install</p>
+    <div class="os-wtabs" role="tablist" aria-label="Windows runner type">
+      {% for t in win_tabs %}
+      <button type="button" role="tab" class="os-wtab" aria-selected="{{ 'true' if t.key == win_default else 'false' }}" tabindex="{{ 0 if t.key == win_default else -1 }}" data-wtab-pick="{{ t.key }}">{{ t.label }}</button>
+      {% endfor %}
+    </div>
+    {% for t in win_tabs %}<p class="text-micro text-charcoal/65" data-wtab="{{ t.key }}"><strong>{{ t.label }}</strong>: {{ t.use }}</p>{% endfor %}
+    <p class="os-hint text-micro text-charcoal/65" data-wtab="ps">Untested on real hardware so far. First try: if a step fails, tell CA (the assistant) what it printed.</p>
+
+    <div class="space-y-3" data-wtab="ps">
+      <div>Open PowerShell (not as admin) and install Git and Python. <strong>Close PowerShell and open a new one</strong> afterwards, so it finds them:
+        {% call pre() %}winget install --id Git.Git -e
+winget install --id Python.Python.3.12 -e{% endcall %}</div>
+      <div>In the new PowerShell, check Python, then install pipx with the <code class="font-mono">py</code> launcher (plain <code class="font-mono">python</code> can open the Microsoft Store instead). <strong>Close and reopen PowerShell again</strong> so <code class="font-mono">pipx</code> is found:
+        {% call pre() %}py --version
+py -m pip install --user pipx
+py -m pipx ensurepath{% endcall %}
+        Until you reopen it, <code class="font-mono">py -m pipx …</code> does the same as <code class="font-mono">pipx …</code>.</div>
+      <div>Install Claude Code for Windows and sign in (it needs Git for Windows, installed above):
+        {% call pre() %}irm https://claude.ai/install.ps1 | iex
+claude   # sign in once, then /exit{% endcall %}</div>
+      <div>Get the code and install the runner. The first clone opens your browser to sign in to GitHub (Git Credential Manager, part of Git for Windows); after that it remembers. This clone is only for installing the runner; Android projects go on a Dev Drive (below):
+        {% call pre() %}git clone {{ repo }} crewboss
+cd crewboss
+py -m pipx install .\runner
+crewboss-runner --version{% endcall %}</div>
+      <p><span class="kb-label">Android on this PC, natively</span> PowerShell runs Windows EXE/MSI jobs, and Android jobs when the Android work lives on this PC.</p>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>Android Studio (it brings its own Java, in its <code class="font-mono">jbr</code> folder, so no separate JDK is needed). Skip the install if you already have it:
+          {% call pre() %}winget install --id Google.AndroidStudio -e{% endcall %}
+          Point command-line builds (the runner's) at that Java:
+          {% call pre() %}$jbr = "C:\Program Files\Android\Android Studio\jbr"
+[Environment]::SetEnvironmentVariable("JAVA_HOME", $jbr, "User")
+$p = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$p;$jbr\bin", "User"){% endcall %}
+          Open Android Studio once, then Settings &gt; Languages &amp; Frameworks &gt; Android SDK &gt; SDK Tools: tick "Android SDK Command-line Tools", "Platform-Tools" and "Android Emulator". Accept the licences with <code class="font-mono">sdkmanager --licenses</code> (in <code class="font-mono">%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\bin</code>).</li>
+        <li>Keep the repo and the Gradle caches on a Dev Drive: Windows 11 Settings &gt; System &gt; Storage &gt; Disks &amp; volumes &gt; Create dev drive (Defender's performance mode is on by default for Dev Drives). Clone the repo there, for example <code class="font-mono">D:\work</code>.</li>
+        <li>Put adb and the emulator on the PATH, natively (PowerShell, one time):
+          {% call pre() %}$sdk = "$env:LOCALAPPDATA\Android\Sdk"
+[Environment]::SetEnvironmentVariable("ANDROID_HOME", $sdk, "User")
+$p = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$p;$sdk\platform-tools;$sdk\emulator", "User"){% endcall %}
+          (This adds to your own PATH only. Don't use <code class="font-mono">setx PATH</code>: it cuts long paths at 1024 characters.) Open a new PowerShell afterwards.
+          The emulator uses the NVIDIA GPU here; a phone on USB works with plain <code class="font-mono">adb devices</code>.</li>
+        <li>Give the runner the label <code class="font-mono">android</code> (and <code class="font-mono">android-usb</code> if a phone is plugged in), plus <code class="font-mono">windows</code> for EXE/MSI. To pin a project to this native runner rather than a WSL2 one, also add <code class="font-mono">android-ps</code> and use a job profile that requires it.</li>
+      </ul>
+      <p class="text-micro text-charcoal/65">An honest note: Gradle builds run on the CPU, RAM and disk. The NVIDIA GPU speeds up the emulator, not the build.</p>
+    </div>
+
+    <div class="space-y-3" data-wtab="wsl">
+      <div>In PowerShell as admin (one time, then reboot), install WSL2 with Ubuntu:
+        {% call pre() %}wsl --install -d Ubuntu{% endcall %}</div>
+      <div>Everything below runs inside the Ubuntu terminal. Claude Code inside WSL has its own sign-in, separate from any Windows Claude login:
+        {% call pre() %}curl -fsSL https://claude.ai/install.sh | bash
+claude   # sign in once, then /exit
+sudo apt install pipx git gh
+pipx ensurepath{% endcall %}</div>
+      {% if runner_repo_private %}<div>Close and reopen Ubuntu, then sign git in to GitHub (only while the repo is private; GitHub.com, HTTPS, "Login with a web browser"):
+        {% call pre() %}gh auth login
+gh auth setup-git{% endcall %}</div>{% endif %}
+      <div>Get the code. Keep the repo in the WSL filesystem (<code class="font-mono">~/</code>), not <code class="font-mono">/mnt/c</code>: builds are much faster.
+        {% call pre() %}git clone {{ repo }} ~/crewboss
+cd ~/crewboss
+pipx install ./runner
+crewboss-runner --version{% endcall %}</div>
+      <p><span class="kb-label">Android inside WSL</span></p>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>JDK 17 and the SDK, inside WSL:
+          {% call pre() %}sudo apt install openjdk-17-jdk unzip
+# "Command line tools only" from developer.android.com/studio: unzip to ~/android-sdk/cmdline-tools/latest
+export ANDROID_HOME=~/android-sdk
+~/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"{% endcall %}</li>
+        <li>A real phone over USB, with usbipd-win (PowerShell as admin, once per plug-in):
+          {% call pre() %}winget install usbipd
+usbipd list
+usbipd bind --busid X
+usbipd attach --wsl --busid X{% endcall %}
+          or use the Windows adb server from WSL. The emulator runs on Windows (Android Studio on Windows, where it uses the GPU) and is reached through adb.</li>
+        <li>Give the runner the label <code class="font-mono">android</code> (and <code class="font-mono">android-usb</code> if a phone is attached). To pin a project to WSL2 rather than a native PowerShell runner, also add <code class="font-mono">android-wsl</code> and use a job profile that requires it.</li>
+      </ul>
+      <p class="text-micro text-charcoal/65">An honest note: Gradle builds run on the CPU, RAM and disk. The NVIDIA GPU speeds up the emulator, not the build.</p>
+    </div>
+  </div>
+
+  <div class="mt-4 space-y-3 text-small text-charcoal/75" data-os="macos" role="tabpanel" aria-labelledby="os-tab-macos" hidden>
+    <p class="kb-label">2. macOS: install</p>
+    <p class="os-hint text-micro text-charcoal/65">Untested on real hardware so far. First try: if a step fails, tell CA (the assistant) what it printed.</p>
+    <div>Install Homebrew first if you do not have it (brew.sh). Then Claude Code and sign in, and pipx and git; close and reopen Terminal afterwards:
+      {% call pre() %}brew install --cask claude-code
+claude   # sign in once, then /exit
+brew install pipx git gh
+pipx ensurepath{% endcall %}</div>
+    {% if runner_repo_private %}<div>Sign git in to GitHub (only while the repo is private; GitHub.com, HTTPS, "Login with a web browser"):
+      {% call pre() %}gh auth login
+gh auth setup-git{% endcall %}</div>{% endif %}
+    <div>Get the code and install the runner:
+      {% call pre() %}git clone {{ repo }} crewboss
+cd crewboss
+pipx install ./runner
+crewboss-runner --version{% endcall %}</div>
+    <p>iOS and macOS builds need Xcode (App Store) and <code class="font-mono">xcode-select --install</code>. Give the runner the label <code class="font-mono">macos</code>.</p>
+  </div>
+
+  <ol class="list-decimal pl-5 mt-4 space-y-3 text-small text-charcoal/75" start="3">
+    <li><span class="kb-label">Make a code, then enrol</span> Make a code above (Mode: Subscription); it works once, for 5 minutes. Copy the whole code, including the part after <code class="font-mono">#</code>. On the PC, within 5 minutes:
+      {% call pre() %}crewboss-runner enrol '&lt;code&gt;'{% endcall %}
+      Add <code class="font-mono">--runner-name &lt;pc-name&gt;</code> if you want; the default is the hostname. If this dashboard is a localhost install (an address that starts <code class="font-mono">http://localhost</code>, no https), add <code class="font-mono">--insecure-http</code> to <code class="font-mono">enrol</code>; without it the runner tries https and fails with an SSL error. It checks this dashboard's key against the fingerprint in the code before it sends anything, then keeps its own key and token in the PC's secret store (the OS keyring: Windows Credential Manager, macOS Keychain, or the desktop keyring on Linux).
+      <div class="mt-2 os-hint" data-profile-hint><span class="kb-label">Already have a runner for another Crewboss?</span> Add this one as a profile (this works the same on Linux, Windows PowerShell, WSL and macOS; one PC can hold several, one active at a time):
+        {% call pre() %}crewboss-runner enrol '&lt;code&gt;' --name {{ profile_hint or 'work' }}
+crewboss-runner use {{ profile_hint or 'work' }}{% endcall %}
+        <code class="font-mono">crewboss-runner profiles</code> lists them (the active one is marked), <code class="font-mono">crewboss-runner use &lt;name&gt;</code> switches and reconnects (it refuses while a job runs unless you add <code class="font-mono">--force</code>), and <code class="font-mono">crewboss-runner profile remove &lt;name&gt;</code> deletes one (revoke it on that Crewboss's Runners page too). A profile name is 1-32 of <code class="font-mono">a-z 0-9 -</code>. <strong>Every server enrolled on one PC can read the others' keys and repositories</strong> (the same OS user): servers that must not trust each other need separate OS users or PCs, so do not put two unrelated clients on one PC this way.</div></li>
+  </ol>
+
+  <p class="mt-3 text-small text-charcoal/75" data-doctor-hint><span class="kb-label">Something wrong? Run the doctor</span> On the PC, <code class="font-mono">crewboss-runner doctor</code> checks Python, git, Claude Code and its sign-in, the keyring, this dashboard's pinned key, the enrolment, the label tools (add <code class="font-mono">--label android-usb</code>), the autostart, disk space and the agent's setup (hooks, MCP servers, permissions, stray secrets), and says pass, warn or fail for each. <code class="font-mono">crewboss-runner doctor --json</code> prints it for a script. <code class="font-mono">crewboss-runner repair</code> fixes the safe things (asking first; <code class="font-mono">--yes</code> skips the questions). <code class="font-mono">crewboss-runner uninstall</code> removes the autostart, this PC's key and settings, and leaves your repositories alone, and refuses to delete a folder that is not the runner's own (named <code class="font-mono">crewboss-runner</code> or holding its marker file) or while a job is running. Where it keeps things can be moved with <code class="font-mono">CREWBOSS_RUNNER_CONFIG_DIR</code> and <code class="font-mono">CREWBOSS_RUNNER_STATE_DIR</code> (absolute paths). The scan looks for known risky patterns; "no known-risky setup found" is not a guarantee.</p>
+
+  {# ---------- 4. start at login, per system ---------- #}
+  <div class="mt-3 space-y-2 text-small text-charcoal/75" data-os="linux">
+    <div><span class="kb-label">4. Keep it running</span> It saves this terminal's PATH into the autostart (so it can find <code class="font-mono">claude</code>, the Android tools and the rest); run it again after installing new tools. One command makes a systemd user service that starts when you log in (it writes the unit file for you):
+      {% call pre() %}crewboss-runner service install
+crewboss-runner service status
+journalctl --user -u crewboss-runner -f{% endcall %}
+      The log includes the status page link (it opens only on that PC). <code class="font-mono">crewboss-runner service uninstall</code> reverses it; add <code class="font-mono">--dry-run</code> to see what it would do first. It runs while you are logged in, which is what Subscription mode needs: it uses your Claude login, and the runner's key is in your keyring. To try it in the terminal first, <code class="font-mono">crewboss-runner run</code> (Ctrl+C stops it).
+      <p class="mt-2"><span class="kb-label">No tray here</span> The tray icon is Windows-only (<code class="font-mono">crewboss-runner tray</code> says so). Use the commands above: <code class="font-mono">status</code>, <code class="font-mono">doctor</code>, <code class="font-mono">service start|stop</code>. The same local control panel page also works: <code class="font-mono">crewboss-runner status</code> prints its link while the runner is running (optional).</p>
+      <p class="mt-2"><span class="kb-label">Sleep</span> While a job is running the runner keeps this PC from going to sleep on its own (<code class="font-mono">systemd-inhibit</code>), and lets go as soon as no job is running; an idle runner never keeps it awake, and the screen may still turn off. This stops idle sleep only: closing a laptop lid or pressing the power button still sleeps the PC, so plug in and leave the lid open for long jobs. Turn it off with <code class="font-mono">CREWBOSS_RUNNER_KEEP_AWAKE_DURING_JOBS=0</code>.</p></div>
+  </div>
+  <div class="mt-3 space-y-2 text-small text-charcoal/75" data-os="windows" hidden>
+    <div data-wtab="ps"><div><span class="kb-label">4. Keep it running</span> One command makes a hidden per-user Scheduled Task that starts the runner when you log in to Windows (no admin needed, no console window), and starts it now:
+      {% call pre() %}crewboss-runner service install
+crewboss-runner status{% endcall %}
+      <code class="font-mono">status</code> prints the status page link (it opens only on that PC) and shows whether the runner is running; the runner's log is <code class="font-mono">%LOCALAPPDATA%\crewboss-runner\logs\&lt;profile&gt;\runner.log</code> (profile <code class="font-mono">default</code> unless you added more). Stop or start it with <code class="font-mono">crewboss-runner service stop</code> (a graceful stop; it refuses while a job runs unless you add <code class="font-mono">--force</code>) and <code class="font-mono">crewboss-runner service start</code>; <code class="font-mono">crewboss-runner service uninstall</code> removes it. To try it in the terminal first, <code class="font-mono">crewboss-runner run</code> (Ctrl+C stops it).
+      <p class="mt-2"><span class="kb-label">Optional: tray icon and control panel</span> <code class="font-mono">crewboss-runner tray</code> (or <code class="font-mono">crewboss-runner-tray</code>, no console window) puts an icon in the notification area: grey = stopped, green = idle and connected, blue = a job is running, amber = needs attention. Its menu starts and stops the runner and opens the control panel (state, current job, automatic start, keep-awake, health, log, and "Remove runner from this PC"). A checkbox in the panel starts the tray when you sign in. No admin needed; only choosing the Windows service asks for it.</p>
+      <p class="mt-2"><span class="kb-label">Optional: a real Windows service</span> From an administrator PowerShell opened by the same user, <code class="font-mono">crewboss-runner service install --windows-service</code> installs a service that logs on as you (it asks for your Windows password, which goes straight to Windows and is not stored), starts at boot (delayed) and restarts on failure. It runs as you, with standard-user rights, even though it is a service: the service only supervises and starts the runner with a filtered (non-administrator) token, so the agents do not get admin rights. It runs as you, not as SYSTEM, because the key store and your Claude Code login belong to your user. A service has no desktop and cannot open a browser, so sign in to Claude Code (run <code class="font-mono">claude</code> once) before installing. The service runs from its own admin-only copy in Program Files (so Python must be installed for all users, not just for you; after <code class="font-mono">pipx upgrade</code>, re-run the install to update it). Entra ID (AzureAD) accounts cannot be service accounts: use the hidden task. Installing one kind removes the other; stopping, starting and removing the service need an administrator PowerShell.</p>
+      <p class="mt-2"><span class="kb-label">Sleep</span> While a job is running the runner keeps this PC from going to sleep on its own (Windows power request), and lets go as soon as no job is running; an idle runner never keeps it awake, and the screen may still turn off. This stops idle sleep only: closing a laptop lid or pressing the power button still sleeps the PC, so plug in and leave the lid open for long jobs. Turn it off with <code class="font-mono">CREWBOSS_RUNNER_KEEP_AWAKE_DURING_JOBS=0</code>.</p></div></div>
+    <div data-wtab="wsl"><div><span class="kb-label">4. Keep it running</span> It saves this terminal's PATH into the autostart (so it can find <code class="font-mono">claude</code>, the Android tools and the rest); run it again after installing new tools. Run this inside Ubuntu. WSL can stop an idle distro even when it has systemd services, so this creates a Windows Scheduled Task that starts <code class="font-mono">wsl.exe</code> and the runner at each Windows logon (a console window stays open; minimise it):
+      {% call pre() %}crewboss-runner service install
+crewboss-runner service status{% endcall %}
+      <code class="font-mono">crewboss-runner service install --systemd</code> uses a plain systemd user service instead. <code class="font-mono">crewboss-runner service uninstall</code> removes it.
+      <p class="mt-2"><span class="kb-label">Sleep</span> Inside WSL2 the runner cannot stop <em>Windows</em> from sleeping. Set Windows Settings &gt; System &gt; Power so the PC never sleeps while plugged in, for long jobs.</p></div></div>
+  </div>
+  <div class="mt-3 space-y-2 text-small text-charcoal/75" data-os="macos" hidden>
+    <div><span class="kb-label">4. Keep it running</span> It saves this terminal's PATH into the autostart (so it can find <code class="font-mono">claude</code>, the Android tools and the rest); run it again after installing new tools. One command makes a LaunchAgent that starts the runner at login:
+      {% call pre() %}crewboss-runner service install
+crewboss-runner service status
+tail -f ~/Library/Logs/crewboss-runner.log{% endcall %}
+      <code class="font-mono">crewboss-runner service uninstall</code> removes it.
+      <p class="mt-2"><span class="kb-label">No tray here</span> The tray icon is Windows-only (<code class="font-mono">crewboss-runner tray</code> says so). Use the commands above: <code class="font-mono">status</code>, <code class="font-mono">doctor</code>, <code class="font-mono">service start|stop</code>. The same local control panel page also works: <code class="font-mono">crewboss-runner status</code> prints its link while the runner is running (optional).</p>
+      <p class="mt-2"><span class="kb-label">Sleep</span> While a job is running the runner keeps this PC from going to sleep on its own (<code class="font-mono">caffeinate</code>), and lets go as soon as no job is running; an idle runner never keeps it awake, and the screen may still turn off. This stops idle sleep only: closing a laptop lid or pressing the power button still sleeps the PC, so plug in and leave the lid open for long jobs. Turn it off with <code class="font-mono">CREWBOSS_RUNNER_KEEP_AWAKE_DURING_JOBS=0</code>.</p></div>
+  </div>
+
+  <ol class="list-decimal pl-5 mt-3 space-y-3 text-small text-charcoal/75" start="5">
+    <li><code class="font-mono">crewboss-runner status</code> shows the connection and any job.</li>
+    <li>Back here, give the runner its labels (for example <code class="font-mono">android</code>, <code class="font-mono">android-usb</code> for a PC with a phone on USB, <code class="font-mono">windows</code>, <code class="font-mono">macos</code>). A job whose profile needs a label only goes to runners that have it.</li>
+    <li>How a job runs: the runner starts a Claude Code session named <code class="font-mono">dash-j&lt;job&gt;</code> in its own git worktree. Drive it from claude.ai/code or the phone and answer its permission prompts there. When it ends, the runner pushes the branch. Merge and deploy go through the dashboard.</li>
+    <li>Removing a PC: run <code class="font-mono">crewboss-runner forget</code> on the PC, then press Revoke here. If a code expired, make a new one.</li>
+  </ol>
+  <p class="mt-3 text-small text-charcoal/75">If a job never shows up at claude.ai/code, run <code class="font-mono">claude</code> on the PC (inside WSL for the WSL2 runner) and sign in. The runner shows "not signed in" and takes no jobs until you do, and you get a notification if a session cannot start.</p>
+  <script>
+    (function () {
+      var root = document.currentScript.closest("[data-section=howto]");
+      if (!root) return;
+      var KEY_OS = "crewboss-runner-os", KEY_W = "crewboss-runner-wtab";
+      var OSES = ["linux", "windows", "macos"], WTABS = [{% for t in win_tabs %}"{{ t.key }}"{{ "," if not loop.last }}{% endfor %}];
+      var os = OSES[0], wtab = "{{ win_default }}";
+      function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+      function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+      var saved = get(KEY_OS), savedW = get(KEY_W);
+      if (OSES.indexOf(saved) >= 0) os = saved;
+      else { var ua = navigator.userAgent || ""; os = /Windows/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux"; }
+      if (WTABS.indexOf(savedW) >= 0) wtab = savedW;
+      function apply() {
+        root.querySelectorAll("[data-os]").forEach(function (el) { el.hidden = el.getAttribute("data-os") !== os; });
+        root.querySelectorAll("[data-wtab]").forEach(function (el) { el.hidden = el.getAttribute("data-wtab") !== wtab; });
+        root.querySelectorAll("[data-os-pick]").forEach(function (b) {
+          var on = b.getAttribute("data-os-pick") === os; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1;
+        });
+        root.querySelectorAll("[data-wtab-pick]").forEach(function (b) {
+          var on = b.getAttribute("data-wtab-pick") === wtab; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1;
+        });
+      }
+      function wire(selector, attr, set, store) {
+        var btns = Array.prototype.slice.call(root.querySelectorAll(selector));
+        btns.forEach(function (b, i) {
+          b.addEventListener("click", function () { set(b.getAttribute(attr)); put(store, b.getAttribute(attr)); apply(); });
+          b.addEventListener("keydown", function (e) {
+            var d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+            if (!d) return;
+            e.preventDefault();
+            var n = btns[(i + d + btns.length) % btns.length];
+            n.focus(); n.click();
+          });
+        });
+      }
+      wire("[data-os-pick]", "data-os-pick", function (v) { os = v; }, KEY_OS);
+      wire("[data-wtab-pick]", "data-wtab-pick", function (v) { wtab = v; }, KEY_W);
+      apply();
+    })();
+  </script>
+</details>

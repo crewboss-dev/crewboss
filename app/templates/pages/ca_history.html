@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Chat history{% endblock %}
+{% block page_title %}Chat history{% endblock %}
+{% block content %}
+{# Chat history (task #727): the signed-in person's OWN CA conversations, newest first, searched by title and message text, paged.
+   A row opens that conversation in the drawer (js/ca.js: data-ca-open-conv); Archive hides it. Needs: hist (ca.history), show_archived. #}
+<div class="max-w-3xl" data-ca-history>
+  <form method="get" action="/ca/history" class="flex gap-2 mb-4" role="search">
+    <input type="search" name="q" value="{{ hist.q }}" placeholder="Search titles and messages" aria-label="Search conversations"
+           class="flex-1 min-w-0 rounded-lg border border-line bg-entry px-3 py-2 text-small">
+    {% if show_archived %}<input type="hidden" name="archived" value="1">{% endif %}
+    <button class="press px-3 py-2 rounded-lg border border-line text-small">Search</button>
+  </form>
+  <div class="flex items-center gap-3 mb-2 text-micro text-charcoal/55">
+    <span>{{ hist.total }} conversation{{ '' if hist.total == 1 else 's' }}{% if hist.q %} matching "{{ hist.q }}"{% endif %}</span>
+    <a class="ml-auto underline" href="/ca/history{% if not show_archived %}?archived=1{% endif %}">{{ 'Show current' if show_archived else 'Show archived' }}</a>
+  </div>
+  <div class="card divide-y divide-line">
+    {% for c in hist['items'] %}
+    {% set ent = (c.context or {}).get('entity') %}
+    <div class="flex items-center gap-2 px-3 py-2.5" data-conv-row="{{ c.id }}">
+      <button type="button" class="press min-w-0 flex-1 text-left" data-ca-open-conv="{{ c.id }}">
+        <span class="block text-small font-medium truncate">{{ c.title or 'New conversation' }}</span>
+        {% if ent %}<span class="block text-micro truncate" style="color:rgb(var(--c-indigo))">{{ ent.label }} · {{ ent.title }}</span>{% endif %}
+      </button>
+      <span class="text-micro text-charcoal/50 shrink-0">{{ c.updated_at|timeago }}</span>
+      {% if not show_archived %}<button type="button" class="press text-micro px-2 py-1 rounded-lg border border-line shrink-0" data-ca-archive="{{ c.id }}">Archive</button>{% endif %}
+    </div>
+    {% else %}
+    <div class="px-3 py-6 text-center text-small text-charcoal/50">{{ 'Nothing matches.' if hist.q else 'No conversations yet.' }}</div>
+    {% endfor %}
+  </div>
+  {% if hist.pages > 1 %}
+  <nav class="flex items-center gap-3 mt-3 text-small" aria-label="Pages">
+    {% set qs = ('&q=' ~ hist.q|urlencode if hist.q else '') ~ ('&archived=1' if show_archived else '') %}
+    {% if hist.page > 1 %}<a class="underline" href="/ca/history?page={{ hist.page - 1 }}{{ qs }}">Newer</a>{% endif %}
+    <span class="text-charcoal/55">Page {{ hist.page }} of {{ hist.pages }}</span>
+    {% if hist.page < hist.pages %}<a class="underline" href="/ca/history?page={{ hist.page + 1 }}{{ qs }}">Older</a>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+{% endblock %}

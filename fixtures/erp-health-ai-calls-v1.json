@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "calls": [
+    {"id": 5003, "at": "2026-10-05T02:58:00+00:00", "feature": "casegen.triage", "model": "claude-sonnet",
+     "input_tokens": 2100, "output_tokens": 310, "cost_usd": 0.011, "ok": true},
+    {"id": 5002, "at": "2026-10-05T02:41:00+00:00", "feature": "aios.email-triage", "model": "claude-haiku",
+     "input_tokens": 900, "output_tokens": 80, "cost_usd": 0.001, "ok": true},
+    {"id": 5001, "at": "2026-10-05T02:20:00+00:00", "feature": "quotes.overview", "model": "claude-opus",
+     "input_tokens": 12000, "output_tokens": 2400, "cost_usd": 0.3, "ok": false, "error": "overloaded"}
+  ],
+  "next_before": 5001
+}

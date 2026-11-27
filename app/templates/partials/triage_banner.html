@@ -1,0 +1,35 @@
+{% if t.triage_state in ('suggested', 'discussing') and t.suggestion %}
+{% set close_drawer = in_drawer is defined and in_drawer %}
+{# On a Plan card: swap the board. In the drawer (any view): the drawer answers itself (?from=drawer) and every
+   view refreshes on mdd:board-stale. #}
+{% set qs = '?from=drawer' if close_drawer else (('?' ~ query) if (query is defined and query) else '') %}
+{% set sg = t.suggestion %}
+{# "Claude suggests: this is an AI Skill · Should Have · below #9 · not needed until the Emails pill ships — because…" #}
+{% set parts = [] %}
+{% if sg.category %}{% set _ = parts.append('this is ' ~ ('an ' if CATEGORY_META.get(sg.category, UNKNOWN_META).label[0] in 'AEIOU' else 'a ') ~ CATEGORY_META.get(sg.category, UNKNOWN_META).label) %}{% endif %}
+{% if sg.priority %}{% set _ = parts.append(PRIORITY_META.get(sg.priority, UNKNOWN_META).label) %}{% endif %}
+{% if sg.rank_hint %}{% set _ = parts.append(sg.rank_hint) %}{% endif %}
+{% if sg.stream %}{% set _ = parts.append(STREAM_META.get(sg.stream, UNKNOWN_META).label) %}{% endif %}
+{% if sg.assignee %}{% set _ = parts.append('for you' if sg.assignee == 'owner' else 'for the AI') %}{% endif %}
+{% if sg.needed_now %}{% set _ = parts.append(sg.needed_reason if (sg.needed_reason and sg.needed_now != 'yes') else NEEDED_NOW_META.get(sg.needed_now, UNKNOWN_META).label) %}{% endif %}
+<div class="mt-2 rounded-lg border border-flame/30 bg-flame/5 p-2.5" hx-on:click="event.stopPropagation()">
+  <div class="text-micro font-semibold text-flame uppercase tracking-wide mb-1">
+    {% if t.triage_state == 'discussing' %}Discussing with {{ sg.created_by|actor_label }}{% elif sg.created_by == 'claude:overseer' %}dash (overseer) suggests{% elif (sg.created_by or '').startswith('gemini:') %}Gemini suggests{% else %}Claude suggests{% endif %}
+  </div>
+  <div class="text-small text-charcoal/80 mb-2 leading-snug">
+    {% if parts %}<span class="font-medium">{{ parts|join(' · ') }}</span>{% if sg.rationale %} &mdash; because {% endif %}{% endif %}{{ sg.rationale }}
+    {% if sg.needed_now == 'yes' and sg.needed_reason %}<div class="text-micro opacity-70 mt-1">Needed now: {{ sg.needed_reason }}</div>{% endif %}
+    {% if sg.business_case %}<div class="text-micro opacity-70 mt-1">{{ sg.business_case }}</div>{% endif %}
+  </div>
+  {% if t.triage_state == 'suggested' %}
+  <div class="flex gap-1.5 flex-wrap">
+    <button type="button" hx-post="{{ base }}/tasks/{{ t.id }}/triage/accept{{ qs }}" {% if close_drawer %}hx-target="#drawer-content" hx-swap="innerHTML"{% else %}hx-target="#board" hx-swap="outerHTML"{% endif %}
+            class="btn-primary text-micro py-1 px-2">Accept</button>
+    <button type="button" hx-post="{{ base }}/tasks/{{ t.id }}/triage/override{{ qs }}" {% if close_drawer %}hx-target="#drawer-content" hx-swap="innerHTML"{% else %}hx-target="#board" hx-swap="outerHTML"{% endif %}
+            class="btn-ghost text-micro py-1 px-2">Keep mine</button>
+    <button type="button" hx-post="{{ base }}/tasks/{{ t.id }}/triage/discuss{{ qs }}" {% if close_drawer %}hx-target="#drawer-content" hx-swap="innerHTML"{% else %}hx-target="#board" hx-swap="outerHTML"{% endif %}
+            class="btn-ghost text-micro py-1 px-2">Argue</button>
+  </div>
+  {% endif %}
+</div>
+{% endif %}

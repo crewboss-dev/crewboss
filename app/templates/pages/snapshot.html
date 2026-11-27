@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% import "partials/ui.html" as ui %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+{# THE DASHBOARD (#733): a snapshot in the ERP's dashboard shape (its tiles, section headers and card lists). Every figure is scoped to the
+   projects the signed-in person may see (app/snapshot.py, app/access.py): a designer sees their own and what is shared, never the rest. #}
+<h1 class="sr-only" data-area-title>Dashboard</h1>
+
+{% macro task_list(rows, empty) %}
+{% if rows %}
+<div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+  {% for t in rows %}
+  <a href="/{{ t.project_slug }}/board?open={{ t.id }}" class="press flex items-center gap-3 px-4 py-2.5">
+    <span class="flex-1 min-w-0"><span class="block truncate text-sm">{{ t.title }}</span>
+      <span class="block truncate text-2xs text-charcoal/45">{{ t.project_name }} &middot; #{{ t.id }}</span></span>
+    <span class="text-xs text-charcoal/45 shrink-0 tabular" title="Last touched {{ t.updated_at|timeago }}">{{ t.updated_at|timeago }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}<p class="text-sm text-charcoal/40 px-1">{{ empty }}</p>{% endif %}
+{% endmacro %}
+
+{{ ui.section("Waiting on you", subtitle="decide, check, answer") }}
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  {{ ui.tile(d.review_count, "Reviews to check", "/", tone='alert', sub="tasks in review") }}
+  {{ ui.tile(d.changes_waiting|length, "Changes to decide", "/", tone='alert', sub="recommended, undecided") }}
+  {{ ui.tile(d.agents.running, "Agents running", "/", sub=(d.agents.finished_today ~ " finished today")) }}
+  {% if d.problems is not none %}{{ ui.tile(d.problems, "Open production problems", "/", tone='alert', sub="from the health feed") }}{% endif %}
+</div>
+
+{{ ui.section("Tasks", subtitle="opened against closed") }}
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  {{ ui.card(d.flow.opened_week, "Opened this week", sub=(d.flow.closed_week ~ " closed")) }}
+  {{ ui.card(d.flow.closed_week, "Closed this week", sub=(d.flow.opened_week ~ " opened")) }}
+  {{ ui.card(d.flow.opened_month, "Opened this month", sub=(d.flow.closed_month ~ " closed")) }}
+  {{ ui.card(d.flow.closed_month, "Closed this month", sub=(d.flow.opened_month ~ " opened")) }}
+</div>
+
+{{ ui.section("Open work", subtitle="by priority") }}
+<div class="grid grid-cols-3 gap-3">
+  {% for p in d.by_priority %}{{ ui.tile(p.n, p.label ~ " have", "/", tone=('alert' if p.key == 'must' else '')) }}{% endfor %}
+</div>
+
+{{ ui.section("Open work", d.by_project|length, subtitle="by project") }}
+{% if d.by_project %}
+<div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+  {% set top = d.by_project[0].open %}
+  {% for p in d.by_project %}
+  <a href="/{{ p.slug }}/board" class="press flex items-center gap-3 px-4 py-2.5">
+    <span class="w-40 max-w-[45%] truncate text-sm">{{ p.name }}</span>
+    <span class="flex-1 h-1.5 rounded-full bg-charcoal/[.07] overflow-hidden"><span class="block h-full rounded-full bg-indigodeep" style="width: {{ (p.open / top * 100)|round|int }}%"></span></span>
+    <span class="text-sm tabular w-8 text-right">{{ p.open }}</span>
+    {% if p.must %}<span class="text-2xs font-semibold text-flame tabular w-14 text-right">{{ p.must }} must</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}<p class="text-sm text-charcoal/40 px-1">Nothing open.</p>{% endif %}
+
+<div class="grid md:grid-cols-2 gap-x-6">
+  <div>{{ ui.section("Oldest", subtitle="open the longest") }}{{ task_list(d.oldest, "Nothing open.") }}</div>
+  <div>{{ ui.section("Stuck", subtitle="in progress, untouched for a week") }}{{ task_list(d.stuck, "Nothing is stuck.") }}</div>
+</div>
+
+{{ ui.section("Reviews waiting on you", d.review_count) }}
+{{ task_list(d.reviews, "No reviews waiting.") }}
+
+{{ ui.section("Changes waiting for a decision", d.changes_waiting|length) }}
+{% if d.changes_waiting %}
+<div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+  {% for c in d.changes_waiting[:8] %}
+  <a href="/{{ c.project_slug }}/changes" class="press flex items-center gap-3 px-4 py-2.5">
+    <span class="flex-1 min-w-0"><span class="block truncate text-sm">{{ c.title }}</span><span class="block truncate text-2xs text-charcoal/45">{{ c.project_name }}</span></span>
+    <span class="text-xs text-charcoal/45 shrink-0 tabular">{{ c.created_at|timeago }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}<p class="text-sm text-charcoal/40 px-1">No changes waiting.</p>{% endif %}
+{% endblock %}

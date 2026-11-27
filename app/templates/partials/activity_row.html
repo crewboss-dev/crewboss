@@ -1,0 +1,20 @@
+{% set actor_stream = a.actor.split(':')[1] if ':' in a.actor else None %}
+{% set is_owner = a.actor == 'owner' %}
+{% set is_system = a.actor == 'system' %}
+<div class="flex items-start gap-2.5">
+  {% if is_owner %}
+  <span class="w-6 h-6 rounded-full bg-charcoal text-cream shrink-0 flex items-center justify-center text-micro font-semibold">O</span>
+  {% elif is_system %}
+  <span class="w-6 h-6 rounded-full bg-charcoal/20 text-charcoal shrink-0 flex items-center justify-center text-micro font-semibold">S</span>
+  {% elif actor_stream %}
+  {% set task_stream = {"features": "feature", "bugs": "bug", "tweaks": "tweak", "reviewer": "review", "errors": "error"}.get(actor_stream) %}
+  <span class="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-micro font-semibold
+               {{ STREAM_META.get(task_stream, UNKNOWN_META).classes if task_stream else 'bg-charcoal/20' }}">{{ actor_stream[0]|upper }}</span>
+  {% else %}
+  <span class="w-6 h-6 rounded-full bg-charcoal/20 shrink-0"></span>
+  {% endif %}
+  <div class="min-w-0 flex-1">
+    <div class="text-small"><span class="font-medium">{{ a.actor }}</span> {{ a.summary }}</div>
+    <div class="text-micro text-charcoal/40">{{ a.at|timeago }}{% if a.project_name %} &middot; {{ a.project_name }}{% endif %}</div>
+  </div>
+</div>

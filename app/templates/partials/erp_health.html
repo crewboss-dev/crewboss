@@ -1,0 +1,289 @@
+{# The ERP section of System Health (task #196): the ERP's own sensors, read from its /api/health feed. The dashboard
+   only shows and alerts; the ERP stays the only writer (Resolve asks the ERP to do it). #}
+{% set st = erp.state %}
+{% set dot = {'ok': 'bg-status-ok', 'waiting': 'bg-charcoal/30', 'off': 'bg-charcoal/20',
+              'stale': 'bg-status-warn', 'down': 'bg-status-disaster'}[st] %}
+{% set muted = 'text-charcoal/50' %}
+{% set rows = 'divide-y divide-line' %}
+<section aria-labelledby="erp-health-h" class="mt-8" data-erp-section data-erp-state="{{ st }}">
+  <h2 id="erp-health-h" class="text-lead font-semibold mb-3">ERP</h2>
+
+  {# --- feed status ----------------------------------------------------------------------------------------------- #}
+  <div class="card p-4 mb-4">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span class="w-2.5 h-2.5 rounded-full {{ dot }}" aria-hidden="true"></span>
+      <span class="text-small font-semibold">{{ erp.word if st == 'off' else 'ERP feed · ' ~ erp.word }}</span>
+      <span class="ml-auto text-micro {{ muted }} tabular">
+        {% if erp.source.generated_at %}snapshot {{ erp.source.generated_at|timeago }}{% endif %}
+        {% if erp.source.last_sync_at %} · fetched {{ erp.source.last_sync_at|timeago }}{% endif %}
+      </span>
+    </div>
+    {% if st == 'off' and erp.config_problem %}
+    <div class="mt-2 text-small text-status-disaster break-words" data-erp-config-problem>{{ erp.config_problem }}</div>
+    {% elif st == 'off' %}
+    <div class="mt-2 text-small text-charcoal/60">
+      Nothing is fetched until the ERP's address (<span class="font-medium">ERP_HEALTH_URL</span>) and its read token
+      (<span class="font-medium">erp-health-read-token</span>) are set on the dashboard.
+    </div>
+    {% elif st == 'down' or (st == 'stale' and (erp.source.last_error or (erp.age_minutes or 0) > erp.stale_minutes)) %}
+    <div class="mt-2 text-small {{ 'text-status-disaster' if st == 'down' else 'text-charcoal/75' }} break-words">
+      {% if erp.source.last_error %}Last fetch failed: {{ erp.source.last_error }}.{% endif %}
+      {% if erp.age_minutes is not none %}The newest snapshot is {{ erp.age_minutes }} min old.{% endif %}
+      {% if st == 'down' %}Down after {{ erp.down_minutes }} min without a fresh snapshot{% if erp.source.down_escalated_at %}; the errors session was told once{% endif %}.{% endif %}
+      What's below is that snapshot.
+    </div>
+    {% endif %}
+    {% if erp.snapshot and erp.snapshot.invalid %}
+    <div class="mt-2 text-small text-status-disaster break-words" data-erp-invalid>
+      Not in the v1 shape, so not shown: {{ erp.snapshot.invalid|join(', ') }}.{% if 'events' in erp.snapshot.invalid %} Open events are unknown until it is.{% endif %}
+    </div>
+    {% elif st == 'stale' and erp.snapshot and not erp.events_readable %}
+    <div class="mt-2 text-small text-charcoal/75">This snapshot has no events list, so open events are unknown.</div>
+    {% endif %}
+    {% if erp.parse_error %}<div class="mt-2 text-small text-status-disaster break-words">{{ erp.parse_error }}</div>{% endif %}
+    {% if st != 'off' %}
+    <div class="mt-2 text-micro text-charcoal/45">
+      New error and critical events go to the <span class="font-medium">errors</span> session.
+      Events already open at the first fetch are marked baseline and were not sent.
+    </div>
+    {% endif %}
+  </div>
+
+  {% if erp.snapshot %}
+  {% set s = erp.snapshot %}
+  {% macro not_in_feed(section, bad) %}<div class="px-4 py-3 text-small {{ 'text-status-disaster' if bad else 'text-charcoal/50' }}" data-unreadable="{{ section }}">{{ 'Unreadable in this feed (not the v1 shape).' if bad else 'Not in this feed.' }}</div>{% endmacro %}
+
+  {# --- open events ----------------------------------------------------------------------------------------------- #}
+  <section aria-label="Open ERP events" class="mb-6" data-fold-section>
+    <div class="flex items-baseline gap-2 mb-2">
+      <h3 class="text-small font-semibold">Open events</h3>
+      <span class="text-micro tabular {{ muted }}" data-fold-count>{{ erp.events|length }}</span>
+      {% if not erp.resolve_ready %}<span class="ml-auto text-micro {{ muted }}">Resolve needs the ERP resolve token</span>{% endif %}
+    </div>
+    <div class="card {{ rows }}">
+      {% if 'events' in s.unreadable %}{{ not_in_feed('events', 'events' in s.invalid) }}{% else %}
+      {% for e in erp.events %}
+      {% include "partials/erp_event_row.html" %}
+      {% endfor %}
+      {# shown by js/fold.js once the last open event has folded away #}
+      <div class="px-4 py-6 text-center text-small {{ 'text-status-ok font-medium' if st == 'ok' else muted }}" data-fold-placeholder{% if erp.events %} hidden{% endif %}>
+        {{ 'All clear: no open events.' if st == 'ok' else 'No open events in the last snapshot.' }}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
+    {# --- failures: one count row each; a non-zero row opens to its short list -------------------------------------- #}
+    {% set fail_total = s.failures|sum(attribute='count') %}
+    <section aria-labelledby="erp-failures-h" class="card min-w-0" data-erp-failures>
+      <div class="flex items-baseline gap-2 px-4 pt-3 pb-2">
+        <h3 id="erp-failures-h" class="text-small font-semibold">Failures</h3>
+        <span class="text-micro tabular {{ 'text-status-disaster font-semibold' if fail_total else muted }}">{{ fmt(fail_total) }}</span>
+      </div>
+      <div class="{{ rows }} border-t border-line">
+        {% if 'failures' in s.unreadable %}{{ not_in_feed('failures', 'failures' in s.invalid) }}{% endif %}
+        {% for f in s.failures %}
+        {% if f.count and f.entries %}
+        <details class="group" data-failure="{{ f.key }}">
+          <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-2.5 touch-target">
+            <span class="text-small">{{ f.label }}</span>
+            <span class="ml-auto chip bg-status-high/15 text-status-high tabular normal-case">{{ fmt(f.count) }}</span>
+            <svg class="w-3.5 h-3.5 opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <ul class="px-4 pb-3 flex flex-col gap-1.5">
+            {% for it in f.entries %}
+            <li class="text-micro min-w-0">
+              <span class="font-medium text-charcoal/85 break-words">{{ it.label }}</span>
+              {% if it.detail %}<span class="text-charcoal/60 break-words"> · {{ it.detail }}</span>{% endif %}
+              {% if it.at %}<span class="{{ muted }} tabular"> · {{ it.at|timeago }}</span>{% endif %}
+            </li>
+            {% endfor %}
+            {% if f.count > f.entries|length %}<li class="text-micro {{ muted }}">and {{ fmt(f.count - f.entries|length) }} more in the ERP</li>{% endif %}
+          </ul>
+        </details>
+        {% else %}
+        <div class="flex items-center gap-2 px-4 py-2.5" data-failure="{{ f.key }}">
+          <span class="text-small {{ '' if f.count else 'text-charcoal/60' }}">{{ f.label }}</span>
+          <span class="ml-auto chip tabular normal-case {{ 'bg-status-high/15 text-status-high' if f.count else 'bg-charcoal/[.05] text-charcoal/50' }}">{{ fmt(f.count) }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+
+    {# --- heartbeats ------------------------------------------------------------------------------------------------ #}
+    {% set late = s.heartbeats|selectattr('red')|list %}
+    <section aria-labelledby="erp-heartbeats-h" class="card min-w-0" data-erp-heartbeats>
+      <div class="flex items-baseline gap-2 px-4 pt-3 pb-2">
+        <h3 id="erp-heartbeats-h" class="text-small font-semibold">Heartbeats</h3>
+        <span class="text-micro {{ 'text-status-disaster font-semibold' if late else muted }}">{{ late|length ~ ' late' if late else 'red after ' ~ erp.heartbeat_red ~ ' min' }}</span>
+      </div>
+      <div class="{{ rows }} border-t border-line">
+        {% if 'heartbeats' in s.unreadable %}{{ not_in_feed('heartbeats', 'heartbeats' in s.invalid) }}{% endif %}
+        {% for hb in s.heartbeats %}
+        <div class="flex items-center gap-2 px-4 py-2" data-heartbeat="{{ hb.name }}" {% if hb.red %}data-late{% endif %}>
+          <span class="text-small min-w-0 truncate">{{ hb.name }}</span>
+          {% if hb.red %}<span class="chip bg-status-disaster/10 text-status-disaster">late</span>{% endif %}
+          <span class="ml-auto text-micro tabular {{ 'text-status-disaster font-semibold' if hb.red else muted }}"
+                {% if hb.last_run %}title="{{ hb.last_run }}"{% endif %}>{{ hb.age }}{{ ' ago' if hb.age_minutes is not none }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    {# --- inbound webhooks, last 24h ---------------------------------------------------------------------------------- #}
+    <section aria-labelledby="erp-webhooks-h" class="card min-w-0" data-erp-webhooks>
+      <div class="flex items-baseline gap-2 px-4 pt-3 pb-2">
+        <h3 id="erp-webhooks-h" class="text-small font-semibold">Webhooks</h3>
+        <span class="text-micro {{ muted }}">last 24h</span>
+      </div>
+      <div class="{{ rows }} border-t border-line">
+        {% if 'webhooks' in s.unreadable %}{{ not_in_feed('webhooks', 'webhooks' in s.invalid) }}{% endif %}
+        {% for w in s.webhooks %}
+        <div class="flex items-center gap-2 px-4 py-2" data-webhook="{{ w.source }}">
+          <span class="text-small min-w-0 truncate">{{ w.source }}</span>
+          {% if w.errors %}<span class="chip bg-status-high/15 text-status-high tabular normal-case">{{ fmt(w.errors) }} failed</span>{% endif %}
+          <span class="ml-auto text-small tabular">{{ fmt(w.count) }}</span>
+          <span class="w-16 text-right text-micro tabular {{ muted }}">{{ w.last_at|timeago if w.last_at else '-' }}</span>
+        </div>
+        {% else %}
+        {% if 'webhooks' not in s.unreadable %}<div class="px-4 py-3 text-small {{ muted }}">None in the last 24h.</div>{% endif %}
+        {% endfor %}
+      </div>
+    </section>
+
+    {# --- Xero ------------------------------------------------------------------------------------------------------ #}
+    <section aria-labelledby="erp-xero-h" class="card min-w-0" data-erp-xero>
+      <div class="flex items-baseline gap-2 px-4 pt-3 pb-2">
+        <h3 id="erp-xero-h" class="text-small font-semibold">Xero</h3>
+      </div>
+      <div class="{{ rows }} border-t border-line">
+        {% if s.xero %}
+        {% set tone = {'ok': 'bg-status-ok/15 text-status-ok', 'bad': 'bg-status-disaster/15 text-status-disaster',
+                       'warn': 'bg-status-warn/15 text-charcoal dark:text-status-warn',
+                       'neutral': 'bg-charcoal/[.06] text-charcoal/70'}[s.xero.tone] %}
+        <div class="flex items-center gap-2 px-4 py-2.5">
+          <span class="text-small">Circuit breaker</span>
+          <span class="ml-auto chip {{ tone }}" data-xero-breaker="{{ s.xero.breaker }}">{{ s.xero.breaker }}</span>
+        </div>
+        <div class="flex items-center gap-2 px-4 py-2.5">
+          <span class="text-small">Pushes today</span>
+          <span class="ml-auto text-small tabular">{{ fmt(s.xero.pushes_today) }}</span>
+        </div>
+        {% for label, value in s.xero.extra %}
+        <div class="flex items-center gap-2 px-4 py-2"><span class="text-small text-charcoal/70">{{ label }}</span><span class="ml-auto text-small tabular break-all text-right">{{ value }}</span></div>
+        {% endfor %}
+        {% else %}{{ not_in_feed('xero', 'xero' in s.invalid) }}{% endif %}
+      </div>
+    </section>
+
+    {# --- AI usage ---------------------------------------------------------------------------------------------------- #}
+    <section aria-labelledby="erp-ai-h" class="card min-w-0 lg:col-span-2" data-erp-ai-usage>
+      <div class="flex items-baseline gap-2 px-4 pt-3 pb-2">
+        <h3 id="erp-ai-h" class="text-small font-semibold">AI usage</h3>
+        <a href="{{ base }}/health?view=ai-calls" class="press ml-auto text-micro font-medium text-indigo hover:underline touch-target inline-flex items-center justify-end">Every call &rarr;</a>
+      </div>
+      <div class="border-t border-line px-4 py-3 flex flex-col gap-3">
+        {% set u = s.ai_usage %}
+        {% if u %}
+        {% if u.scalars %}
+        <dl class="flex flex-wrap gap-x-6 gap-y-1">
+          {% for label, value in u.scalars %}<div><dt class="text-micro uppercase tracking-wide {{ muted }}">{{ label }}</dt><dd class="text-small tabular font-medium">{{ value }}</dd></div>{% endfor %}
+        </dl>
+        {% endif %}
+        {% if u.periods %}
+        <div class="overflow-x-auto -mx-4 px-4">
+          <table class="w-full text-small tabular">
+            <thead><tr class="text-micro uppercase tracking-wide {{ muted }} text-left">
+              <th class="font-medium py-1 pr-3"><span class="sr-only">Period</span></th>
+              {% for c in u.columns %}<th class="font-medium py-1 px-2 text-right whitespace-nowrap">{{ c }}</th>{% endfor %}
+            </tr></thead>
+            <tbody class="{{ rows }}">
+              {% for label, values in u.periods %}
+              <tr><th scope="row" class="py-1.5 pr-3 text-left font-medium whitespace-nowrap">{{ label }}</th>
+                {% for v in values %}<td class="py-1.5 px-2 text-right whitespace-nowrap">{{ v }}</td>{% endfor %}</tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+        {% for t in u.tables %}
+        <div class="overflow-x-auto -mx-4 px-4">
+          <div class="text-micro uppercase tracking-wide {{ muted }} mb-1">{{ t.label }}</div>
+          <table class="w-full text-small tabular">
+            <thead><tr class="text-micro {{ muted }} text-left">{% for c in t.columns %}<th class="font-medium py-1 pr-3 whitespace-nowrap">{{ c }}</th>{% endfor %}</tr></thead>
+            <tbody class="{{ rows }}">
+              {% for r in t.rows %}<tr>{% for v in r %}<td class="py-1.5 pr-3 whitespace-nowrap">{{ v }}</td>{% endfor %}</tr>{% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endfor %}
+        {% if not (u.scalars or u.periods or u.tables) %}<div class="text-small {{ muted }}">No usage figures in this feed.</div>{% endif %}
+        {% else %}<div class="text-small {{ 'text-status-disaster' if 'ai_usage' in s.invalid else muted }}" data-unreadable="ai_usage">{{ 'Unreadable in this feed (not the v1 shape).' if 'ai_usage' in s.invalid else 'Not in this feed.' }}</div>{% endif %}
+      </div>
+    </section>
+
+    {# --- AI models per workflow (ERP #516, dash #517). Read-only: the switch is on ERP Admin (q315). ---------- #}
+    <section aria-labelledby="erp-aim-h" class="card min-w-0 lg:col-span-2" data-erp-ai-models>
+      {% set m = s.ai_models %}
+      <div class="flex items-baseline gap-2 px-4 pt-3 pb-2">
+        <h3 id="erp-aim-h" class="text-small font-semibold">AI models</h3>
+        {% if m %}<span class="text-micro {{ muted }}">last {{ m.window_days }} days</span>{% endif %}
+        {% if m and m.admin_url %}<a href="{{ m.admin_url }}" target="_blank" rel="noopener" class="press ml-auto text-micro font-medium text-indigo hover:underline touch-target inline-flex items-center justify-end">Change in ERP Admin &rarr;</a>{% endif %}
+      </div>
+      <div class="border-t border-line px-4 py-3 flex flex-col gap-3">
+        {% if m %}
+        {% set t = m.totals %}
+        <dl class="flex flex-wrap gap-x-6 gap-y-1" data-ai-models-totals>
+          <div><dt class="text-micro uppercase tracking-wide {{ muted }}">Workflows</dt><dd class="text-small tabular font-medium">{{ t.workflows }}</dd></div>
+          <div><dt class="text-micro uppercase tracking-wide {{ muted }}">Client-facing</dt><dd class="text-small tabular font-medium">{{ t.client_facing }}</dd></div>
+          <div><dt class="text-micro uppercase tracking-wide {{ muted }}">Calls</dt><dd class="text-small tabular font-medium">{{ '{:,}'.format(t.calls) }}</dd></div>
+          <div><dt class="text-micro uppercase tracking-wide {{ muted }}">Cost</dt><dd class="text-small tabular font-medium" data-ai-models-cost>{{ m.currency }}{{ '%.2f'|format(t.aud if m.currency == 'A$' else t.usd) }}</dd></div>
+          <div><dt class="text-micro uppercase tracking-wide {{ muted }}">Off-model now</dt><dd class="text-small tabular font-medium {{ 'text-status-high' if t.drift_live else '' }}" data-drift-live="{{ t.drift_live }}">{{ t.drift_live }}</dd></div>
+          <div><dt class="text-micro uppercase tracking-wide {{ muted }}">Older calls only</dt><dd class="text-small tabular font-medium {{ muted }}" data-drift-history="{{ t.drift_history }}">{{ t.drift_history }}</dd></div>
+        </dl>
+        {% for group, wfs in m.groups %}
+        <div class="overflow-x-auto -mx-4 px-4">
+          <div class="text-micro uppercase tracking-wide {{ muted }} mb-1">{{ group }}</div>
+          <table class="w-full text-small tabular">
+            <thead><tr class="text-micro {{ muted }} text-left">
+              <th class="font-medium py-1 pr-3">Workflow</th>
+              <th class="font-medium py-1 pr-3 whitespace-nowrap">Set to</th>
+              <th class="font-medium py-1 pr-3">Used</th>
+              <th class="font-medium py-1 pr-3 text-right">Calls</th>
+              <th class="font-medium py-1 pr-3 text-right">{{ m.currency }}</th>
+            </tr></thead>
+            <tbody class="{{ rows }}">
+              {% for w in wfs %}
+              <tr data-wf="{{ w.key }}" data-drift="{{ w.drift }}">
+                <td class="py-1.5 pr-3 min-w-[12rem]">
+                  {% if w.admin_url %}<a href="{{ w.admin_url }}" target="_blank" rel="noopener" class="font-medium hover:underline">{{ w.name }}</a>{% else %}<span class="font-medium">{{ w.name }}</span>{% endif %}
+                  {% if w.client_facing %}<span class="chip ml-1 bg-charcoal/5 {{ muted }}">client-facing</span>{% endif %}
+                  {% if w.host %}<span class="ml-1 text-micro {{ muted }}">{{ w.host }}</span>{% endif %}
+                  {% if w.drift == 'live' %}<div class="text-micro text-status-high">Off-model in the last {{ m.recent_days }} days{% if w.drift_reason %}: {{ w.drift_reason }}{% endif %}</div>
+                  {% elif w.drift == 'history' %}<div class="text-micro {{ muted }}">Older calls on another model (ageing out)</div>{% endif %}
+                </td>
+                <td class="py-1.5 pr-3 whitespace-nowrap">{{ w.model }}{% if w.source and w.source != 'default' %}<div class="text-micro {{ muted }}">{{ w.source }}{% if w.pin %} · {{ w.pin }}{% endif %}</div>{% endif %}</td>
+                <td class="py-1.5 pr-3">
+                  {% for u in w.used %}<div class="whitespace-nowrap {{ '' if u.model == w.model else (('text-status-high' if u.recent else muted)) }}">{{ u.model }} <span class="{{ muted }}">· {{ '{:,}'.format(u.calls) }}{% if u.last_used %} · {{ u.last_used }}{% endif %}</span></div>{% else %}<span class="{{ muted }}">not used</span>{% endfor %}
+                </td>
+                <td class="py-1.5 pr-3 text-right">{{ '{:,}'.format(w.calls) }}</td>
+                {% set cost = w.aud if m.currency == 'A$' else w.usd %}<td class="py-1.5 pr-3 text-right">{{ '%.2f'|format(cost) if cost is not none else '-' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endfor %}
+        {% if m.unattributed %}
+        <div class="text-micro {{ muted }}">Calls not tied to a workflow: {% for u in m.unattributed %}{{ u.job }} ({{ u.calls }}){{ ', ' if not loop.last }}{% endfor %}</div>
+        {% endif %}
+        {% if m.fx and m.fx.rate %}<div class="text-micro {{ muted }}">A$ at {{ m.fx.rate }} per US$ ({{ m.fx.as_of }}).</div>{% endif %}
+        {% if not m.groups %}<div class="text-small {{ muted }}">No workflows in this feed.</div>{% endif %}
+        {% else %}<div class="text-small {{ 'text-status-disaster' if 'ai_models' in s.invalid else muted }}" data-unreadable="ai_models">{{ 'Unreadable in this feed (not the v1 shape).' if 'ai_models' in s.invalid else 'Not in this feed.' }}</div>{% endif %}
+      </div>
+    </section>
+  </div>
+  {% endif %}
+</section>

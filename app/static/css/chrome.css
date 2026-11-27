@@ -1,0 +1,163 @@
+/* THE CHROME — the slim faded header, the left menu drawer, the phone bar and its sheets, the page fade (#457, #458,
+   #463, #465). A VERBATIM COPY of the ERP's own block in app/templates/base.html (between "SHARED CHROME" markers), so
+   a companion admin site (#480) and the Dev Dashboard wear exactly the ERP's chrome. Edit it in base.html and
+   copy it here — tests/test_admin_chrome_480 fails while the two differ. Colours are the theme tokens
+   (theme-tokens.css), so it follows Light/Dark/Auto. */
+    header.chrome-fixed{
+      position:sticky; top:0; z-index:50;
+      background:rgb(var(--c-cream) / .80);
+      backdrop-filter:blur(12px);
+      -webkit-backdrop-filter:blur(12px);
+    }
+    header.chrome-fixed::after{
+      content:''; position:absolute; left:0; right:var(--sbw, 0px); top:100%; height:16px; pointer-events:none;
+      background:linear-gradient(to bottom, rgb(var(--c-cream)), rgb(var(--c-cream) / 0));
+    }
+    /* ---- PAGE CHANGES (#465) -----------------------------------------------------------------------
+       Owner 2026-10-19: "when I go between pages ... its an instant switch", with the advice to keep a fade under 150ms
+       and the shell static. The ERP is full page loads, so this is the browser's native cross-document View Transition:
+       the CONTENT fades (out 90ms, in 120ms); the header, drawer, phone bar and command bar are named, unanimated
+       groups, so they stay perfectly still. Browsers without it switch instantly as before; reduced motion = no fade. */
+    /* Owner 2026-10-22: page-change fade OFF so pages paint as they load ("loads instantly on click"). */
+    @view-transition { navigation: none; }
+    header.chrome-fixed{ view-transition-name:erp-header; }
+    #nav-drawer{ view-transition-name:erp-drawer; }
+    #tabbar{ view-transition-name:erp-tabbar; }
+    #cmdbar{ view-transition-name:erp-cmdbar; }
+    ::view-transition-group(erp-header), ::view-transition-group(erp-drawer),
+    ::view-transition-group(erp-tabbar), ::view-transition-group(erp-cmdbar),
+    ::view-transition-old(erp-header), ::view-transition-new(erp-header),
+    ::view-transition-old(erp-drawer), ::view-transition-new(erp-drawer),
+    ::view-transition-old(erp-tabbar), ::view-transition-new(erp-tabbar),
+    ::view-transition-old(erp-cmdbar), ::view-transition-new(erp-cmdbar){ animation:none; }
+    ::view-transition-old(root){ animation:90ms ease-out both erp-vt-out; }
+    ::view-transition-new(root){ animation:120ms ease-out both erp-vt-in; }
+    @keyframes erp-vt-out{ to{ opacity:0; } }
+    @keyframes erp-vt-in{ from{ opacity:0; } }
+    @media (prefers-reduced-motion: reduce){ @view-transition { navigation: none; } }
+
+    /* ---- THE MENU DRAWER (#458) -------------------------------------------------------------------
+       Peek / overlay = the record drawer's card colour with a shadow. Locked (>= 1280px only) = the PAGE colour, a
+       shade darker, flush, with the page and the command bar moved across. Below the header, never over it. */
+    :root{ --nav-w: 248px; }
+    /* PA drawer: the shell is the record drawer's (#pa-drawer); its contents are styled by /static/pa.css. */
+    #nav-drawer{ position:fixed; top:0; bottom:var(--tabbar-h, 0px); left:0; z-index:45; width:var(--nav-w); max-width:85vw;
+      display:flex; flex-direction:column; background:rgb(var(--c-surface));
+      padding-top:var(--hdr-h, 40px); padding-bottom:env(safe-area-inset-bottom);
+      transform:translateX(-102%); visibility:hidden;
+      transition:transform .18s var(--ease-out, ease), visibility 0s linear .18s; }
+    html.nav-open #nav-drawer{ transform:none; visibility:visible; transition:transform .18s var(--ease-out, ease);
+      box-shadow:0 10px 40px rgb(0 0 0 / .28); }
+    .nav-row{ display:flex; align-items:center; gap:10px; margin:1px 8px; padding:7px 10px; border-radius:8px; font-size:.875rem;
+      color:rgb(var(--c-charcoal) / .70); text-decoration:none; }
+    .nav-row:hover{ background:rgb(var(--c-charcoal) / .06); color:rgb(var(--c-charcoal)); }
+    .nav-row.is-active{ background:rgb(var(--c-charcoal) / .10); color:rgb(var(--c-charcoal)); font-weight:600; }
+    .nav-row:focus-visible{ outline:2px solid rgb(var(--c-indigo)); outline-offset:-2px; }
+    #nav-drawer #user-menu:not(.hidden){ transform-origin:bottom left; }
+    #nav-scrim{ position:fixed; top:0; bottom:var(--tabbar-h, 0px); right:0; left:min(var(--nav-w), 85vw); z-index:55;
+      background:rgba(0,0,0,.35); opacity:0; visibility:hidden; transition:opacity .18s ease, visibility 0s linear .18s; }
+    html.nav-open #nav-scrim{ opacity:1; visibility:visible; transition:opacity .18s ease; }
+    html.in-app:not(.shell2) #nav-scrim{ display:none !important; }
+    /* Area icons (#460): Material Symbols rounded, the same names the phone app draws natively. 20px, the row's ink. */
+    .nav-ico{ width:20px; height:20px; flex:none; fill:currentColor; opacity:.8; }
+    .nav-row.is-active .nav-ico{ opacity:1; }
+    .nav-sortable .nav-row{ cursor:grab; }
+    .nav-sortable .nav-row.nav-dragging{ opacity:.45; cursor:grabbing; }
+    .nav-head{ margin:12px 18px 2px; font-size:.6875rem; letter-spacing:.06em; text-transform:uppercase;
+      color:rgb(var(--c-charcoal) / .45); }
+    /* The needs-you count (#461) — crimson = "needs you", the only thing that colour may say. */
+    .nav-badge{ min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:rgb(var(--c-flame)); color:#fff;
+      font-size:.6875rem; font-weight:600; line-height:18px; text-align:center; font-variant-numeric:tabular-nums; }
+    /* ── THE PHONE BAR AND ITS SHEETS (#463, Teams-style) ─────────────────────────────────────────────────
+       Card-coloured bar with a hairline on top, icon over a small label, the current page in the accent. Sheets rise
+       from the bottom ABOVE the page and header but under the bar (Teams keeps the bar while More is open). */
+    #tabbar{ display:none; }
+    .m-sheet{ display:none; }
+    @media (max-width:767px){
+      html:not(.in-app:not(.shell2)){ --tabbar-h:calc(58px + env(safe-area-inset-bottom)); }
+      html:not(.in-app:not(.shell2)) #pa-hdr-btn{ display:none !important; }   /* the phone's PA is the round button in the middle of the bar (owner 10-31, #634) */
+      html:not(.in-app:not(.shell2)) #tabbar{ position:fixed; left:0; right:0; bottom:0; z-index:84; display:flex;   /* ALWAYS in front (owner 10-31): over every drawer (80) and sheet (82), under PA's button (85), the modals (88) and the pickers (90) */ align-items:stretch;
+        height:var(--tabbar-h); padding-bottom:env(safe-area-inset-bottom); background:rgb(var(--c-surface));
+        box-shadow:inset 0 1px 0 rgb(var(--c-line)); }
+      html:not(.in-app:not(.shell2)) #page{ padding-bottom:var(--tabbar-h); }
+      /* visibility waits for the slide-out (.24s) before hiding — without the delay a tap on More or the backdrop made the
+         sheet vanish instead of sliding away (owner, #464: "Just disappears"). Opening shows it at once. */
+      html:not(.in-app:not(.shell2)) .m-sheet{ display:block; position:fixed; inset:0 0 var(--tabbar-h, 0px) 0; z-index:82; clip-path:inset(-40px -40px 0 -40px); visibility:hidden;   /* clipped at the bar's top edge: the panel slides out from THERE */   /* 82: ABOVE an open record / PA drawer (80), under PA's button (85) and the pickers (90); ends at the bar so the footer stays usable */
+        transition:visibility 0s linear .24s; }
+    }
+    #tabbar .tab{ flex:1 1 0; min-width:0; position:relative; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; gap:3px; background:none; border:0; color:rgb(var(--c-charcoal) / .62); text-decoration:none;
+      font-size:.6875rem; -webkit-tap-highlight-color:transparent; }
+    #tabbar .tab[hidden]{ display:none; }
+    /* Browser + Calls module: a browser cannot place calls, so the Calls slot would be empty and PA off-centre — Dashboard
+       stands in (owner 10-31 #634). In the app (html.shell2) it stays in More and Calls is shown. */
+    html:not(.shell2) #tabbar .tab.tab-web-only[hidden]{ display:flex !important; }   /* !important: pa.css has a global [hidden]{display:none!important} */
+    #tabbar .tab-pa-slot{ flex:1 1 0; min-width:0; }   /* PA's slot: #pa-btn floats over it, centred */
+    #tabbar .tab .nav-ico{ width:24px; height:24px; opacity:1; }
+    #tabbar .tab.is-on{ color:rgb(var(--c-indigo)); font-weight:600; }
+    .tab-label{ max-width:100%; padding:0 2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #tabbar .nav-badge{ position:absolute; top:5px; left:calc(50% + 5px); height:16px; min-width:16px; line-height:16px;
+      padding:0 4px; font-size:.625rem; }
+    .m-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.35); opacity:0; transition:opacity .2s ease; }
+    .m-panel{ position:absolute; left:0; right:0; bottom:0; height:calc(100vh - env(safe-area-inset-top) - var(--tabbar-h, 0px)); height:calc(100dvh - env(safe-area-inset-top) - var(--tabbar-h, 0px));
+      display:flex; flex-direction:column; background:rgb(var(--c-surface)); border-radius:0;
+      box-shadow:0 -8px 30px rgb(0 0 0 / .25); transform:translateY(110%); transition:transform .24s var(--ease-out, ease); }
+    html:not(.in-app:not(.shell2)) .m-sheet.is-open{ visibility:visible; transition:visibility 0s; }   /* outranks the phone rule that hides it */
+    html:not(.in-app:not(.shell2)) .m-sheet.is-open .m-backdrop{ opacity:1; }
+    html:not(.in-app:not(.shell2)) .m-sheet.is-open .m-panel{ transform:none; }
+    .m-grab{ display:flex; justify-content:center; padding:10px 0 8px; cursor:grab; touch-action:none; }
+    /* SWIPE DOWN TO CLOSE (#464, owner: "a little grey line to represent flicking down to hide ... Doesnt seem to flick
+       down. flicking down refreshes the screen"). The sheets use app.js's dragSheet() — the record drawer's controller.
+       The panel leaves vertical drags to it (the grid still swipes sideways, the reorder list still scrolls), and while a
+       sheet is open the page cannot pull-to-refresh. */
+    .m-panel{ overscroll-behavior:contain; }   /* no touch-action: the grid scrolls vertically; dragSheet() decides drag vs scroll from the first move */
+    .m-panel.sheet-dragging{ transition:none; }
+    .m-order{ touch-action:pan-y; flex:1 1 auto; min-height:0; }
+    html.sheet-open, html.sheet-open body{ overscroll-behavior-y:none; }
+    .m-grab i{ width:36px; height:4px; border-radius:2px; background:rgb(var(--c-charcoal) / .25); }
+    .m-top{ display:flex; align-items:center; justify-content:space-between; padding:4px 18px 6px; }
+    /* ONE continuous grid that scrolls vertically under the finger when it overflows (owner 10-31: "Get rid of the left right
+       pages. Have scroll on finger"). No paging, no dots. The same drawer logic as every phone sheet: full height. */
+    .m-pages{ flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; scrollbar-width:none; }
+    .m-pages::-webkit-scrollbar{ display:none; }
+    .m-page{ padding:6px 14px 4px; }
+    .m-grid{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:18px 8px; }
+    .m-tile{ display:flex; flex-direction:column; align-items:center; gap:6px; color:inherit; text-decoration:none;
+      font-size:.8125rem; text-align:center; }
+    .m-ico{ width:56px; height:56px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+      background:rgb(var(--c-creamwarm)); }
+    .m-ico .nav-ico{ width:28px; height:28px; opacity:1; }
+    .m-tile.is-on .m-ico{ background:rgb(var(--c-indigodeep)); color:#fff; }
+    .m-order{ list-style:none; margin:0; padding:2px 10px 14px; overflow-y:auto; }
+    .m-order li{ display:flex; align-items:center; gap:12px; padding:10px; border-radius:12px; touch-action:none;
+      user-select:none; -webkit-user-select:none; background:rgb(var(--c-surface)); }
+    .m-order li .nav-ico{ opacity:.85; }
+    .m-order li .grip{ margin-left:auto; color:rgb(var(--c-charcoal) / .4); display:flex; }
+    .m-order li.is-fixed{ color:rgb(var(--c-charcoal) / .55); }
+    .m-order li.dragging{ background:rgb(var(--c-creamwarm)); box-shadow:0 6px 18px rgb(0 0 0 / .25); position:relative; z-index:2; }
+    .m-order li.split{ padding:8px 10px 4px; font-size:.6875rem; letter-spacing:.06em; text-transform:uppercase;
+      color:rgb(var(--c-charcoal) / .45); touch-action:auto; background:none; }
+    #me-panel{ padding:0 4px 8px; overflow-y:auto; }
+    #me-panel #user-menu{ position:static; width:auto; margin:0; border:0; box-shadow:none; background:transparent; }
+    /* FULL HEIGHT: the drawer runs behind the header (z 45 < the header's 50), and while it shows, the header is clear
+       over the drawer's width, so the menu button and back/forward sit on the drawer's colour and the column reads as
+       one piece top to bottom. The header's own fade starts after it. The area name steps aside during a peek. */
+    /* While the drawer shows, the header is fully CLEAR: nothing scrolls under it any more, so its fill shows nothing —
+       but its edge at --nav-w landed on the drawer's 1px line at fractional zooms (owner, at ~116%: "your right border
+       doesnt match all the way up"), and a blur smeared it. */
+    html.nav-open header.chrome-fixed{ background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; }
+    html.nav-open header.chrome-fixed::after{ left:var(--nav-w); }
+    html.nav-open #nav-here{ visibility:hidden; }
+    #nav-here{ transition:margin-left .18s var(--ease-out, ease); }
+    @media (min-width:768px){ #pwa-nav{ display:flex; } }   /* desktop always; a phone only as a PWA (above) */
+    @media (min-width:1280px){
+      html.nav-pinned #nav-drawer{ transform:none; visibility:visible; transition:none;
+        background:rgb(var(--c-cream)); box-shadow:inset -1px 0 0 rgb(var(--c-charcoal) / .08); }
+      html.nav-pinned #nav-burger{ background:rgb(var(--c-charcoal) / .08); color:rgb(var(--c-charcoal)); }
+      html.nav-pinned header.chrome-fixed{ background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; }
+      html.nav-pinned header.chrome-fixed::after{ left:var(--nav-w); }
+      html.nav-pinned #nav-scrim{ display:none; }
+      html.nav-pinned .nav-push{ margin-left:var(--nav-w); }
+    }
+    @media (max-width:767px){ #nav-drawer .nav-row{ font-size:1rem; padding:10px 12px; } }
+    @media (prefers-reduced-motion: reduce){ #nav-drawer, html.nav-open #nav-drawer{ transition:none; } }

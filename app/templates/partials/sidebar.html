@@ -1,0 +1,120 @@
+{# One project row: the link, and a star that appears on hover (#778; per person, js/chrome.js posts /all/favourites). #}
+{% macro rec_row(r, fav_row=false) -%}
+<div class="nav-recwrap{{ ' is-archived' if r.archived_at }}"{% if fav_row %} data-fav-row="{{ r.slug }}"{% endif %}><a href="{{ menu_landing(r) }}" class="nav-rec {{ 'is-archived ' if r.archived_at }}{{ 'is-active' if menu_current == r.id }}"{% if menu_current == r.id %} aria-current="page"{% endif %} data-record="{{ r.slug }}" title="{{ r.name }}{{ ' (archived)' if r.archived_at }}"><span class="truncate">{{ r.name }}</span></a><button type="button" class="nav-fav{{ ' is-on' if r.id in fav_ids }}" data-fav="{{ r.slug }}" data-name="{{ r.name }}" data-href="{{ menu_landing(r) }}" aria-pressed="{{ 'true' if r.id in fav_ids else 'false' }}" aria-label="Favourite {{ r.name }}" title="Favourite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8 6.8 19.6l1-5.8L3.5 9.7l5.9-.9z"/></svg></button></div>
+{%- endmacro %}
+{# THE MENU DRAWER + THE PHONE BAR (#733, change #80; #771): the ERP's fixed menu, the same on every page (app/nav.py AREAS:
+   Now, Dashboard, Recent, then the collapsible Projects and Accounts sections); only the highlight moves (`area`).
+   Nothing here is built per page or per level: a project's own pages are PILLS on its record (partials/record_head.html).
+   Drawer: full height behind the header, hover the sidebar icon to PEEK (>= 1280px), click to LOCK (the page moves across);
+   narrower, a click opens it over the page and a tap outside closes it. You are the avatar at the top right of the header (partials/topbar.html; #786): the profile menu opens downward from it.
+   Phone: the bar is Now, Dashboard, the assistant's round button in the middle, Recent, Menu (opens this drawer) (the ERP's PA slot); NO More tab. You, the
+   avatar top left, open the same menu as a speech-bubble popover (the ERP's #me-pop). #}
+<aside id="nav-drawer" aria-label="Menu" aria-hidden="true">
+  {# Phone only (css/shell.css): the drawer is a bottom sheet there, and this is its grab line (swipe down to close). #}
+  <div class="m-grab nav-grab" data-sheet-grab aria-hidden="true"><i></i></div>
+  <div class="h-10 px-3 flex items-center gap-2 shrink-0">
+    {# The Crewboss lockup (app/static/brand/crewboss): the -dark file for dark mode. Don't recolour it. #}
+    <a href="/" class="shrink-0 flex items-center gap-2" title="Crewboss" data-brand>
+      <img src="{{ asset('brand/crewboss/lockup.svg') }}" alt="Crewboss" width="104" height="24" class="h-6 w-auto dark:hidden">
+      <img src="{{ asset('brand/crewboss/lockup-dark.svg') }}" alt="" width="104" height="24" class="h-6 w-auto hidden dark:block"></a>
+  </div>
+  {% if section == 'build' %}
+  <nav id="nav-list" class="flex-1 min-h-0 overflow-y-auto py-1" aria-label="Pages">
+    {# Now, Dashboard, Recent are the fixed rows (the ERP's #nav-fixed); then the two record sections (#771): each header collapses (the state
+       is remembered per person, js/menu.js), lists the LIVE top-level records the person may see, has a small "+" and "Show archived" at its foot. #}
+    <div id="nav-fixed" class="pb-1 mb-1 border-b border-line/70">
+      {% for a in nav_areas %}
+      <a href="{{ a.href }}" class="nav-row {{ 'is-active' if area == a.key }}"{% if area == a.key %} aria-current="page"{% endif %} data-nav="{{ a.key }}" data-key="{{ a.key }}"><svg class="nav-ico" viewBox="0 -960 960 960" aria-hidden="true"><path d="{{ a.icon_d }}"/></svg><span>{{ a.label }}</span></a>
+      {% endfor %}
+    </div>
+    {# FAVOURITES (#778): this person's starred live projects, above Accounts. Alphabetical for now (TODO #778: drag to reorder). Empty: a one-line hint, which
+       js/chrome.js hides for good once the person has starred something (localStorage). #}
+    <div class="nav-sec{{ ' is-empty' if not menu_favourites }}" data-sec="favourites" id="nav-fav-sec">
+      <div class="nav-sec-head">
+        <button type="button" class="nav-sec-toggle" aria-expanded="true" aria-controls="nav-sec-favourites" data-sec-toggle="favourites">
+          <svg class="nav-sec-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Favourites</span></button>
+      </div>
+      <div id="nav-sec-favourites" class="nav-sec-body" data-sec-body="favourites">
+        {% for r in menu_favourites %}{{ rec_row(r, true) }}{% endfor %}
+        <p class="nav-rec-empty" data-fav-hint>Star a project to keep it here.</p>
+      </div>
+    </div>
+    {# ONE "Accounts" section (#778): every account the person can see is a group (fold ▸/▾ beside it; the name opens the account) holding its direct projects as a flat
+       list, then the projects under no account. The fold is remembered per account per person (localStorage); the group holding the current page is always open. #}
+    {% set _g = menu_groups %}
+    <div class="nav-sec" data-sec="accounts">
+      <div class="nav-sec-head">
+        <button type="button" class="nav-sec-toggle" aria-expanded="true" aria-controls="nav-sec-accounts" data-sec-toggle="accounts">
+          <svg class="nav-sec-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Accounts</span></button>
+        {% if who.can_write %}<button type="button" class="nav-sec-add" data-tour="new-project" title="New project or account" aria-label="New project or account"
+          onclick="window.dispatchEvent(new CustomEvent('open-new-project'))">+</button>{% endif %}
+      </div>
+      <div id="nav-sec-accounts" class="nav-sec-body" data-sec-body="accounts">
+        {% for g in _g.groups %}{% set a = g.account %}
+        <div class="nav-grp{{ ' is-archived' if g.archived }}{{ ' is-current' if g.current }}" data-grp="{{ a.slug }}">
+          <div class="nav-grp-head">
+            <button type="button" class="nav-grp-toggle" aria-expanded="true" aria-controls="grp-{{ a.slug }}" aria-label="Fold {{ a.name }}" data-grp-toggle="{{ a.slug }}">
+              <svg class="nav-sec-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <a href="{{ menu_landing(a) }}" class="nav-grp-name {{ 'is-active' if menu_current == a.id }}"{% if menu_current == a.id %} aria-current="page"{% endif %} data-record="{{ a.slug }}" data-account title="{{ a.name }}{{ ' (archived)' if g.archived }}"><span class="truncate">{{ a.name }}</span></a>
+            {% if who.can_write and not g.archived %}<button type="button" class="nav-grp-add" title="New project in {{ a.name }}" aria-label="New project in {{ a.name }}"
+              onclick="window.dispatchEvent(new CustomEvent('open-new-project', {detail: {parent: '{{ a.slug }}'}}))">+</button>{% endif %}
+          </div>
+          <div id="grp-{{ a.slug }}" class="nav-grp-body" data-grp-body="{{ a.slug }}">
+            {% for r in g.projects %}
+            {{ rec_row(r) }}
+            {% else %}<p class="nav-rec-empty">No projects yet.</p>{% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+        {% if _g.other %}
+        <div class="nav-grp nav-grp-other" data-grp="other">
+          <div class="nav-grp-head"><span class="nav-grp-name nav-grp-label">Other projects</span></div>
+          <div class="nav-grp-body">
+            {% for r in _g.other %}
+            {{ rec_row(r) }}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% if not _g.groups and not _g.other %}<p class="nav-rec-empty">No accounts yet.</p>{% endif %}
+        {% if _g.archived_count %}<button type="button" class="nav-more" data-archived-toggle="accounts" aria-expanded="false">Show archived ({{ _g.archived_count }})</button>{% endif %}
+      </div>
+    </div>
+  </nav>
+  {% else %}
+  {# ASSETS and ADMINISTRATION (#778): the section's own left menu (app/nav.py section_menu). The section name heads it. #}
+  <nav id="nav-list" class="flex-1 min-h-0 overflow-y-auto py-1" aria-label="{{ section_info.label }} pages" data-section-menu="{{ section }}">
+    <p class="px-4 pt-2 pb-1 text-2xs uppercase tracking-wide text-charcoal/50">{{ section_info.label }}</p>
+    {% for m in section_menu %}
+    {% if m.group and (loop.first or section_menu[loop.index0 - 1].group != m.group) %}<p class="px-4 pt-3 pb-1 text-2xs uppercase tracking-wide text-charcoal/50">{{ m.group }}</p>{% endif %}
+    <a href="{{ m.href }}" class="nav-row {{ 'is-active' if m.active }}"{% if m.active %} aria-current="page"{% endif %} data-section-row="{{ m.key }}"><svg class="nav-ico" viewBox="0 -960 960 960" aria-hidden="true"><path d="{{ m.icon_d }}"/></svg><span>{{ m.label }}</span></a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+</aside>
+{# The dim behind a FLOATING drawer (the ERP's): from the drawer's edge, above the header; a click on it closes. #}
+<div id="nav-scrim" aria-hidden="true"></div>
+
+{# THE PHONE (the ERP's #463/#634 shape). Rendered in its final state (#467): the bar is the same on every page. DOM order = visual order;
+   the assistant's slot is empty and #ca-btn floats over it (css/ca.css). No More tab. #}
+<nav id="tabbar" aria-label="Pages" data-tabbar>
+  {% for s in bar_slots %}
+  {% if s == 'ca' %}<span class="tab-ca-slot" aria-hidden="true"></span>
+  {% elif s == 'menu' %}<button type="button" class="tab" data-nav-toggle aria-label="Menu" aria-controls="nav-drawer"><svg class="nav-ico" viewBox="0 -960 960 960" aria-hidden="true"><path d="{{ menu_icon_d }}"/></svg><span class="tab-label">Menu</span></button>
+  {% else %}{% set a = nav_by_key[s] %}
+  <a href="{{ a.href }}" class="tab {{ 'is-on' if area == a.key }}"{% if area == a.key %} aria-current="page"{% endif %} data-key="{{ a.key }}"><svg class="nav-ico" viewBox="0 -960 960 960" aria-hidden="true"><path d="{{ a.icon_d }}"/></svg><span class="tab-label">{{ a.short }}</span></a>
+  {% endif %}
+  {% endfor %}
+  <button type="button" id="ca-btn" data-ca-open aria-label="Crewboss Assistant" aria-controls="ca-drawer">
+    <svg class="ca-mk" width="28" height="28" aria-hidden="true"><use href="#ca-mark"/></svg>
+    <span class="ca-badge" data-ca-badge hidden>0</span></button>
+</nav>
+{# YOU, on a phone: the avatar's menu, a speech-bubble popover under the avatar (the ERP's #me-pop). The rows ARE the drawer's #user-menu,
+   moved in while open (js/chrome.js). #}
+<div id="me-pop" aria-hidden="true" onclick="if (event.target === this) window.crewMenu.closeMe()">
+  <div class="me-bubble" role="dialog" aria-label="Profile and settings" id="me-panel"></div>
+</div>
+<script>try { var _ns = JSON.parse(localStorage.getItem('crewboss-nav-sections') || '{}'); document.querySelectorAll('.nav-sec').forEach(function (sec) { if (_ns[sec.dataset.sec] === 0) sec.classList.add('is-closed'); var t = sec.querySelector('[data-sec-toggle]'); if (t && _ns[sec.dataset.sec] === 0) t.setAttribute('aria-expanded', 'false'); }); } catch (e) {}
+try { var _ng = JSON.parse(localStorage.getItem('crewboss-nav-groups') || '{}'); document.querySelectorAll('.nav-grp[data-grp]').forEach(function (g) { if (_ng[g.dataset.grp] === 0 && !g.classList.contains('is-current')) { g.classList.add('is-closed'); var b = g.querySelector('[data-grp-toggle]'); if (b) b.setAttribute('aria-expanded', 'false'); } }); } catch (e) {}</script>

@@ -1,0 +1,163 @@
+# Project name. An existing install keeps its containers and network by setting COMPOSE_PROJECT_NAME in .env
+# (the old project name). The DATABASE does not depend on it: its volume is bound by name below.
+name: crewboss
+
+# This file is the GENERIC base: the app, Postgres and an optional bundled Caddy. Anything specific to one site (monitoring
+# tokens, an estate docs folder, a linked repo) goes in an override file, see docker-compose.addons.example.yml. The `crewboss`
+# command (./crewboss install) writes the env file below and always passes `-p <project> --env-file <file>` to compose.
+#
+# Host folders (all overridable in the env file; each MUST exist before `docker compose up`, else docker creates a
+# root-owned directory in its place):
+#   CREWBOSS_HOME                 the instance folder: instance.yaml, drift.yaml, health_feeds.yaml, seed.yaml (default
+#                                 ~/.crewboss; mounted read-only at /crewboss-home). Missing files = a fresh install.
+#   CREWBOSS_SECRETS_DIR          the 0600 secret files mounted under /run/secrets (default ~/.config/crewboss): ssh-ca-enc-key,
+#                                 vapid-private.pem, runner-identity-key. `./crewboss install` makes them.
+#   CREWBOSS_MATERIALS_HOST_DIR   the shared materials folder (default ~/.local/share/crewboss/materials)
+#   CREWBOSS_CA_UPLOADS_HOST_DIR  CA chat uploads (default ~/.local/share/crewboss/ca-uploads); back it up
+#   CREWBOSS_EXPORTS_HOST_DIR     the catalog export folder (default ./exports in the checkout; the installer sets <home>/exports)
+#   (the Mallen-style add-on mounts, e.g. CREWBOSS_ESTATE_SRC and CREWBOSS_DRIFT_GIT_SRC, are in the override example)
+#   CREWBOSS_FRONTDOOR_DIR        the bundled proxy's folder (default ~/.crewboss/frontdoor): Caddyfile, LAN certificate, front_door.json
+#   CREWBOSS_UID / CREWBOSS_GID   the install user, for the frontdoor sidecar (the installer writes them)
+#   CREWBOSS_DB_VOLUME            the Postgres volume's name (default crewboss_db-data)
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-dashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the install env file}
+    volumes:
+      - dashboard-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dashboard}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    # An explicit image name per install (written to compose.env by the installer): never derived from COMPOSE_PROJECT_NAME in the shell,
+    # which can point at ANOTHER install (a box that runs a live one) and would then run or replace its image.
+    image: ${CREWBOSS_IMAGE:?CREWBOSS_IMAGE is missing from compose.env (run ./crewboss up)}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # The instance folder, as mounted below (the host side is CREWBOSS_HOME).
+      CREWBOSS_HOME: /crewboss-home
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the install env file}@db:5432/${POSTGRES_DB:-dashboard}
+      # ERP health feed (task #196): the ERP's base URL, reachable from this box. Empty = not connected.
+      CREWBOSS_ERP_HEALTH_URL: ${CREWBOSS_ERP_HEALTH_URL:-}
+      # Platform key-store door (#562). Empty = the default in app/config.py. 
+      CREWBOSS_PLATFORM_KEYS_URL: ${CREWBOSS_PLATFORM_KEYS_URL:-}
+      # Materials (task #295): the plain folder of shared logos/templates. Same folder on the host, so AI sessions on
+      # the sessions host read files straight from disk (get_material's host_path) and drop new ones in its _inbox/.
+      CREWBOSS_MATERIALS_DIR: /data/materials
+      CREWBOSS_MATERIALS_HOST_DIR: ${CREWBOSS_MATERIALS_HOST_DIR:-${HOME}/.local/share/crewboss/materials}
+      # CA uploads (task #727): screenshots / .md / PDFs people attach to a CA chat, kept on THIS server's disk (no external storage)
+      # and stripped by the CA sweep. ADD THIS FOLDER TO THE BACKUPS.
+      CREWBOSS_CA_UPLOADS_DIR: /data/ca-uploads
+      # Servers tab (task #300): servers.yml + infra policy docs, read-only.
+      CREWBOSS_ESTATE_DIR: /data/estate     # only present when an override mounts it
+      # Catalog export for the ERP (#393): every import of the export project rewrites exports/catalog.json in this checkout.
+      CREWBOSS_EXPORTS_DIR: /data/exports
+      # Dashboard sign-in (task #394): Microsoft (Entra) OIDC. The ids aren't secret; the allowlist is the super admins'
+      # Entra object ids (comma-separated). CREWBOSS_WEB_AUTH=off is the explicit opt-out; required + incomplete = pages 503.
+      CREWBOSS_WEB_AUTH: ${CREWBOSS_WEB_AUTH:-required}
+      CREWBOSS_OIDC_TENANT_ID: ${CREWBOSS_OIDC_TENANT_ID:-}
+      CREWBOSS_OIDC_CLIENT_ID: ${CREWBOSS_OIDC_CLIENT_ID:-}
+      CREWBOSS_SUPERADMIN_OIDS: ${CREWBOSS_SUPERADMIN_OIDS:-}
+      # Local sign-in (#706): the key that encrypts TOTP secrets and keys the recovery-code hashes lives on its own WRITABLE
+      # volume (the instance folder above is read-only). `python -m app.cli owner create` makes it. Back it up SEPARATELY
+      # from the database backup: together they undo the encryption at rest.
+      CREWBOSS_LOCAL_AUTH_KEY_FILE: ${CREWBOSS_LOCAL_AUTH_KEY_FILE:-/crewboss-secrets/local-auth.key}
+    ports:
+      - "127.0.0.1:${APP_PORT:-8931}:8000"
+    volumes:
+      # The instance folder (app/instance.py): this install's own config, outside the repo. Read-only: the app never writes it.
+      - ${CREWBOSS_HOME:-${HOME}/.crewboss}:/crewboss-home:ro
+      # Local sign-in (#706): a new named volume, writable, for the key file only. Existing volumes are untouched.
+      - local-auth-secrets:/crewboss-secrets
+      # Materials (task #295): must exist before `docker compose up` (else docker creates it root-owned).
+      - ${CREWBOSS_MATERIALS_HOST_DIR:-${HOME}/.local/share/crewboss/materials}:/data/materials
+      # CA uploads (task #727): must exist before `docker compose up` (else docker creates it root-owned); owned by the container's user.
+      - ${CREWBOSS_CA_UPLOADS_HOST_DIR:-${HOME}/.local/share/crewboss/ca-uploads}:/data/ca-uploads
+      # Catalog export (#393): the checkout's exports/ (kept in git by exports/.gitkeep, so it exists and is owned by
+      # the checkout's user); the app hands catalog.json to that owner. A linked application's release script copies it from here.
+      - ${CREWBOSS_EXPORTS_HOST_DIR:-./exports}:/data/exports
+      # Server access (task #367): the Fernet key that opens each account's SSH CA private key (stored encrypted in the
+      # DB), 0600 on the host. Must exist before `docker compose up` (else docker creates a root-owned directory).
+      # Losing it means every account's CA is lost: each server's line has to be pasted again.
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/ssh-ca-enc-key:/run/secrets/ssh-ca-enc-key:ro
+      # Phone notifications (#487): the VAPID private key that signs every push, 0600 on the host. Make it BEFORE
+      # `docker compose up` with `.venv/bin/python -m app.push keygen` (else docker creates a root-owned directory and
+      # push stays off). Missing = push off, shown in the avatar menu. A new key orphans every phone's subscription.
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/vapid-private.pem:/run/secrets/vapid-private.pem:ro
+      # Runner identity key (task #627): the ed25519 key runners pin by fingerprint, 0600 on the host. Make it ONCE, BEFORE
+      # the first deploy, with `.venv/bin/python -m app.runner_identity keygen` (else docker creates a root-owned
+      # directory and runner enrolment answers 503). Read-only here: a new key invalidates every issued code and fp8.
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/runner-identity-key:/run/secrets/runner-identity-key:ro
+
+  # Bundled reverse proxy: only with `--profile caddy` (`./crewboss up` adds it when the install chose the bundled proxy).
+  # Its config is <home>/frontdoor/Caddyfile, written ONLY by the `frontdoor` sidecar below (LAN mode: a self-signed
+  # certificate Crewboss makes; public: Let's Encrypt HTTP-01, port 80 answers the challenge and a redirect). Caddy's admin API
+  # is a unix socket on the caddy-admin volume, shared with nothing but the sidecar. The folder is read-only here, except logs/.
+  # TODO(#707): DNS-01 (wildcard / no open port 80) needs a Caddy build with a DNS provider module: a later custom image.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: caddy run --config /frontdoor/Caddyfile --adapter caddyfile
+    ports:
+      - "${CREWBOSS_HTTP_PORT:-80}:80"
+      - "${CREWBOSS_HTTPS_PORT:-443}:443"
+    volumes:
+      - ${CREWBOSS_FRONTDOOR_DIR:-${HOME}/.crewboss/frontdoor}:/frontdoor:ro
+      - ${CREWBOSS_FRONTDOOR_DIR:-${HOME}/.crewboss/frontdoor}/logs:/frontdoor/logs
+      - caddy-admin:/run/caddy-admin
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # The front-door sidecar (#976): the only writer of the Caddyfile, front_door.json and the LAN certificate. Same image as the
+  # app. No published ports, no database, no docker socket. The app asks it for typed actions over this network with the bearer
+  # token in <home>/secrets/frontdoor-token.
+  frontdoor:
+    build: .
+    image: ${CREWBOSS_IMAGE:?CREWBOSS_IMAGE is missing from compose.env (run ./crewboss up)}
+    pull_policy: never
+    profiles: ["caddy"]
+    restart: unless-stopped
+    depends_on:
+      - caddy
+    command: ["python", "-m", "app.frontdoor_agent", "serve"]
+    user: "${CREWBOSS_UID:-1000}:${CREWBOSS_GID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      CREWBOSS_ACME_DIR: ${CREWBOSS_ACME_DIR:-}                    # tests only (Pebble)
+      CREWBOSS_ACME_STAGING_DIR: ${CREWBOSS_ACME_STAGING_DIR:-}    # tests only
+      CREWBOSS_ACME_TEST_ROOT: ${CREWBOSS_ACME_TEST_ROOT:-}        # tests only: a path under /frontdoor
+    volumes:
+      - ${CREWBOSS_FRONTDOOR_DIR:-${HOME}/.crewboss/frontdoor}:/frontdoor
+      - caddy-admin:/run/caddy-admin
+      - ${CREWBOSS_SECRETS_DIR:-${HOME}/.config/crewboss}/frontdoor-token:/run/secrets/frontdoor-token:ro
+
+volumes:
+  local-auth-secrets:
+  caddy-admin:
+  caddy-data:
+  caddy-config:
+  # The volume's real name is a setting so an existing install keeps its data: its .env sets CREWBOSS_DB_VOLUME to the name
+  # the old compose project created (<old-project>_dashboard-db-data).
+  # NEVER leave it unset on a live box: docker would create a new, empty database volume.
+  dashboard-db-data:
+    name: ${CREWBOSS_DB_VOLUME:-crewboss_db-data}

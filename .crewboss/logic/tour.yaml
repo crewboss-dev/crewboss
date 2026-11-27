@@ -1,0 +1,52 @@
+# The first-run how-to tour (#938): a short walk through the real UI that starts by itself on a person's first sign-in, resumes where they left off
+# (progress is per person, on the server) and can be skipped and reopened from the profile menu. The step text is ONE file (app/tour_steps.yaml)
+# that docs/getting-started.md is checked against (tests/test_tour.py).
+workflows:
+  - id: tour.first-run
+    name: First-run how-to tour
+    summary: On a person's first page the tour starts by itself, outlines the real button each step is about and saves the step reached; Skip tour or the end stops it for good, and How-to in the profile menu begins it again.
+    trigger:
+      type: manual
+      detail: A person opens any page for the first time (no progress row yet), or presses How-to in the profile menu
+      code_ref: {file: app/routers/shell_pages.py, function: tour_state}
+    data: ["table:tour_progress"]
+    steps:
+      - id: ask
+        kind: decision
+        question: Has this person never seen the tour, or left it part-way?
+        label: New or still active?
+        detail: Read from tour_progress for the signed-in person (user_id NULL = sign-in off). A finished or skipped tour does not start by itself.
+        code_ref: {file: app/tour.py, function: state}
+        data: ["table:tour_progress"]
+      - id: show
+        kind: action
+        label: Show the step at the last step reached
+        detail: The steps come from app/tour_steps.yaml with the person's own first project and task filled in; a step they cannot use yet (no task, not the owner) says so instead of outlining anything.
+        code_ref: {file: app/tour.py, function: state}
+      - id: advance
+        kind: action
+        label: Next or Back saves the step and goes to its page
+        detail: A step that lives on another page (Machines, a task, Releases) takes the person there first; the next page picks the tour up at that step.
+        code_ref: {file: app/routers/shell_pages.py, function: tour_save}
+        data: ["table:tour_progress"]
+        effects: ["change:tour_progress (active, last_step)"]
+      - id: end
+        kind: action
+        label: Finish or Skip tour ends it
+        code_ref: {file: app/routers/shell_pages.py, function: tour_save}
+        data: ["table:tour_progress"]
+        effects: ["change:tour_progress (finished or skipped)"]
+      - id: again
+        kind: action
+        label: How-to in the profile menu starts it again
+        code_ref: {file: app/routers/shell_pages.py, function: tour_save}
+        data: ["table:tour_progress"]
+        effects: ["change:tour_progress (active, first step)"]
+    edges:
+      - {from: trigger, to: ask}
+      - {from: ask, to: show, label: new or active}
+      - {from: show, to: advance}
+      - {from: advance, to: show, label: next step}
+      - {from: advance, to: end, label: last step or skip}
+      - {from: end, to: again, label: person asks for it}
+      - {from: again, to: show}

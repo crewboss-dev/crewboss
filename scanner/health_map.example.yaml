@@ -1,0 +1,10 @@
+# Optional: copy to $CREWBOSS_HOME/scanner/health_map.yaml.
+# Maps each ops.record(source, ..., category=...) pair found in the application to the (workflow id, step id) a health page
+# should link a failed item to. Every workflow and step named here must exist in annotations.yaml (the scanner tests check it).
+#
+# mapped[]   = {source, category, workflow, step, note?}
+# unmapped[] = {source, category, file, note}: a pair with no matching workflow yet, or one category deliberately shared.
+mapped:
+  - {source: reminders, category: worker_cycle, workflow: billing.invoice-reminder.send, step: timer}
+unmapped:
+  - {source: auth, category: auth, file: app/security.py, note: "a platform check, not a pipeline workflow"}

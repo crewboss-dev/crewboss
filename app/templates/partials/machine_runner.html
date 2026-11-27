@@ -1,0 +1,88 @@
+{# The "Runs jobs" block of a machine card (#810): one runner. The machine connects OUT to Crewboss; an agent writes and tests code in a
+   throw-away worktree and pushes a branch; it holds no SSH material and a job can only ASK for a deploy. Online or offline is a dot AND a word.
+   Labels are a tag input that autosaves (no Save button): a chip's x removes it, the box adds one, and the datalist offers the labels the
+   agent profiles ask for. Revoke and Rename sit in the more menu. Needs: base, d (devices.list_for row + connected, attention, current_job),
+   label_hints, max_labels, is_owner. #}
+{% set live = d.status == 'active' %}
+<section class="mt-3 border-t border-line pt-3" id="dev-{{ d.id }}" data-block="jobs" data-device="{{ d.id }}" data-status="{{ d.status }}"{% if live %} data-online="{{ '1' if d.connected else '0' }}"{% endif %} aria-label="Runs jobs">
+  <div class="flex items-center gap-2 flex-wrap">
+    <span class="w-2 h-2 rounded-full {{ 'bg-status-ok' if live and d.connected else 'bg-charcoal/30' }}" aria-hidden="true"></span>
+    <h4 class="font-semibold text-small">Runs jobs</h4>
+    {% if live %}<span class="chip {{ 'bg-status-ok/10 text-status-ok' if d.connected else 'bg-charcoal/[.05] text-charcoal/60' }}" data-online-chip>{{ 'online' if d.connected else 'offline' }}</span>
+    {% else %}<span class="chip {{ 'bg-status-disaster/10 text-status-disaster' if d.status == 'revoked' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}">{{ d.status }}</span>{% endif %}
+    {% if live %}<span class="chip bg-status-ok/10 text-status-ok sr-only">active</span>{% endif %}
+    {% if d.attention %}<span class="chip bg-status-warn/15 text-charcoal dark:text-status-warn" data-attention-chip>needs attention</span>{% endif %}
+    {% if live %}
+    <details class="relative ml-auto" data-more>
+      <summary class="press list-none cursor-pointer btn-ghost touch-target border border-line text-small" aria-label="More for {{ d.name }}" title="More">&#8943;</summary>
+      <div class="popover absolute right-0 mt-1 z-20 min-w-[12rem] p-2 space-y-2">
+        <form method="post" action="{{ base }}/machines/{{ d.id }}/rename" class="flex items-end gap-2" data-rename-form>
+          <label class="block min-w-0"><span class="kb-label">Rename</span><input name="name" value="{{ d.name }}" maxlength="100" class="field text-small" aria-label="Name of {{ d.name }}"></label>
+          <button class="btn-ghost text-small touch-target border border-line" type="submit">Rename</button>
+        </form>
+        {% if d.server_id and is_owner %}
+        <form method="post" action="{{ base }}/machines/{{ d.id }}/unjoin"><input type="hidden" name="tab" value="{{ tab }}"><button class="btn-ghost text-small touch-target border border-line w-full text-left" type="submit" data-unjoin>Split from its server</button></form>
+        {% endif %}
+        <form method="post" action="{{ base }}/runners/{{ d.id }}/revoke" hx-confirm="Revoke {{ d.name }}? Its running jobs end now.">
+          <button class="btn-ghost text-small touch-target border border-line w-full text-left text-status-disaster" type="submit" data-revoke>Revoke</button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+  <p class="text-micro text-charcoal/55 mt-0.5" data-trust>The machine connects out to Crewboss. It holds no SSH material; a job can only ask for a deploy.</p>
+  {% for a in d.attention %}<p class="text-micro text-charcoal dark:text-status-warn" data-attention>{{ a }}</p>{% endfor %}
+  {% if d.capabilities and d.capabilities.gemini %}
+  <p class="text-micro text-charcoal/70 mt-0.5" data-capability="gemini">{% if d.capabilities.gemini.key %}Gemini ready: second opinions and pictures. Jobs get it only in projects that switch it on.{% else %}Gemini: the key file is not usable (see crewboss-runner doctor).{% endif %}</p>
+  {% endif %}
+  {% if live and (is_owner or d.user_id == me_id) %}
+  {# Google API key for Gemini (#861): pasted here, passed straight to the runner's own key file and never kept by Crewboss (only the last four characters). #}
+  <details class="mt-1" data-gemini-key>
+    <summary class="text-micro cursor-pointer underline">{% if d.gemini_key_state == 'unknown' %}Gemini key: not confirmed, paste it again{% elif d.gemini_key_state == 'unconfirmed' %}Gemini key: unconfirmed (the runner did not answer){% elif d.gemini_key_last4 %}Gemini key ending &hellip;{{ d.gemini_key_last4 }}{% else %}Add a Google API key for Gemini{% endif %}</summary>
+    <form method="post" action="{{ base }}/machines/{{ d.id }}/gemini-key" class="mt-1 space-y-1" autocomplete="off" data-gemini-key-form>
+      <label class="block"><span class="kb-label">Google API key <span class="kb-label-hint">sent to this runner only; Crewboss does not keep it</span></span>
+        <input name="key" type="password" class="field text-small" autocomplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" autocapitalize="none" spellcheck="false" maxlength="200" required aria-label="Google API key for {{ d.name }}"></label>
+      <label class="flex items-center gap-1.5 text-micro"><input type="checkbox" name="everywhere" value="1"> Send the same key to all of this person's runners</label>
+      <button class="btn-ghost text-small touch-target border border-line" type="submit">{% if d.gemini_key_last4 or d.gemini_key_state %}Replace key{% else %}Send key{% endif %}</button>
+    </form>
+    {% if d.gemini_key_last4 or d.gemini_key_state %}
+    <form method="post" action="{{ base }}/machines/{{ d.id }}/gemini-key/remove" class="mt-1" data-gemini-key-remove>
+      <button class="btn-ghost text-small touch-target border border-line text-status-disaster" type="submit">Remove key</button>
+    </form>
+    {% if d.gemini_key_state %}<p class="text-micro text-charcoal dark:text-status-warn" data-gemini-key-state="{{ d.gemini_key_state }}">The runner's key file may not match what you last sent. Paste the key again, or remove it.</p>{% endif %}
+    {% if d.gemini_key_set_at %}<p class="text-micro text-charcoal/55">Set {{ d.gemini_key_set_at.strftime('%d %b %Y %H:%M') + ' UTC' if d.gemini_key_set_at else '' }}. The runner must be online to change it.</p>{% endif %}
+    {% endif %}
+  </details>
+  {% endif %}
+  {% if d.findings %}
+  <ul class="mt-1 space-y-0.5 text-micro" data-agent-findings aria-label="Agent setup findings">
+    {% for f in d.findings %}<li data-finding="{{ f.rule }}" data-severity="{{ f.severity }}"><span class="chip {{ 'bg-status-disaster/10 text-status-disaster' if f.severity == 'block' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}">{{ 'blocks jobs' if f.severity == 'block' else 'warning' }}</span> <code class="font-mono">{{ f.rule }}</code> in <code class="font-mono">{{ f.path }}</code>: {{ f.hint }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <p class="text-small text-charcoal/70 mt-0.5" data-runner-facts>{{ d.platform or 'platform unknown' }} · {{ d.mode }} · {{ d.user_name or 'unnamed user' }}</p>
+  {% if d.current_job %}<p class="text-small mt-0.5" data-current-job>Running <a class="underline" href="/{{ d.current_job.project_slug }}">{{ d.current_job.task_title }}</a> <span class="text-micro text-charcoal/55">({{ d.current_job.project_slug }})</span></p>{% endif %}
+  {% if d.default_for %}<p class="text-small mt-0.5" data-default-for>Default for: {% for slug in d.default_for %}<a class="underline" href="/{{ slug }}">{{ slug }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+  {% if live %}
+  {# the labels: chips with an x, one box to add; every change saves at once (the routes redirect back here) #}
+  <div class="mt-2" data-labels-form>
+    <span class="kb-label">Labels <span class="kb-label-hint">e.g. android-usb, up to {{ max_labels }}</span></span>
+    <div class="flex flex-wrap items-center gap-1.5 mt-1" data-device-labels>
+      {% for l in d.labels %}
+      <form method="post" action="{{ base }}/runners/{{ d.id }}/labels" class="inline-flex">
+        <input type="hidden" name="labels" value="{{ d.labels|reject('equalto', l)|join(', ') }}">
+        <button type="submit" class="chip bg-charcoal/[.05] text-charcoal/70 normal-case font-normal press" aria-label="Remove label {{ l }}" title="Remove {{ l }}" data-label-remove>{{ l }} <span aria-hidden="true">&times;</span></button>
+      </form>
+      {% endfor %}
+      {% if d.labels|length < max_labels %}
+      <form method="post" action="{{ base }}/runners/{{ d.id }}/labels" class="inline-flex" data-label-add>
+        <input type="hidden" name="labels" value="{{ d.labels|join(', ') }}" data-label-existing>
+        <input name="add" list="label-hints-{{ d.id }}" class="field text-small !w-36" placeholder="add a label" aria-label="Add a label to {{ d.name }}" autocomplete="off" autocapitalize="none" data-labels>
+        <button class="sr-only" type="submit">Add label</button>
+        <datalist id="label-hints-{{ d.id }}">{% for h in label_hints if h.label not in d.labels %}<option value="{{ h.label }}">needed by {{ h.needed_by|join(', ') }}</option>{% endfor %}</datalist>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  <p class="text-micro text-charcoal/55 mt-2">Last seen {{ d.last_seen.strftime('%d %b %Y %H:%M') + ' UTC' if d.last_seen else 'never' }} · key <span class="font-mono">{{ d.pubkey_fp[:12] }}</span></p>
+</section>

@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Where it lives · {{ current_project.name }}{% endblock %}
+{% block page_title %}Where it lives{% endblock %}
+{% block content %}
+{# Where it lives (#839, #726): per stage the server, folder, URL and the shared services on that server (read from the server manifests, never typed),
+   the test mode, and what the project keeps that must be backed up. Needs: mode, mode_label, channel, stages, topology, runner, can_edit, error, modes,
+   mode_labels, mode_help, scopes, engines, open_scope, parts, require_state. #}
+<div class="max-w-5xl min-w-0" data-where-page data-test-mode="{{ mode }}">
+  <p class="text-small text-charcoal/70 mb-4">Where <strong>{{ current_project.name }}</strong> runs at each stage, what else lives on those servers, and how it is tested.
+    Everything on the servers is read from their manifests, so it is never out of date with what was deployed. When several people work on the same app, each task has its own branch and
+    its own work folder; any conflict is dealt with at the merge, where the reviewer sees it.</p>
+
+  {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-error>{{ error }}</p>{% endif %}
+
+  <p class="card px-4 py-3 mb-4 text-small" data-topology="{{ topology.kind }}"><strong>{{ topology.text }}</strong>
+    {% if topology.kind == 'one' %}Dev, Staging and Production share its Caddy sites, databases and containers: see "Shared" below.{% elif topology.kind == 'spread' %}Each stage's shared services are listed under its own server.{% else %}Add a place to deploy on the <a class="underline" href="{{ base }}/releases">Releases</a> tab: a server, a folder and a branch.{% endif %}</p>
+
+  <section class="mb-6" aria-label="Test mode" data-section="test-mode">
+    <h2 class="text-lead font-semibold mb-2">How it is tested: <span data-mode-label>{{ mode_label }}</span></h2>
+    <div class="card p-4">
+      <p class="text-small text-charcoal/70 mb-3" data-mode-help>{{ mode_help[mode] }}</p>
+      {% if mode == 'installed' %}
+      <p class="text-small mb-3" data-installed-note>
+        {% if runner %}Your tests run on <strong data-runner-name>{{ runner.name }}</strong>.{% else %}Pick your runner with <em>Runs on</em> in the project header, or the task will use your only runner.{% endif %}
+        A task started in this mode is pinned to one runner until it is committed, and the installable must be signed on that runner, with its key.</p>
+      {% endif %}
+      {% if can_edit %}
+      <form method="post" action="{{ base }}/where/test-mode" class="grid gap-3 sm:grid-cols-[auto_1fr_auto] items-end" data-test-mode-form>
+        <label class="block"><span class="kb-label">Test mode</span>
+          <select name="mode" class="field text-small" aria-label="Test mode">
+            {% for m in modes %}<option value="{{ m }}"{% if m == mode %} selected{% endif %}>{{ mode_labels[m] }}</option>{% endfor %}
+          </select></label>
+        <label class="block min-w-0"><span class="kb-label">Staging test channel <span class="kb-label-hint">Installed only: internal track, TestFlight, a test installer</span></span>
+          <input name="channel" class="field text-small w-full" maxlength="200" value="{{ channel }}" placeholder="e.g. Play internal track"></label>
+        <button class="btn-primary text-small touch-target" type="submit">Save</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="mb-6" aria-label="Stages" data-section="stages">
+    <h2 class="text-lead font-semibold mb-2">The stages</h2>
+    <ul class="grid gap-3 lg:grid-cols-3">
+      {% for st in stages %}
+      <li class="card p-4 min-w-0" data-stage="{{ st.key }}">
+        <h3 class="font-semibold">{{ st.label }}</h3>
+        <p class="text-micro text-charcoal/60 mb-2" data-stage-role>{{ st.role }}</p>
+        {% if mode == 'installed' and st.key == 'dev' %}
+        <p class="text-small mb-2" data-test-area>{% if runner %}Test area: runner <strong>{{ runner.name }}</strong>{% else %}Test area: your runner{% endif %}</p>
+        {% endif %}
+        {% if mode == 'installed' and st.key == 'staging' %}
+        <p class="text-small mb-2" data-test-channel>{% if channel %}Channel: <strong>{{ channel }}</strong>{% else %}No test channel named yet.{% endif %}</p>
+        {% endif %}
+        {% for t in st.targets %}
+        <div class="border-t border-line pt-2 mt-2" data-target="{{ t.id }}">
+          <p class="text-small break-words"><strong data-server>{{ t.server_name }}</strong>{% if not t.enabled %} <span class="chip bg-charcoal/[.06] text-charcoal/70">off</span>{% endif %}</p>
+          <p class="text-micro font-mono text-charcoal/65 break-all" data-folder>{{ t.repo_path }}</p>
+          <p class="text-micro text-charcoal/65 break-all" data-url>{% if t.url %}<a class="underline" href="{{ t.url }}" rel="noopener noreferrer">{{ t.url }}</a>{% else %}No address recorded: add a domain below.{% endif %}</p>
+          {% if not t.declared %}<p class="text-micro text-charcoal/75 dark:text-status-warn" data-undeclared>State not declared for backup.</p>{% endif %}
+          {% set sh = t.shared %}
+          <div class="mt-2" data-shared>
+            <p class="text-micro font-medium text-charcoal/70">Shared on {{ t.server_name }}</p>
+            {% if sh.apps or sh.hidden %}
+            <ul class="mt-1 space-y-1">
+              {% for a in sh.apps %}
+              <li class="text-micro break-words" data-shared-app="{{ a.project }}"><a class="underline" href="/{{ a.project }}/where">{{ a.name }}</a> ({{ a.stage }})
+                <span class="text-charcoal/60">{% if a.domains %}· {{ a.domains|join(', ') }}{% endif %}{% if a.databases %} · db {{ a.databases|join(', ') }}{% endif %}{% if a.volumes %} · {{ a.volumes|join(', ') }}{% endif %}</span></li>
+              {% endfor %}
+              {% if sh.hidden %}<li class="text-micro text-charcoal/55" data-shared-hidden>{{ sh.hidden }} other app{{ 's' if sh.hidden != 1 }} you can't see.</li>{% endif %}
+            </ul>
+            {% if sh.domains %}<p class="text-micro text-charcoal/60 mt-1" data-shared-domains>Sites (Caddy or similar): {{ sh.domains|join(', ') }}</p>{% endif %}
+            {% if sh.databases %}<p class="text-micro text-charcoal/60" data-shared-databases>Databases: {{ sh.databases|join(', ') }}</p>{% endif %}
+            {% else %}
+            <p class="text-micro text-charcoal/55" data-no-shared>Nothing else deploys to this server.</p>
+            {% endif %}
+          </div>
+        </div>
+        {% else %}
+        <p class="text-small text-charcoal/65 border-t border-line pt-2 mt-2" data-no-target>
+          {% if st.key == 'staging' and mode != 'browser' %}Optional for this mode.{% elif st.key == 'dev' and mode != 'none' %}No server needed: the runner is the dev area. Add a dev target on <a class="underline" href="{{ base }}/releases">Releases</a> only if a shared dev server exists.
+          {% else %}No server yet. Add one on the <a class="underline" href="{{ base }}/releases">Releases</a> tab: pick a server, a folder and a branch.{% endif %}</p>
+        {% endfor %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="mb-6" aria-label="Gemini" data-section="gemini">
+    <h2 class="text-lead font-semibold mb-1">Gemini for jobs</h2>
+    <p class="text-small text-charcoal/70 mb-3">Lets a job on a runner that holds a Gemini API key ask Google's Gemini for a second opinion on a plan or design, and make logos and other pictures.
+      <strong>When this is on, text the job chooses to send leaves for Google</strong> (secrets are scrubbed first, best effort; Gemini is called with no tools and cannot see the repository). Off by default.
+      Every call is counted below; nothing it makes is published.
+      <strong>This switch governs the Gemini tools only; it is not a sandbox.</strong> A job with Bash on a runner where the key file is reachable could read it: the runner has no separate operating-system user for jobs.</p>
+    {% if can_manage %}
+    <form method="post" action="{{ base }}/where/gemini" class="mb-2 flex flex-wrap items-center gap-2 text-small" data-gemini-form>
+      <input type="hidden" name="on" value="{{ '' if gemini_on else '1' }}">
+      <span data-gemini-state>Gemini is <strong>{{ 'on' if gemini_on else 'off' }}</strong> for this project{% if not gemini_on %}: jobs do not get the tools{% endif %}.</span>
+      <button class="btn-ghost text-small touch-target border border-line" type="submit">{{ 'Turn off' if gemini_on else 'Turn on' }}</button>
+    </form>
+    {% else %}
+    <p class="mb-2 text-small" data-gemini-state>Gemini is <strong>{{ 'on' if gemini_on else 'off' }}</strong> for this project.</p>
+    {% endif %}
+    <p class="text-micro text-charcoal/65" data-gemini-usage>{{ gemini_usage.total }} call{{ 's' if gemini_usage.total != 1 }} so far{% if gemini_usage.total %} ({{ gemini_usage.last_30_days }} in the last 30 days{% for t, n in gemini_usage.by_tool.items() %}; {{ n }} {{ 'second opinion' if t == 'second_opinion' else 'picture' }}{{ 's' if n != 1 }}{% endfor %}){% endif %}.</p>
+  </section>
+
+  <section class="mb-6" aria-label="Server reads" data-section="server-reads">
+    <h2 class="text-lead font-semibold mb-1">Server reads</h2>
+    <p class="text-small text-charcoal/70 mb-3">What a job may look at on each server, to diagnose a problem there: a container's logs, a unit's journal, one log file or one fixed probe command.
+      A job asks by name; Crewboss runs that one read with a one-minute pass that can run nothing else, and the server's own <span class="font-mono">/etc/crewboss/reads.conf</span> is the final list.
+      Output comes back capped and with secrets scrubbed, labelled as untrusted. A probe may run only a program from a fixed read-only list (systemctl status, docker ps, ss, df and similar), never a command that changes anything.
+      <strong>Reads run as root on the server.</strong> Installing the generated file below is the server admin's approval of each read listed in it, so review it before you save it there.</p>
+    {% if can_manage %}
+    <form method="post" action="{{ base }}/where/reads/prod" class="mb-3 flex flex-wrap items-center gap-2 text-small" data-reads-prod-form>
+      <input type="hidden" name="on" value="{{ '' if reads_prod else '1' }}">
+      <span data-reads-prod-state>Production reads are <strong>{{ 'on' if reads_prod else 'off' }}</strong>: {{ 'jobs may read production servers' if reads_prod else 'jobs can read dev and staging only' }}.</span>
+      <button class="btn-ghost text-small touch-target border border-line" type="submit">{{ 'Turn off' if reads_prod else 'Turn on' }}</button>
+    </form>
+    {% else %}
+    <p class="mb-3 text-small" data-reads-prod-state>Production reads are <strong>{{ 'on' if reads_prod else 'off' }}</strong>.</p>
+    {% endif %}
+    {% if not reads %}<p class="text-small text-charcoal/65" data-no-read-targets>Add a place to deploy on the <a class="underline" href="{{ base }}/releases">Releases</a> tab first: a read belongs to one.</p>{% endif %}
+    <ul class="space-y-2">
+      {% for t in reads %}
+      <li class="card p-3" data-read-target="{{ t.id }}">
+        {% set mine = read_form and read_form.target_id == t.id|string %}
+        <details{% if mine %} open{% endif %}>
+          <summary class="press cursor-pointer list-none flex flex-wrap items-center gap-2 text-small font-medium touch-target">
+            {{ t.env|capitalize }}: {{ t.name }} on {{ t.server_name }}
+            <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ t.reads|length }} read{{ 's' if t.reads|length != 1 }}</span>
+          </summary>
+          <ul class="mt-2 space-y-1">
+            {% for r in t.reads %}
+            <li class="text-small flex flex-wrap items-center gap-2" data-read="{{ r.id }}">
+              <strong class="break-all">{{ r.name }}</strong> <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ read_labels[r.kind] }}</span>
+              {% if can_manage %}<span class="font-mono text-micro break-all">{{ r.spec }}</span>{% endif %}
+              {% if can_manage %}<form method="post" action="{{ base }}/where/reads/{{ r.id }}/remove"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-remove-read>Remove</button></form>{% endif %}
+            </li>
+            {% else %}<li class="text-small text-charcoal/65" data-no-reads>Nothing declared: jobs can read nothing here.</li>{% endfor %}
+          </ul>
+          {% if can_manage %}
+          <form method="post" action="{{ base }}/where/reads/add" class="grid gap-3 sm:grid-cols-[1fr_auto_2fr_auto] items-end mt-3" data-read-form>
+            <input type="hidden" name="target_id" value="{{ t.id }}">
+            <label class="block"><span class="kb-label">Name</span>
+              <input name="name" class="field text-small w-full" maxlength="63" required placeholder="app-log" value="{{ read_form.name if mine else '' }}"></label>
+            <label class="block"><span class="kb-label">Kind</span>
+              <select name="kind" class="field text-small" aria-label="Kind">{% for k in read_kinds %}<option value="{{ k }}"{% if mine and read_form.kind == k %} selected{% endif %}>{{ read_labels[k] }}</option>{% endfor %}</select></label>
+            <label class="block min-w-0"><span class="kb-label">What <span class="kb-label-hint">container or unit name, an absolute path, or a command with its arguments</span></span>
+              <input name="spec" class="field text-small font-mono w-full" maxlength="600" required placeholder="/var/log/app/app.log" value="{{ read_form.spec if mine else '' }}"></label>
+            <button class="btn-primary text-small touch-target" type="submit">Add</button>
+          </form>
+          {% endif %}
+          {% if can_manage %}
+          <div class="mt-3 border-t border-line pt-2" data-server-setup>
+            <p class="text-small font-medium">Server setup for {{ t.server_name }}</p>
+            <p class="text-micro text-charcoal/70 mb-1">Once per server, as root (probes run as root, so read the file below before saving it): copy <span class="font-mono">scripts/crewboss-read</span> to <span class="font-mono">/usr/local/bin/crewboss-read</span> (root-owned, mode 0755), make <span class="font-mono">/etc/crewboss</span> and <span class="font-mono">/etc/crewboss/reads.d</span> root-owned and not writable by others, and allow only that program with sudo for the server's login user:
+              <span class="font-mono break-all">LOGIN_USER ALL=(root) NOPASSWD: /usr/local/bin/crewboss-read *</span> (in <span class="font-mono">/etc/sudoers.d/crewboss-read</span>, mode 0440). Then save this as <span class="font-mono break-all" data-conf-file>/etc/crewboss/reads.d/{{ t.conf_file }}</span> (root-owned, 0644), and again whenever the reads change:</p>
+            <pre class="text-micro font-mono whitespace-pre-wrap break-all bg-charcoal/[.04] rounded-lg p-2" data-conf>{{ t.conf }}</pre>
+          </div>
+          {% endif %}
+          <div class="mt-3" data-recent-reads>
+            <p class="text-small font-medium">Recent reads on {{ t.server_name }}</p>
+            {% if t.recent %}
+            <ul class="text-micro space-y-0.5">
+              {% for l in t.recent %}<li class="break-all" data-recent-read>{{ l.at.strftime('%Y-%m-%d %H:%M') }} · job {{ l.job_id or '?' }} · {{ l.read_name }} ({{ l.env }}) · {{ l.window }} · {% if l.ok %}{{ l.bytes }} bytes{% elif l.state == 'pending' %}in progress{% else %}refused{% if can_manage and l.error %}: {{ l.error }}{% endif %}{% endif %}</li>{% endfor %}
+            </ul>
+            {% else %}<p class="text-micro text-charcoal/60">No reads yet.</p>{% endif %}
+          </div>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="mb-6" aria-label="What to back up" data-section="recipe">
+    <h2 class="text-lead font-semibold mb-1">What it keeps, and must be backed up</h2>
+    <p class="text-small text-charcoal/70 mb-3">Names and places only, never a secret value (a value is refused). Crewboss publishes this in each server's manifest; it does not run or monitor backups.</p>
+    {% if can_manage %}
+    <form method="post" action="{{ base }}/where/require-state" class="mb-3 flex items-center gap-2 text-small" data-require-state-form>
+      <input type="hidden" name="on" value="{{ '' if require_state else '1' }}">
+      <span>Release check: {{ 'a deploy is refused while its compose file shows state that is not declared' if require_state else 'a deploy only gets a warning when its compose file shows state that is not declared' }}.</span>
+      <button class="btn-ghost text-small touch-target border border-line" type="submit">{{ 'Only warn' if require_state else 'Refuse instead' }}</button>
+    </form>
+    {% endif %}
+    <ul class="space-y-2">
+      {% for sc in scopes %}
+      <li class="card p-3" data-scope="{{ sc.key }}">
+        <details{% if open_scope == sc.key %} open{% endif %}>
+          <summary class="press cursor-pointer list-none flex flex-wrap items-center gap-2 text-small font-medium touch-target">
+            {{ sc.label }}
+            <span class="chip {{ 'bg-status-ok/10 text-status-ok' if sc.recipe and (parts(sc.recipe) or sc.recipe.stateless) else 'bg-charcoal/[.06] text-charcoal/70' }}" data-declared-chip>
+              {% if sc.recipe and sc.recipe.stateless and not parts(sc.recipe) %}Keeps no state{% elif sc.recipe and parts(sc.recipe) %}{{ parts(sc.recipe) }} part{{ 's' if parts(sc.recipe) != 1 }} declared{% elif sc.key != 'project' %}Uses the default{% else %}Not declared{% endif %}</span>
+          </summary>
+          {% if can_manage %}
+          <form method="post" action="{{ base }}/where/recipe" class="grid gap-3 sm:grid-cols-2 mt-3" data-recipe-form>
+            <input type="hidden" name="target_id" value="{{ sc.target_id or '' }}">
+            <label class="block sm:col-span-2"><span class="kb-label">Databases <span class="kb-label-hint">one per line: engine | name | container (optional) | user (optional). Engines: {{ engines|join(', ') }}. Crewboss writes the dump and restore commands itself</span></span>
+              <textarea name="databases" rows="2" class="field text-small font-mono w-full" placeholder="postgres | appdb | app-db-1 | app">{{ sc.form.databases }}</textarea></label>
+            <label class="block"><span class="kb-label">Volumes and data folders <span class="kb-label-hint">name | path</span></span>
+              <textarea name="volumes" rows="2" class="field text-small font-mono w-full" placeholder="pgdata | /var/lib/docker/volumes/pgdata">{{ sc.form.volumes }}</textarea></label>
+            <label class="block"><span class="kb-label">Uploaded-file folders <span class="kb-label-hint">one path per line</span></span>
+              <textarea name="upload_folders" rows="2" class="field text-small font-mono w-full" placeholder="/srv/app/uploads">{{ sc.form.upload_folders }}</textarea></label>
+            <label class="block"><span class="kb-label">Config files <span class="kb-label-hint">name | path</span></span>
+              <textarea name="config_files" rows="2" class="field text-small font-mono w-full" placeholder="compose | /srv/app/docker-compose.yml">{{ sc.form.config_files }}</textarea></label>
+            <label class="block"><span class="kb-label">Secrets <span class="kb-label-hint">NAME | env var NAME, secret file NAME, a path or env file /path (never the value)</span></span>
+              <textarea name="secrets" rows="2" class="field text-small font-mono w-full" placeholder="DATABASE_URL | env file /srv/app/.env">{{ sc.form.secrets }}</textarea></label>
+            <label class="block"><span class="kb-label">Ports <span class="kb-label-hint">comma separated</span></span>
+              <input name="ports" class="field text-small w-full" value="{{ sc.form.ports }}" placeholder="8000, 5432"></label>
+            <label class="block"><span class="kb-label">Domains <span class="kb-label-hint">comma separated</span></span>
+              <input name="domains" class="field text-small w-full" value="{{ sc.form.domains }}" placeholder="app.example.com"></label>
+            <label class="block"><span class="kb-label">Health endpoint</span>
+              <input name="health_url" class="field text-small w-full" value="{{ sc.form.health_url }}" placeholder="https://app.example.com/health"></label>
+            <label class="block"><span class="kb-label">Log endpoint or path</span>
+              <input name="log_endpoint" class="field text-small w-full" value="{{ sc.form.log_endpoint }}" placeholder="/var/log/app"></label>
+            <label class="block"><span class="kb-label">RPO <span class="kb-label-hint">most data it can lose, minutes</span></span>
+              <input name="rpo_minutes" inputmode="numeric" class="field text-small w-full" value="{{ sc.form.rpo_minutes }}" placeholder="1440"></label>
+            <label class="block"><span class="kb-label">RTO <span class="kb-label-hint">time to be back, minutes</span></span>
+              <input name="rto_minutes" inputmode="numeric" class="field text-small w-full" value="{{ sc.form.rto_minutes }}" placeholder="240"></label>
+            <label class="block sm:col-span-2"><span class="kb-label">Notes</span>
+              <input name="notes" class="field text-small w-full" maxlength="600" value="{{ sc.form.notes }}"></label>
+            <label class="sm:col-span-2 flex items-center gap-2 text-small"><input type="checkbox" name="stateless" value="1"{% if sc.form.stateless %} checked{% endif %}> This keeps no state worth backing up</label>
+            <div class="sm:col-span-2 flex flex-wrap gap-2"><button class="btn-primary text-small touch-target" type="submit">Save</button></div>
+          </form>
+          {% if sc.target_id and sc.recipe %}
+          <form method="post" action="{{ base }}/where/recipe/{{ sc.target_id }}/remove" class="mt-2"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-remove-override>Use the project default</button></form>
+          {% endif %}
+          {% elif sc.recipe %}
+          <pre class="mt-2 text-micro font-mono whitespace-pre-wrap break-words">{{ sc.form.databases }}{{ '\n' if sc.form.databases }}{{ sc.form.volumes }}{{ '\n' if sc.form.volumes }}{{ sc.form.upload_folders }}</pre>
+          {% else %}
+          <p class="text-small text-charcoal/65 mt-2">Nothing declared yet.</p>
+          {% endif %}
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

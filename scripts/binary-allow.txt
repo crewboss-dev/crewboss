@@ -1,0 +1,20 @@
+# Binary files cannot be content-scanned, so a push that adds or changes one is blocked unless its path matches a pattern here
+# (fnmatch on the repo path; * also crosses folders). Only asset folders belong here: images and fonts. Reviewed like code (CODEOWNERS).
+app/static/*.png
+app/static/*.ico
+app/static/*.jpg
+app/static/*.gif
+app/static/*.webp
+app/static/*.woff
+app/static/*.woff2
+app/static/*.ttf
+frontend/*.png
+frontend/*.woff2
+frontend/*.ttf
+docs/*.png
+docs/*.jpg
+docs/*.gif
+docs/*.webp
+tools/brand/*.png
+tools/brand/*.ttf
+tools/brand/*.woff2

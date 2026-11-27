@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Logic · {{ current_project.name }}{% endblock %}
+{% block page_title %}Logic{% endblock %}
+{% block content %}
+{# The logic map (#715): the workflows and AI processes this app keeps in .crewboss/logic/*.yaml, drawn from the newest commit's report.
+   Needs: rep, workflows, wf, picture, steps, step_sel, gate, verdict, open_override, overrides, uncovered, uncovered_total, uncovered_kinds,
+   reports, is_admin, error, new_keys. #}
+<div class="max-w-6xl min-w-0" data-logic-page>
+  <p class="text-small text-charcoal/70 mb-4">Every button, timer, webhook and AI step that changes something in <strong>{{ current_project.name }}</strong>, kept in the app's own repo and updated in the same change as the code. A production release is refused when the map is stale or something new is not covered.</p>
+  {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-error>{{ error }}</p>{% endif %}
+
+  {% if not rep %}
+  <p class="card px-4 py-3 text-small text-charcoal/65" data-no-report>No logic map has been reported yet. In the app's checkout run <code class="font-mono">crewboss logic check</code>, then <code class="font-mono">crewboss logic report --post &lt;this dashboard&gt; --project {{ current_project.slug }} --token-file …</code> (or a job records it with <code class="font-mono">record_logic</code>).</p>
+  {% else %}
+
+  <section class="card px-4 py-3 mb-5" aria-label="Gate" data-section="gate">
+    <div class="flex items-center gap-2 flex-wrap">
+      <h2 class="text-lead font-semibold">Release gate</h2>
+      <span class="chip {{ 'bg-status-ok/10 text-status-ok' if verdict.ok else 'bg-status-disaster/10 text-status-disaster' }}" data-verdict="{{ 'pass' if verdict.ok else 'fail' }}">{{ 'Passes' if verdict.ok else 'Would refuse' }}</span>
+      <span class="chip bg-charcoal/[.06] text-charcoal/70" data-gate-mode="{{ gate }}">{{ 'Enforced' if gate == 'enforce' else 'Off: shown only' }}</span>
+      <span class="text-micro text-charcoal/55 ml-auto">Newest report: <span class="font-mono">{{ rep.sha[:12] }}</span> · {{ rep.created_at|timeago }} · reported by {{ reporter }}</span>
+    </div>
+    {% if verdict.reasons %}
+    <ul class="mt-2 list-disc pl-5 text-small text-status-disaster" data-reasons>{% for r in verdict.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+    {% else %}<p class="mt-1 text-small text-charcoal/65">The map is valid, nothing in it is stale, and nothing new is uncovered since the last release.</p>{% endif %}
+    {% if is_admin %}
+    <div class="mt-3 flex flex-wrap items-start gap-3">
+      <form method="post" action="{{ base }}/logic/gate"><input type="hidden" name="mode" value="{{ 'off' if gate == 'enforce' else 'enforce' }}">
+        <button class="btn-ghost text-small touch-target border border-line" type="submit" data-gate-toggle>{{ 'Turn the gate off' if gate == 'enforce' else 'Enforce the gate on production releases' }}</button></form>
+      {% if not verdict.ok and not open_override %}
+      <form method="post" action="{{ base }}/logic/override" class="flex flex-wrap gap-2 items-center" data-override-form>
+        <input type="hidden" name="sha" value="{{ rep.sha }}">
+        <input name="reason" class="field text-small" style="min-width:16rem" placeholder="Why this one release may go (kept with it)" required minlength="8" maxlength="300" aria-label="Reason for the override">
+        <button class="btn-ghost text-small touch-target border border-line" type="submit">Override for this one release</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if open_override %}<p class="mt-2 text-small" data-open-override>An override for <span class="font-mono">{{ open_override.sha[:12] }}</span> is waiting to be used once ({{ open_override.granted_by_name or 'an Admin' }}: {{ open_override.reason }}).
+      {% if is_admin %}<form method="post" action="{{ base }}/logic/override/{{ open_override.id }}/revoke" class="inline"><button class="underline text-indigo" type="submit">Withdraw it</button></form>{% endif %}</p>{% endif %}
+    {% if overrides %}
+    <details class="mt-2 text-micro text-charcoal/65"><summary class="cursor-pointer">Override history ({{ overrides|length }})</summary>
+      <ul class="mt-1 space-y-1">{% for o in overrides %}<li data-override="{{ o.id }}"><span class="font-mono">{{ o.sha[:12] }}</span> · {{ o.granted_by_name or 'Admin' }}, {{ o.granted_at|timeago }}: {{ o.reason }} ·
+        {% if o.used_at %}used {{ o.used_at|timeago }}{% elif o.revoked_at %}withdrawn{% else %}not used yet{% endif %}</li>{% endfor %}</ul></details>
+    {% endif %}
+  </section>
+
+  <section class="mb-6" aria-label="Workflows" data-section="map">
+    <div class="flex items-center gap-2 flex-wrap mb-2">
+      <h2 class="text-lead font-semibold">Workflows <span class="text-small font-normal text-charcoal/50">({{ workflows|length }})</span></h2>
+      <a class="text-small text-indigo underline ml-auto" href="{{ base }}/logic/diff?sha={{ rep.sha }}" data-diff-link>What changed in this commit</a>
+    </div>
+    {% if unreadable %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-unreadable>The stored report for this commit is unreadable. Report the commit again.</p>{% endif %}
+    {% if rep.errors %}
+    <ul class="mb-3 rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2 text-small list-disc pl-6" data-errors>{% for e in rep.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if not workflows %}<p class="card px-4 py-3 text-small text-charcoal/65">The map is empty: add a file under <code class="font-mono">.crewboss/logic/</code>.</p>
+    {% else %}
+    <div class="lg-split">
+      <ul class="card divide-y divide-line self-start" data-workflow-list>
+        {% for w in workflows %}
+        <li><a href="{{ base }}/logic?wf={{ w.id|urlencode }}" class="block px-3 py-2 hover:bg-charcoal/[.04] {{ 'bg-charcoal/[.06]' if wf and w.id == wf.id }}" data-workflow="{{ w.id }}" {% if wf and w.id == wf.id %}aria-current="true"{% endif %}>
+          <span class="text-small font-medium break-words">{{ w.name }}</span>
+          <span class="block text-micro text-charcoal/55">{{ w.trigger.type }} · {{ w.steps|length }} step{{ '' if w.steps|length == 1 else 's' }}{% if w.steps|selectattr('kind', 'equalto', 'ai')|list %} · AI{% endif %}</span></a></li>
+        {% endfor %}
+      </ul>
+      {% if wf %}
+      <div class="min-w-0" data-selected-workflow="{{ wf.id }}">
+        <h3 class="text-base font-semibold break-words">{{ wf.name }}</h3>
+        <p class="text-small text-charcoal/70 mb-2">{{ wf.summary }}</p>
+        <p class="text-micro text-charcoal/55 mb-2">Starts: {{ wf.trigger.type }}{% if wf.trigger.control %} · {{ wf.trigger.control }}{% endif %}{% if wf.trigger.detail %} · {{ wf.trigger.detail }}{% endif %}
+          {% if wf.data %}<br>Data: {{ wf.data|join(', ') }}{% endif %}</p>
+        <div class="lg-canvas card p-2 overflow-x-auto" data-logic-canvas>
+          <svg viewBox="0 0 {{ picture.width|round(0) }} {{ picture.height|round(0) }}" width="{{ picture.width|round(0) }}" class="lg-svg" role="img" aria-label="Flow of {{ wf.name }}">
+            <defs><marker id="lg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="lg-arrowhead"/></marker></defs>
+            {% for e in picture.edges %}
+            {% set my = (e.y1 + e.y2) / 2 %}
+            <path class="lg-edge" d="M{{ e.x1 }} {{ e.y1 }} C{{ e.x1 }} {{ my }}, {{ e.x2 }} {{ my }}, {{ e.x2 }} {{ e.y2 }}" marker-end="url(#lg-arrow)"/>
+            {% if e.label %}<text class="lg-edge-label" x="{{ (e.x1 + e.x2) / 2 + 4 }}" y="{{ my }}">{{ e.label }}</text>{% endif %}
+            {% endfor %}
+            {% for n in picture.nodes %}
+            <a href="{{ base }}/logic?wf={{ wf.id|urlencode }}&step={{ n.id|urlencode }}" data-step="{{ n.id }}">
+              <g class="lg-node lg-{{ n.kind }}{{ ' is-sel' if n.id == step_sel }}" transform="translate({{ n.x }} {{ n.y }})">
+                <rect width="{{ n.w }}" height="{{ n.h }}" rx="{{ 29 if n.kind == 'decision' else 8 }}"/>
+                <rect class="lg-bar" width="5" height="{{ n.h }}" rx="2"/>
+                {% for ln in n.lines %}<text x="16" y="{{ 22 + loop.index0 * 15 }}">{{ ln }}</text>{% endfor %}
+                {% if n.sub %}<text class="lg-sub" x="16" y="{{ n.h - 7 }}">{{ n.sub }}</text>{% endif %}
+                {% if n.kind == 'ai' %}<text class="lg-tag" x="{{ n.w - 12 }}" y="14" text-anchor="end">AI</text>{% endif %}
+                {% if n.effects %}<text class="lg-tag" x="{{ n.w - 12 }}" y="{{ n.h - 7 }}" text-anchor="end">{{ n.effects }} effect{{ '' if n.effects == 1 else 's' }}</text>{% endif %}
+              </g></a>
+            {% endfor %}
+          </svg>
+        </div>
+        {% set s = steps.get(step_sel) %}
+        {% if s %}
+        <div class="card px-4 py-3 mt-3" data-step-panel="{{ s.id }}">
+          <h4 class="text-small font-semibold break-words">{{ s.label }} <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ s.kind }}</span></h4>
+          {% if s.question %}<p class="text-small mt-1"><span class="text-charcoal/55">Decides:</span> {{ s.question }}</p>{% endif %}
+          {% if s.detail %}<p class="text-small text-charcoal/70 mt-1">{{ s.detail }}</p>{% endif %}
+          {% if s.ai %}<p class="text-small mt-1"><span class="text-charcoal/55">AI:</span> {{ s.ai.skill or s.ai.prompt }}{% if s.ai.model %} · {{ s.ai.model }}{% endif %}{% if s.ai.may %}<br><span class="text-charcoal/55">May:</span> {{ s.ai.may|join(', ') }}{% endif %}</p>{% endif %}
+          {% if s.data %}<p class="text-small mt-1"><span class="text-charcoal/55">Data:</span> {{ s.data|join(', ') }}</p>{% endif %}
+          {% if s.effects %}<p class="text-small mt-1"><span class="text-charcoal/55">Side effects:</span> {{ s.effects|join(', ') }}</p>{% endif %}
+          {% if s.code_ref %}<p class="text-micro font-mono text-charcoal/50 mt-1 break-all">{{ s.code_ref.file }}{% if s.code_ref.function %} · {{ s.code_ref.function }}{% endif %}</p>{% endif %}
+        </div>
+        {% elif step_sel %}<p class="mt-3 text-small text-charcoal/60" data-step-missing>The step <span class="font-mono">{{ step_sel }}</span> is not in this workflow's map.</p>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="mb-6" aria-label="Coverage" data-section="coverage">
+    <h2 class="text-lead font-semibold mb-2">Not covered by the map <span class="text-small font-normal text-charcoal/50">({{ uncovered_total }})</span></h2>
+    {% if rep.stale %}
+    <ul class="mb-3 rounded-lg bg-status-warn/15 px-3 py-2 text-small list-disc pl-6" data-stale>{% for s in rep.stale %}<li><strong>{{ s.workflow }} / {{ s.step }}</strong>: {{ s.why }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if not uncovered_total %}<p class="card px-4 py-3 text-small text-charcoal/65" data-none-uncovered>Everything the code starts is in the map.</p>
+    {% else %}
+    <p class="text-micro text-charcoal/55 mb-1">{% for k, n in uncovered_kinds.items() %}{{ n }} {{ k }}{{ '' if loop.last else ' · ' }}{% endfor %}. Entry points found in the code that no workflow names. New since the last release are marked.</p>
+    <ul class="card divide-y divide-line" data-uncovered-list>
+      {% for u in uncovered %}
+      <li class="px-4 py-2 text-small flex flex-wrap gap-x-3 items-baseline" data-uncovered="{{ u.key }}">
+        <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ u.kind }}</span>
+        <span class="font-medium break-words min-w-0">{{ u.name }}</span>
+        {% if u.key in new_keys %}<span class="chip bg-status-disaster/10 text-status-disaster" data-new>new</span>{% endif %}
+        <span class="text-micro font-mono text-charcoal/50 break-all">{{ u.file }}:{{ u.line }}{% if u.function %} · {{ u.function }}{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if uncovered_total > uncovered|length %}<p class="text-micro text-charcoal/55 mt-1">Showing {{ uncovered|length }} of {{ uncovered_total }}; <code class="font-mono">crewboss logic uncovered</code> lists them all.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  {% if reports %}
+  <section class="mb-6" aria-label="Reports" data-section="reports">
+    <h2 class="text-lead font-semibold mb-2">Reports</h2>
+    <ul class="card divide-y divide-line">
+      {% for r in reports %}
+      <li class="px-4 py-2 text-small flex flex-wrap gap-x-3 items-baseline" data-report="{{ r.sha }}"><span class="font-mono">{{ r.sha[:12] }}</span>
+        <span class="text-charcoal/65">{{ r.n_workflows }} workflows · {{ r.n_uncovered }} uncovered · {{ r.n_stale }} stale · {{ r.n_errors }} errors</span>
+        <span class="text-micro text-charcoal/50">{{ r.created_at|timeago }}</span>
+        <a class="text-indigo underline ml-auto" href="{{ base }}/logic/diff?sha={{ r.sha }}">What changed</a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

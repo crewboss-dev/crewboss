@@ -1,0 +1,99 @@
+{# The GLOBAL PLAN (task #129): dash's one order across EVERY active project, at the top of the global home.
+   ADHD-first: Now (at most 3) is loud, Next is a short list, Later stays folded. Each card says WHY in one line.
+   The owner overrides: drag a card (it's pinned there) or tap the pin; dash never moves a pinned card.
+   Needs: plan (app.plan.plan_for_home()). Refreshes itself after any board change (mdd:board-stale). #}
+{% set gp = plan %}
+{% macro pin_btn(t) -%}
+<form hx-post="/all/plan/{{ t.id }}/pin" hx-target="#global-plan" hx-swap="outerHTML" class="shrink-0">
+  <input type="hidden" name="pinned" value="{{ '0' if t.pinned else '1' }}">
+  <button type="submit" class="press touch-target rounded-lg px-1.5 {{ 'text-indigo' if t.pinned else 'text-charcoal/35 hover:text-charcoal/70' }}"
+          aria-pressed="{{ 'true' if t.pinned else 'false' }}"
+          title="{{ 'Pinned by you: dash leaves it here. Tap to unpin.' if t.pinned else 'Pin it here so dash leaves it' }}">
+    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="{{ 'currentColor' if t.pinned else 'none' }}" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 6 4 4H6l4-4-1-6zM12 13v8"/></svg>
+    <span class="sr-only">{{ 'Unpin' if t.pinned else 'Pin' }}</span>
+  </button>
+</form>
+{%- endmacro %}
+{% macro today_btn(t) -%}
+<form hx-post="/all/plan/{{ t.id }}/today" hx-target="#global-plan" hx-swap="outerHTML" class="shrink-0">
+  <input type="hidden" name="today" value="{{ '0' if t.today else '1' }}">
+  <button type="submit" class="press touch-target chip {{ 'bg-flame/10 text-flame font-semibold' if t.today else 'bg-charcoal/[.05] text-charcoal/45 hover:text-charcoal/80' }}"
+          aria-pressed="{{ 'true' if t.today else 'false' }}" data-today-toggle
+          title="{{ 'On today\'s plan. Tap to take it off. Clears itself at 6am.' if t.today else 'Put it on today\'s plan (clears itself at 6am)' }}">today</button>
+</form>
+{%- endmacro %}
+{% macro plan_card(t, big=false) -%}
+<li class="card relative overflow-hidden pl-4 pr-2 {{ 'py-3' if big else 'py-2' }} flex items-start gap-2"
+    draggable="true" data-task-id="{{ t.id }}" data-plan-item="{{ t.id }}" data-fold="plan-{{ t.bucket }}:{{ t.id }}">
+  <span class="prio-stripe {{ PRIORITY_META.get(t.priority, UNKNOWN_META).stripe }}" aria-hidden="true"></span>
+  <div class="min-w-0 flex-1">
+    <button type="button" class="press text-left {{ 'text-base font-semibold' if big else 'text-small font-medium' }} leading-snug hover:underline break-words"
+            hx-get="/{{ t.project_slug }}/tasks/{{ t.id }}/panel" hx-target="#drawer-content" hx-swap="innerHTML"
+            hx-on::after-request="Alpine.store('drawer').open = true">{{ t.title }}</button>
+    {% if t.reason %}<div class="text-small text-charcoal/65 mt-0.5 break-words" data-plan-reason>{{ t.reason }}</div>{% endif %}
+    <div class="flex items-center gap-2 mt-1 text-micro text-charcoal/50">
+      <span class="task-no shrink-0" data-task-no>#{{ t.id }}</span>
+      <span class="truncate min-w-0">{{ t.project_name }}</span>
+      <span class="shrink-0 whitespace-nowrap">· {{ PRIORITY_META.get(t.priority, UNKNOWN_META).short }}</span>
+      <span class="shrink-0 whitespace-nowrap">· {{ 'you' if t.assignee == 'owner' else 'AI' }}</span>
+    </div>
+  </div>
+  {% if t.bucket in ('now', 'next') %}{{ today_btn(t) }}{% endif %}
+  {{ pin_btn(t) }}
+</li>
+{%- endmacro %}
+
+<section id="global-plan" aria-labelledby="global-plan-h" class="mb-6" data-fold-root
+         hx-get="/all/plan" hx-trigger="mdd:board-stale from:body" hx-swap="outerHTML">
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
+    <h2 id="global-plan-h" class="text-title font-semibold">Plan</h2>
+    <span class="text-small text-charcoal/55">
+      {% if gp.planned_at %}Across every project · planned {{ gp.planned_at|timeago }} by dash{% else %}Across every project{% endif %}
+    </span>
+  </div>
+
+  {% if gp.empty %}
+  <div class="card p-4 text-small text-charcoal/55">
+    No plan yet: the planner runs once you have tasks. It looks at every project's tasks and puts the most important three in Now.
+  </div>
+  {% else %}
+  {% if gp.today or gp.note %}
+  <div class="rounded-xl bg-flame/[.06] border border-flame/25 px-3 py-2 mb-3 text-small" data-plan-today>
+    <span class="font-semibold">Today:</span>
+    {% if gp.note %}<span>{{ gp.note }}</span>{% endif %}
+    {% for t in gp.today %}<button type="button" class="press task-no ml-1.5 underline-offset-2 hover:underline" title="{{ t.title }}"
+        hx-get="/{{ t.project_slug }}/tasks/{{ t.id }}/panel" hx-target="#drawer-content" hx-swap="innerHTML"
+        hx-on::after-request="Alpine.store('drawer').open = true">#{{ t.id }}</button>{% endfor %}
+  </div>
+  {% endif %}
+
+  {# #267: one column of sections, cards in grids — no tall side column leaving empty space beside a short Now #}
+  <div class="flex flex-col gap-4">
+    <div class="flex flex-col gap-2">
+      <div class="flex items-baseline gap-2">
+        <h3 class="text-lead font-semibold">Now</h3>
+        <span class="text-small tabular text-charcoal/55">{{ gp.now|length }} of 3</span>
+      </div>
+      <ul data-drop-col data-plan-col="now" class="grid grid-cols-1 md:grid-cols-3 gap-2 items-stretch rounded-xl min-h-[64px] p-0.5 -m-0.5 transition-colors">
+        {% for t in gp.now %}{{ plan_card(t, big=true) }}{% endfor %}
+        {% if not gp.now %}<li class="rounded-xl border border-dashed border-line py-4 text-center text-small text-charcoal/40">Nothing in Now. Drag one here.</li>{% endif %}
+      </ul>
+    </div>
+    <div class="flex flex-col gap-2">
+      <h3 class="text-lead font-semibold">Next <span class="text-small tabular font-normal text-charcoal/55">{{ gp.next|length }}</span></h3>
+      <ul data-drop-col data-plan-col="next" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 items-stretch rounded-xl min-h-[48px] p-0.5 -m-0.5 transition-colors">
+        {% for t in gp.next %}{{ plan_card(t) }}{% endfor %}
+      </ul>
+      <details class="group mt-1">
+        <summary class="press list-none cursor-pointer text-small font-semibold flex items-center gap-1.5 touch-target">
+          Later <span class="tabular font-normal text-charcoal/55">{{ gp.later|length }}</span>
+          <svg class="w-3.5 h-3.5 opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <ul data-drop-col data-plan-col="later" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 items-stretch rounded-xl min-h-[40px] p-0.5 -m-0.5 mt-1.5 transition-colors">
+          {% for t in gp.later %}{{ plan_card(t) }}{% endfor %}
+        </ul>
+      </details>
+    </div>
+  </div>
+  {% endif %}
+</section>

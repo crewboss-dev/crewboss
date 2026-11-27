@@ -1,0 +1,81 @@
+{# No drift (#402): the linked admin sites' catalogs against what's running, and server automation with no diagram.
+   app/drift.py runs the checks every few minutes; CREWBOSS_HOME/drift.yaml says what is checked. #}
+{% set muted = 'text-charcoal/50' %}
+{% set rows = 'divide-y divide-line' %}
+<section aria-labelledby="drift-h" class="mt-8" data-drift-section>
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
+    <h2 id="drift-h" class="text-lead font-semibold">No drift</h2>
+    <span class="text-micro {{ muted }}">code, Crewboss and each admin site agree</span>
+    <span class="ml-auto text-micro {{ muted }} tabular">{% if drift.ran_at %}checked {{ drift.ran_at|timeago }}{% else %}not checked yet{% endif %}</span>
+  </div>
+  {% if drift.last_error %}<div class="mb-3 text-small text-status-disaster break-words">The last check failed: {{ drift.last_error }}</div>{% endif %}
+
+  {# --- what's wrong: errors first, then warnings ------------------------------------------------------------------ #}
+  <div class="card {{ rows }} mb-4" data-drift-open="{{ drift.open|length }}">
+    {% for p in drift.open %}
+    <div class="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-1 px-4 py-3" data-drift-finding data-severity="{{ p.severity }}">
+      <span class="chip shrink-0 {{ 'bg-status-high/15 text-status-high font-semibold' if p.severity >= 4 else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}">{{ 'Error' if p.severity >= 4 else 'Warning' }}</span>
+      <div class="min-w-0 flex-1">
+        <div class="text-small font-medium break-words">{{ p.name }}</div>
+        <div class="text-micro text-charcoal/55">{{ p.host }}
+          {% if p.escalated_at %}<span class="chip ml-1 bg-status-disaster/10 text-status-disaster">sent to errors</span>{% endif %}
+        </div>
+      </div>
+      <span class="text-micro tabular {{ muted }} shrink-0" title="{{ p.started_at }}">since {{ p.started_at|timeago }}</span>
+    </div>
+    {% else %}
+    <div class="px-4 py-6 text-center text-small {{ 'text-status-ok font-medium' if drift.ran_at else muted }}">
+      {{ 'Nothing has drifted.' if drift.ran_at else 'Nothing checked yet.' }}
+    </div>
+    {% endfor %}
+  </div>
+
+  {# --- admin sites: one line each ---------------------------------------------------------------------------------- #}
+  <section aria-labelledby="drift-admin-h" class="card mb-4" data-drift-admin>
+    <div class="px-4 pt-3 pb-2"><h3 id="drift-admin-h" class="text-small font-semibold">Admin sites</h3></div>
+    <div class="{{ rows }} border-t border-line">
+      {% for a in drift.admin %}
+      {% set dot = {'ok': 'bg-status-ok', 'behind': 'bg-status-disaster', 'unverified': 'bg-status-warn'}.get(a.state, 'bg-charcoal/20') %}
+      <div class="flex items-start gap-3 px-4 py-3" data-drift-admin-site="{{ a.project }}" data-state="{{ a.state }}">
+        <span class="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 {{ dot }}" aria-hidden="true"></span>
+        <div class="min-w-0 flex-1">
+          <div class="text-small font-medium">{{ a.project }}</div>
+          <div class="text-small text-charcoal/75 break-words">{{ a.word }}</div>
+          <div class="text-micro {{ muted }} tabular">
+            Running {{ a.app_sha[:7] if a.app_sha else 'not reported' }} · catalog from {{ a.catalog_commit[:7] if a.catalog_commit else 'not reported' }}{% if a.catalog_built_at %} (built {{ a.catalog_built_at }}){% endif %}
+            {% if a.pending %} · main has workflow changes since {{ a.pending.hours }}h ago{% endif %}
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="px-4 py-3 text-small {{ muted }}">No admin site is linked (CREWBOSS_HOME/drift.yaml).</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# --- server timers: one line per server ---------------------------------------------------------------------------- #}
+  {% set t = drift.timers %}
+  <section aria-labelledby="drift-timers-h" class="card" data-drift-timers="{{ t.state or 'off' }}">
+    <div class="px-4 pt-3 pb-2">
+      <h3 id="drift-timers-h" class="text-small font-semibold">Server timers</h3>
+      <div class="text-micro {{ muted }}">{{ t.word or 'Not checked yet.' }} Every timer needs a diagram (an annotation's box_jobs) or a place on the OS list in CREWBOSS_HOME/drift.yaml. Cron isn't checked yet.</div>
+    </div>
+    <div class="{{ rows }} border-t border-line">
+      {% for hst in t.hosts or [] %}
+      {% set words = {'invisible': "Zabbix login can't see it", 'no_item': 'no timer item', 'unsupported': 'item unsupported', 'waiting': 'waiting for the first value', 'unreadable': 'value unreadable'} %}
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5" data-drift-box="{{ hst.box }}" data-state="{{ hst.state }}">
+        <span class="text-small font-medium">{{ hst.box }}</span>
+        {% if hst.state == 'ok' %}
+        <span class="text-micro {{ muted }} tabular">{{ hst.timers|length }} timer{{ 's' if hst.timers|length != 1 }}</span>
+        {% if hst.uncovered %}<span class="text-micro text-charcoal/80 break-words">no diagram: {{ hst.uncovered|join(', ') }}</span>
+        {% else %}<span class="text-micro text-status-ok">all covered</span>{% endif %}
+        {% else %}
+        <span class="text-micro {{ muted }}">{{ words.get(hst.state, hst.state) }}{% if hst.error %}: {{ hst.error }}{% endif %}</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="px-4 py-3 text-small {{ muted }}">No servers read yet.</div>
+      {% endfor %}
+    </div>
+  </section>
+</section>

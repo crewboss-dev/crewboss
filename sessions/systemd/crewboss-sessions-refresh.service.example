@@ -1,0 +1,19 @@
+# Morning fresh restart of the standing Claude sessions (#578). Replace the CAPITALISED placeholders.
+# Window and zone come from sessions.env (CREWBOSS_REFRESH_TZ, CREWBOSS_REFRESH_WINDOW); the timer decides which days run.
+[Unit]
+Description=Morning fresh restart of the standing Claude sessions (notice, then idle-only restart, never forced)
+After=network-online.target docker.service crewboss-sessions.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=SESSIONS_USER
+Environment=HOME=/home/SESSIONS_USER
+Environment=PATH=/home/SESSIONS_USER/.local/bin:/home/SESSIONS_USER/NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+# Owner switches (README "Nightly refresh"): `touch STATE_DIR/skip-refresh-YYYY-MM-DD` skips one night;
+# `systemctl edit` -> Environment=CREWBOSS_REFRESH_DISABLE=1 turns it off entirely.
+# Shares STATE_DIR/lock with start/sync (waits up to 5 min for it).
+ExecStart=CREWBOSS_REPO/sessions/crewboss-sessions.sh refresh
+# The tmux server outlives this oneshot (it may have just started sessions); systemd must never kill it.
+KillMode=process
+TimeoutStartSec=15min

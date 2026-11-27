@@ -1,0 +1,13 @@
+{# The fields of one environment requirement (#810): used by the add form and each row's edit form. Needs: r (a row, or the failed form), kinds, kind_labels, oses. #}
+<label class="block"><span class="kb-label">Kind</span>
+  <select name="kind" class="field text-small">{% for k in kinds %}<option value="{{ k }}"{% if k == (r.kind or 'tool') %} selected{% endif %}>{{ kind_labels[k] }}</option>{% endfor %}</select></label>
+<label class="block"><span class="kb-label">Name <span class="kb-label-hint">java, ANDROID_HOME, platforms;android-34, a path</span></span>
+  <input name="name" class="field text-small font-mono" required maxlength="240" value="{{ r.name or '' }}" autocomplete="off" autocapitalize="none"></label>
+<label class="block"><span class="kb-label">Minimum version <span class="kb-label-hint">tools only, e.g. 17</span></span>
+  <input name="min_version" class="field text-small tabular" maxlength="20" value="{{ r.min_version or '' }}" autocomplete="off" inputmode="decimal"></label>
+<label class="block"><span class="kb-label">Applies to</span>
+  <select name="os" class="field text-small">{% for o in oses %}<option value="{{ o }}"{% if o == (r.os or 'any') %} selected{% endif %}>{{ 'any OS' if o == 'any' else o }}</option>{% endfor %}</select></label>
+<label class="block sm:col-span-2"><span class="kb-label">Install hint <span class="kb-label-hint">optional: what to tell the person when it is missing</span></span>
+  <input name="install_hint" class="field text-small" maxlength="300" value="{{ r.install_hint or '' }}"></label>
+<label class="block sm:col-span-2"><span class="kb-label">Keystore fingerprint <span class="kb-label-hint">keystores only: SHA-256, from keytool -list -v. Public; never the key</span></span>
+  <input name="fingerprint" class="field text-small font-mono" maxlength="95" value="{{ r.expected_fingerprint or r.fingerprint or '' }}" autocomplete="off" autocapitalize="characters"></label>

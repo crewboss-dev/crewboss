@@ -1,0 +1,4 @@
+{
+  "_comment": "The suite's own briefing wording (sessions/hooks/ground.sh reads $CREWBOSS_HOME/session-briefing.json).",
+  "rule6_integrations": " (the integrations registry and its generated docs/generated/integrations.json)"
+}

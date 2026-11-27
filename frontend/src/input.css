@@ -1,0 +1,579 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* THE ERP'S LOOK (#479). The colour tokens are app/static/css/theme-tokens.css and the chrome (header, drawer, phone
+   bar, sheets, page fade) is app/static/css/chrome.css — both VERBATIM copies of the ERP's files, linked before this
+   one by base.html. Everything below reads those tokens, so it follows Light / Dark / Auto with no `dark:` classes.
+   Where the ERP has a rule for the same thing (scrollbars, focus, press, fields, segmented pills) it is copied here. */
+/* THE APP SHELL (the ERP's): body is a fixed-height column that never scrolls; the header is a flex item and #page is
+   the one scroll container, starting at the header's underside, so its scrollbar never runs past the chrome. The
+   height is the DYNAMIC viewport (task #155: a phone's collapsing URL bar leaves no dead space; 100vh is the fallback),
+   and a flick at the end of #page doesn't chain out. scrollbar-gutter keeps a short page and a long one the same width.
+   Plain CSS, outside the layers, like the ERP's own <style> block. */
+html, body { overflow-x: clip; }
+body { height: 100vh; height: 100dvh; overflow: hidden; }
+/* position: relative makes #page the containing block of every absolutely positioned thing inside it (#530): without
+   it, one with no positioned ancestor (e.g. an sr-only heading far down the page) is placed against the DOCUMENT,
+   escapes #page's clip and body's, and stretches the window into a second scrollbar. */
+#page { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-x: clip; scrollbar-gutter: stable;
+        overscroll-behavior: contain; }
+/* A sheet a finger is dragging follows it 1:1 (js/chrome.js dragSheet) — no transition may fight the pointer. */
+.sheet-dragging { transition: none !important; }
+/* The avatar menu grows out of its button (the ERP's §7 rule; chrome.css sets its origin, bottom left). */
+#user-menu:not(.hidden) { animation: menuIn .16s cubic-bezier(.25,.1,.25,1); }
+@keyframes menuIn { from { opacity: 0; transform: scale(.94) translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #user-menu:not(.hidden) { animation: none; } }
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-cream text-charcoal font-sans text-base antialiased;
+  }
+  /* SCROLLBARS, SITE-WIDE — the ERP's rule (task #433): 6px, no track, a thumb in the text colour at low alpha, which
+     inverts with the theme. On `*` because scrollbar-width doesn't inherit; a class with scrollbar-width:none wins. */
+  * { scrollbar-width: thin; scrollbar-color: rgb(var(--c-charcoal) / 0.22) transparent; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--c-charcoal) / 0.22); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-charcoal) / 0.38); }
+  /* No spinners on number fields (the ERP's rule). */
+  input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+  input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  /* ONE focus treatment for every form field (the ERP's): the focus-blue border, no ring, on pointer focus too. */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):focus, textarea:focus, select:focus {
+    outline: none !important;
+    border-color: var(--focus) !important;
+  }
+  /* KEYBOARD focus (the ERP's §14 block): a 2px focus-blue ring, keyboard-only; fields get a soft halo instead. */
+  :where(a[href], button, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px;
+  }
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):focus-visible, textarea:focus-visible, select:focus-visible {
+    box-shadow: 0 0 0 3px rgb(var(--c-focus) / .28);
+  }
+  input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  /* Press feedback on every button (the ERP's §1 rule) — low specificity, so a per-element active: utility still wins. */
+  button:active { transform: scale(.97); transition: transform 100ms ease-out; }
+  button:disabled:active { transform: none; }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Respond on press, not on release — mallen-design §4.1 */
+  .press {
+    transition: transform 100ms ease-out;
+  }
+  .press:active {
+    transform: scale(.97);
+  }
+  .press:disabled:active {
+    transform: none;
+  }
+
+  /* A card = the ERP's: surface fill, a line border, radius 12, flat (no shadow). */
+  .card {
+    @apply bg-surface rounded-xl border border-line;
+  }
+
+  /* A FLOATING surface (dropdowns, menus, the project switcher) — always OPAQUE, as the ERP's menus: the surface
+     fill, a line border and shadow-xl (owner, 2026-09-30: "the project dropdown is clear so I cannot see the text").
+     Anything absolutely positioned over content uses this, never `.card`. */
+  .popover {
+    @apply bg-surface text-charcoal rounded-xl shadow-float border border-line;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro font-medium uppercase tracking-wide;
+  }
+
+  /* Buttons = the ERP's .rd-btn family: radius 8–9px, the solid terracotta fill behind white text for the primary,
+     a hairline outline for the quiet one. */
+  .btn {
+    @apply press inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-small font-medium
+           transition-colors duration-150 ease-physics disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-indigodeep text-white hover:brightness-95;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-charcoal hover:bg-charcoal/5;
+  }
+  .btn-flame {
+    @apply btn bg-flame text-white hover:brightness-95;
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-line bg-surface
+           px-3 py-1.5 text-base text-charcoal placeholder:text-charcoal/40 transition-colors;
+  }
+
+  /* THE HEADER'S SEARCH FIELD = the ERP's entry box: the lighter --c-entry fill (white in light, #30302e in dark) with a
+     hairline border, no hover change; the open state's focus-blue border comes from the template. */
+  .hdr-search { background: rgb(var(--c-entry)); border: 1px solid rgb(var(--c-charcoal) / .1); }
+
+  /* THE THEME PILL (the ERP's): a round pill, three round icon buttons, the chosen one a solid accent fill. */
+  .theme-pill { display: inline-flex; gap: 4px; padding: 4px; border-radius: 9999px; background: rgb(var(--c-charcoal) / .06);
+                border: 1px solid rgb(var(--c-line)); box-shadow: 0 1px 2px rgb(0 0 0 / .06); }
+  .theme-ico { width: 38px; height: 38px; border-radius: 9999px; display: inline-flex; align-items: center; justify-content: center;
+               color: rgb(var(--c-charcoal)); opacity: .6; transition: background-color .12s, opacity .12s; }
+  .theme-ico:hover { background: rgb(var(--c-charcoal) / .05); opacity: 1; }
+  .theme-ico[aria-pressed="true"], .theme-ico[aria-pressed="true"]:hover { background: rgb(var(--c-indigodeep)); color: #fff; opacity: 1;
+               box-shadow: 0 1px 3px rgb(0 0 0 / .25); }
+  .theme-ico svg { width: 18px; height: 18px; fill: currentColor; }
+  @media (pointer: coarse) { .theme-ico { position: relative; } .theme-ico::after { content: ''; position: absolute; inset: -3px -2px; } }  /* 38px to look at, 44px tall to hit */
+
+  .kpi-tile {
+    @apply card p-4 flex flex-col gap-1;
+  }
+
+  /* SEGMENTED CONTROL = the ERP's .mseg: a hairline track on a faint wash, radius 8 outside / 6 inside, the chosen
+     option in the solid accent with white text. Weight never changes (no reflow as you click along it). */
+  .seg {
+    @apply inline-flex flex-wrap rounded-lg border border-line bg-charcoal/5 p-0.5 gap-px;
+  }
+  .seg-opt { @apply relative; }
+  .seg-opt input { @apply sr-only; }
+  .seg-opt span {
+    @apply inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium min-h-[26px]
+           text-charcoal/60 hover:text-charcoal/90 cursor-pointer select-none transition-colors duration-150;
+  }
+  .seg-opt span:active { transform: scale(.97); }
+  .seg-opt input:checked + span, .seg-opt span.seg-on { @apply bg-indigodeep text-white; }
+  .seg-opt input:checked + span:hover, .seg-opt span.seg-on:hover { @apply text-white; }
+  .seg-opt input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* Filter chip (links) = the ERP's .mpill: outline only when off, the solid accent + white when on. */
+  .fchip { @apply chip press border border-line text-charcoal/60 hover:text-charcoal/90; }
+  .fchip-on { @apply chip press border border-indigodeep bg-indigodeep text-white; }
+
+  /* translucent floating chrome — mallen-design §6 (the ERP's header recipe: page colour at 80% + blur) */
+  .chrome {
+    @apply backdrop-blur-md bg-cream/80;
+  }
+}
+
+@layer utilities {
+  .scroll-fade-b {
+    mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+@media (pointer: coarse) {
+  /* A 44px hit area around a small control without making the control itself bulky (chips on cards). */
+  .hit::before { content: ""; position: absolute; inset: -12px -6px; }
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* The hit area grows, the pill does not (the ERP's .mseg rule: one size on every device). */
+  .seg-opt span { position: relative; }
+  .seg-opt span::after { content: ""; position: absolute; inset: -9px 0; }
+  .fchip, .fchip-on { min-height: 32px; }
+}
+
+/* Task cards: the MoSCoW bucket is a 4px stripe down the left edge (config.PRIORITY_META). */
+/* no overflow-hidden on the card (its menus must escape it): the stripe takes the card's left corners itself */
+.prio-stripe { position: absolute; inset: 0 auto 0 0; width: 4px; border-top-left-radius: inherit; border-bottom-left-radius: inherit; }
+
+/* Kanban drag: the line shows exactly where the card will land (static/js/app.js). */
+.drop-line {
+  @apply h-0.5 rounded-full bg-indigodeep my-[-3px] relative z-10 pointer-events-none;
+  box-shadow: 0 0 0 3px rgb(var(--c-indigo) / .15);
+}
+.drop-line::before, .drop-line::after {
+  content: ""; position: absolute; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 9999px;
+  @apply bg-indigo;
+}
+.drop-line::before { left: -4px; }
+.drop-line::after { right: -4px; }
+/* Plan grids (#267): the card the drop lands before gets an indigo left edge; dropping at the end marks the column. */
+.drop-before { box-shadow: -4px 0 0 0 rgb(var(--c-indigo)), 0 0 0 3px rgb(var(--c-indigo) / .15); }
+[data-drop-col].drop-end { @apply ring-2 ring-indigo/30; }
+.task-card.is-dragging { opacity: .4; }
+[data-drop-col].is-over { @apply bg-indigo/[.04]; }
+
+/* Focus: a finished task is a small, satisfying moment — the count pops, the tick draws itself.
+   Reduced motion: no scale, no draw; a gentle colour/opacity change only (mallen-design §5). */
+@keyframes mdd-pop { 0% { transform: scale(1); } 35% { transform: scale(1.18); } 70% { transform: scale(.97); } 100% { transform: scale(1); } }
+@keyframes mdd-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+@keyframes mdd-glow { 0% { background-color: theme('colors.status.ok / 18%'); } 100% { background-color: transparent; } }
+.celebrate-count { animation: mdd-pop 520ms cubic-bezier(.25,.1,.25,1); transform-origin: left center; }
+.celebrate-row { animation: mdd-glow 1400ms cubic-bezier(.25,.1,.25,1); }
+.celebrate-row .tick path { stroke-dasharray: 24; animation: mdd-draw 420ms cubic-bezier(.25,.1,.25,1) 120ms both; }
+@media (prefers-reduced-motion: reduce) {
+  .celebrate-count { animation: none; }
+  .celebrate-row .tick path { animation: none; stroke-dasharray: none; }
+  /* the colour glow stays (gentler, not absent) — outranks the global reduced-motion duration clamp */
+  html .celebrate-row { animation-duration: 1400ms !important; }
+}
+
+/* Checklist drag-to-reorder (static/js/app.js): the lifted row follows the pointer. */
+[data-sortable] li.is-dragging { @apply shadow-float bg-surface rounded-lg relative z-10; }
+[data-sortable] .drag-handle { touch-action: none; }
+
+/* The shared canvas (static/canvas/mallen-canvas.css, docs/canvas-contract.md): its colours come from the page's own
+   tokens, exactly as the ERP's admin site sets them (app/static/canvas-theme.css there), so the diagram follows the
+   Light / Dark / Auto choice made here even when it differs from the OS. #page is the scroller and starts under the
+   header, so the sticky side panel stops 16px from its top, as on the admin site (#479). */
+.mallen-canvas {
+  --mc-text: rgb(var(--c-charcoal));
+  --mc-muted: rgb(var(--c-charcoal) / .58);
+  --mc-bg: rgb(var(--c-cream));
+  --mc-surface: rgb(var(--c-surface));
+  --mc-line: rgb(var(--c-line));
+  --mc-line-strong: rgb(var(--c-charcoal) / .25);
+  --mc-dot: rgb(var(--c-charcoal) / .20);
+  --mc-edge: rgb(var(--c-charcoal) / .38);
+  --mc-soft: rgb(var(--c-charcoal) / .05);
+  --mc-accent: rgb(var(--c-indigo));
+  --mc-selected: rgb(var(--c-indigo));
+  --mc-box: rgb(var(--c-charcoal) / .03);
+  --mc-box-line: rgb(var(--c-charcoal) / .12);
+  --mc-focus: var(--focus);
+  --mc-sticky-top: 16px;
+}
+
+/* Alpine: anything marked x-cloak stays hidden until Alpine has initialised it (no flash of open menus,
+   drawers or collapsed card bodies on load). */
+[x-cloak] { display: none !important; }
+
+/* ---------------------------------------------------------------------------------------------
+   Knowledge + Objectives (knowledge-v2). Summary first: every entry is a collapsed card — the
+   title on one line, the summary on two — that expands in place. Memory: adhd-focused-design.
+   --------------------------------------------------------------------------------------------- */
+@layer components {
+  .kb-prose { @apply prose max-w-none; }
+
+  .kb-page { @apply max-w-4xl; }
+  .kb-toolbar { @apply flex flex-wrap items-center gap-2 mb-3; }
+  .kb-toolbar-end { @apply flex items-center gap-2 ml-auto; }
+  .kb-kinds { @apply flex-nowrap overflow-x-auto max-w-full; scrollbar-width: none; }
+  .kb-seg {
+    @apply press inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap min-h-[26px]
+           text-charcoal/60 hover:text-charcoal/90 transition-colors duration-150;
+  }
+  .kb-seg-on { @apply bg-indigodeep text-white hover:text-white; }
+  .kb-count { @apply text-micro font-semibold tabular-nums opacity-60; letter-spacing: 0; }
+  .kb-review-chip { @apply normal-case tracking-normal text-small font-medium; }
+  .kb-dot { @apply inline-block w-1.5 h-1.5 rounded-full bg-status-warn; }
+
+  .kb-search { @apply relative flex items-center; }
+  .kb-search-icon { @apply absolute left-2.5 w-3.5 h-3.5 text-charcoal/40 pointer-events-none; }
+  .kb-search-input {
+    @apply w-32 focus:w-52 rounded-lg border border-line bg-surface
+           pl-7 pr-2 py-1 text-small text-charcoal placeholder:text-charcoal/40
+           focus:border-indigo focus:ring-1 focus:ring-indigo;
+    transition: width 200ms cubic-bezier(.25,.1,.25,1), border-color 150ms;
+  }
+  .kb-filters-btn { @apply text-small; }
+  .kb-filters-on { @apply bg-indigo/10 text-indigo; }
+  .kb-filters-pop { @apply absolute right-0 top-full mt-2 w-64 p-3 z-40; }
+  .kb-toggle { @apply flex items-center gap-2 text-small cursor-pointer select-none; }
+  .kb-toggle input { @apply w-4 h-4 rounded accent-indigo; }
+  .kb-active { @apply flex flex-wrap gap-1.5 mb-3; }
+  .kb-active-chip {
+    @apply press inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-small bg-indigo/10 text-indigo
+           hover:bg-indigo/15;
+  }
+
+  .kb-list { @apply flex flex-col gap-2.5; }
+
+  /* the card: one button head (title · summary · meta), the body underneath when open */
+  .kb-card { @apply overflow-hidden; scroll-margin-top: 1rem; }
+  .kb-head {
+    @apply block w-full text-left px-4 pt-3 pb-3 rounded-xl;
+    transition: background-color 150ms, transform 100ms ease-out;
+  }
+  .kb-head:hover { @apply bg-charcoal/[.02]; }
+  .kb-head:active { background-color: rgb(var(--c-creamwarm)); }
+  .kb-head:focus-visible { outline-offset: -2px; }
+  .kb-open .kb-head { @apply rounded-b-none; }
+  .kb-title-row { @apply flex items-center gap-2 min-w-0; }
+  .kb-title { @apply flex-1 min-w-0 truncate text-lead font-semibold text-charcoal; }
+  .kb-chevron { @apply w-4 h-4 shrink-0 text-charcoal/35; transition: transform 200ms cubic-bezier(.25,.1,.25,1); }
+  .kb-open .kb-chevron { transform: rotate(180deg); }
+  .kb-summary {
+    @apply block mt-1 text-small text-charcoal/70;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  }
+  .kb-summary-empty { @apply italic text-charcoal/40; }
+  .kb-meta { @apply flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-micro text-charcoal/50; }
+  .kb-kind { @apply uppercase font-semibold tracking-wide text-indigo/80; }
+  .kb-tag { @apply rounded-full px-1.5 py-px bg-charcoal/[.06]; letter-spacing: 0; }
+  .kb-flag { @apply inline-flex items-center gap-1 font-medium text-charcoal/70; letter-spacing: 0; }
+  .kb-flag-review { @apply text-charcoal dark:text-status-warn; }
+  html.dark .kb-flag-review { color: rgb(226 194 94); }   /* warn, lifted for 11px text on the dark page */
+  .kb-flag-ai { @apply text-indigo; }
+  .kb-when { @apply ml-auto tabular-nums; letter-spacing: 0; }
+  .kb-archived .kb-title, .kb-archived .kb-summary { @apply opacity-60; }
+
+  /* objectives: the target chip + the progress slot ("—" until the business pulse supplies a figure) */
+  .kb-target {
+    @apply shrink-0 rounded-full px-2.5 py-0.5 text-small font-semibold bg-indigo/10 text-indigo;
+  }
+  .kb-progress { @apply flex items-center gap-2.5 mt-2.5; }
+  .kb-progress-label { @apply text-micro uppercase tracking-wide font-medium text-charcoal/45; }
+  .kb-progress-track { @apply relative flex-1 max-w-xs h-1.5 rounded-full overflow-hidden bg-charcoal/[.08]; }
+  .kb-progress-fill { @apply absolute inset-y-0 left-0 w-0 rounded-full bg-status-ok; }
+  .kb-progress-value { @apply text-small font-medium text-charcoal/60; }
+
+  /* expanded */
+  .kb-more { @apply border-t border-line; }
+  .kb-body { @apply px-4 pt-4 pb-3; animation: kb-reveal 180ms cubic-bezier(.25,.1,.25,1); }
+  .kb-source { @apply mt-3 text-micro text-charcoal/45 normal-case; letter-spacing: 0; }
+  .kb-actions {
+    @apply flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-line;
+  }
+  .kb-quiet { @apply text-charcoal/60; }
+  .kb-collapse { @apply ml-auto text-charcoal/60; }
+  .kb-ask { @apply mt-3 flex flex-col gap-2.5 rounded-lg p-3 bg-creamwarm/60 border border-line; }
+  .kb-label { @apply block text-micro uppercase tracking-wide font-medium text-charcoal/55 mb-1; }
+  .kb-label-hint { @apply normal-case tracking-normal font-normal text-charcoal/40; }
+  .kb-hint { @apply text-micro text-charcoal/50; letter-spacing: 0; }
+  .kb-note { @apply flex items-center gap-3 mb-3 rounded-lg px-3 py-2 text-small bg-charcoal/[.04] text-charcoal/75; }
+  .kb-note-ok { @apply bg-status-ok/10 text-charcoal; }
+  .kb-note-error { @apply bg-flame/[.07] text-flame border border-flame/25; }
+  .kb-skeleton { @apply px-4 py-4 flex flex-col gap-2; }
+  .kb-skeleton span { @apply block h-3 rounded bg-charcoal/[.07] animate-pulse; }
+  /* "Linked from" under an entry (task #550) */
+  .kb-backlinks { @apply mt-4 pt-3 border-t border-line; }
+  .kb-backlink-list { @apply flex flex-col gap-1 text-small; }
+  .kb-backlink { @apply font-medium text-indigo underline decoration-indigo/30 hover:decoration-current; }
+  .kb-backlink-old { @apply text-charcoal/50 decoration-charcoal/25; }
+  .kb-backlink-rel { @apply text-micro text-charcoal/45; letter-spacing: 0; }
+  .kb-views { @apply shrink-0; }
+
+  /* editor page */
+  .kb-editor-page { @apply max-w-4xl flex flex-col gap-3 pb-24; }
+  .kb-editor-card { @apply p-4 sm:p-5 flex flex-col gap-4; }
+  .kb-label-row { @apply flex items-baseline justify-between gap-3; }
+  .kb-counter { @apply text-micro text-charcoal/40; letter-spacing: 0; }
+  .kb-counter-near { @apply text-status-avg font-semibold; }
+  .kb-title-field { @apply text-lead font-semibold; }
+  .kb-summary-field { resize: none; field-sizing: content; min-height: 3.4em; }
+  .kb-tag-opt { @apply relative; }
+  .kb-tag-opt input { @apply sr-only; }
+  .kb-tag-opt span {
+    @apply press inline-flex items-center rounded-full px-2.5 py-1 text-small cursor-pointer select-none border
+           border-line text-charcoal/65;
+  }
+  .kb-tag-opt input:checked + span { @apply bg-indigo/10 border-indigo/40 text-indigo; }
+  .kb-tag-opt input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+  /* the action bar floats over the page bottom: translucent chrome (§6), always reachable one-handed */
+  .kb-editor-bar {
+    @apply chrome sticky bottom-0 z-20 -mx-3 md:-mx-6 lg:-mx-8 px-3 md:px-6 lg:px-8 py-3 flex gap-2 border-t border-line;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  /* the rich-text editor */
+  .kb-editor { @apply rounded-lg border border-line bg-surface; }
+  .kb-editor:focus-within { @apply border-indigo ring-1 ring-indigo; }
+  .kb-editor:not(.kb-rt-ready) { border: 0; background: transparent; }
+  .kb-rt-bar {
+    @apply sticky top-0 z-10 flex flex-wrap items-center gap-0.5 px-1.5 py-1 rounded-t-lg border-b
+           border-line bg-surface/90 backdrop-blur;
+  }
+  .kb-rt-btn {
+    @apply press inline-flex items-center justify-center min-w-[32px] h-8 px-1.5 rounded-md text-small font-semibold
+           text-charcoal/65 hover:bg-charcoal/[.06];
+  }
+  .kb-rt-italic span { @apply italic; }
+  .kb-rt-on { @apply bg-indigo/10 text-indigo; }
+  .kb-rt-sep { @apply w-px h-5 mx-1 bg-charcoal/10; }
+  .kb-rt-ctx { @apply flex flex-wrap items-center gap-1.5 px-2 py-1.5 border-b border-line bg-creamwarm/50; }
+  .kb-rt-ctx[hidden] { display: none; }
+  .kb-rt-ctx-label { @apply text-micro uppercase tracking-wide font-semibold text-charcoal/50 mr-1; }
+  .kb-rt-input { @apply !w-auto flex-1 min-w-[12rem] py-1; }
+  .kb-rt-chip {
+    @apply press rounded-md px-2 py-1 text-small font-medium bg-surface border border-line
+           text-charcoal/75 hover:border-charcoal/25;
+  }
+  .kb-rt-surface { @apply px-4 py-3; }
+  .kb-rt-content { @apply min-h-[16rem] outline-none; }
+  .kb-rt-content:focus-visible { outline: none; }
+  .kb-rt-content p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder); @apply float-left h-0 pointer-events-none text-charcoal/35;
+  }
+  .kb-prose td > p, .kb-prose th > p { margin: 0; }
+  .kb-rt-content .selectedCell { background: rgb(var(--c-indigo) / .08); }
+  .kb-rt-content table { display: table; }
+  .kb-rt-content td, .kb-rt-content th { @apply border border-line; min-width: 4rem; }
+  .kb-rt-content [data-resize-container] { margin: 1em 0; }
+  .kb-rt-content [data-resize-container] img { margin: 0; }
+  .kb-rt-content .ProseMirror-selectednode img, .kb-rt-content img.ProseMirror-selectednode { outline: 2px solid rgb(var(--c-indigo)); outline-offset: 2px; }
+  .kb-rt-content [data-resize-handle] { @apply w-3 h-3 rounded-sm bg-indigodeep border-2 border-surface opacity-0; }
+  .kb-rt-content [data-resize-container]:hover [data-resize-handle],
+  .kb-rt-content .ProseMirror-selectednode [data-resize-handle] { opacity: 1; }
+  .kb-rt-content [data-resize-handle="bottom-right"] { cursor: nwse-resize; }
+  .kb-rt-content [data-resize-handle="bottom-left"] { cursor: nesw-resize; }
+  .kb-rt-uploading .kb-rt-bar::after { content: "Uploading…"; @apply ml-auto pr-2 text-micro text-charcoal/50; }
+  .kb-body-fallback { @apply border-0; }
+}
+
+@keyframes kb-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* phones: nothing to do for the bottom bar any more — #page reserves --tabbar-h itself (chrome.css), and a sticky
+   bar stops at the scroller's padding edge, so the editor's Save bar already sits above the phone bar (#479). */
+
+@media (pointer: coarse) {
+  /* one scrolling row of 44px buttons instead of three wrapped rows eating the screen */
+  .kb-rt-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .kb-rt-bar > * { flex-shrink: 0; }
+  .kb-seg { position: relative; }
+  .kb-seg::after { content: ""; position: absolute; inset: -8px 0; }   /* the hit area grows, the pill does not */
+  .kb-rt-btn { min-width: 44px; height: 44px; }
+  .kb-rt-chip, .kb-active-chip { min-height: 40px; }
+  .kb-tag-opt span { min-height: 40px; }
+  .kb-head { padding-top: 0.875rem; padding-bottom: 0.875rem; }
+  .kb-search-input { @apply w-28 focus:w-40; }
+}
+
+/* A PROJECT CHIP on a row that spans projects (the home, an account's rollups; task #148): a link to that project.
+   inline-block, not the flex .chip, so a long name ends in an ellipsis. */
+@layer components {
+  .project-chip {
+    @apply relative z-10 inline-block max-w-[14rem] truncate align-middle rounded-full px-2 py-0.5 text-micro
+           font-medium bg-indigo/10 text-indigo hover:underline;
+  }
+}
+
+/* A TASK NUMBER (#197) on every task card and row, so the "#123" a session talks about can be found on the board
+   without opening anything. Small and muted, never a chip: the first thing on a card's meta line (or straight after
+   the title on a row that has no meta line). /65 keeps 11px text at AA contrast on white and on the dark card. */
+@layer components {
+  .task-no {
+    @apply text-micro font-normal tabular-nums whitespace-nowrap text-charcoal/65;
+    letter-spacing: 0;
+  }
+}
+
+/* THE PROJECT SWITCHER's tree (partials/topbar.html + static/js/switcher.js; task #148). Guide lines are borders on
+   empty spans, never text characters: one .sw-guide per level above a row (a line runs down it while that level has
+   more to come), then the row's own .sw-branch (├, or └ when it is the last of its siblings). */
+@layer components {
+  .sw-row {
+    @apply relative flex items-stretch min-h-[36px] rounded-lg pr-1 text-small;
+  }
+  /* Hover: a pill background, no border (owner 2026-10-02, #156). */
+  .sw-row:hover { @apply bg-charcoal/[.05]; }
+  /* Current project: bold text only — the guide lines already show the level, so no filled pill. */
+  .sw-row.sw-current > .sw-link { @apply font-bold text-charcoal; }
+  /* Keyboard/filter selection: a subtle fill, never a ring (the ring overlapped the guide line). */
+  .sw-row.sw-sel { @apply bg-charcoal/[.07]; }
+  .sw-row.sw-match .sw-link > span:first-child { @apply underline decoration-flame decoration-2 underline-offset-2; }
+  .sw-guide, .sw-branch { @apply relative shrink-0 w-3.5; }
+  .sw-guide-line::before, .sw-branch::before, .sw-branch::after {
+    content: "";
+    @apply absolute border-charcoal/20;
+  }
+  .sw-guide-line::before { @apply left-1.5 top-0 bottom-0 border-l; }
+  .sw-branch::before { @apply left-1.5 top-0 bottom-0 border-l; }
+  .sw-branch.sw-last::before { @apply bottom-1/2; }
+  .sw-branch::after { @apply left-1.5 top-1/2 w-2 border-t; }
+  .sw-toggle, .sw-toggle-gap { @apply shrink-0 w-5 self-center; }
+  .sw-toggle {
+    @apply press h-5 inline-flex items-center justify-center rounded text-micro font-semibold leading-none
+           text-charcoal/60 border border-charcoal/20
+           hover:text-charcoal hover:bg-charcoal/[.06];
+  }
+  .sw-link { @apply flex-1 min-w-0 flex items-center gap-2 pl-1.5 py-1.5 rounded-md; }
+  .sw-short { @apply ml-auto shrink-0 max-w-[6rem] truncate whitespace-nowrap font-mono text-micro text-charcoal/50; }
+  /* Account tag: a plain uppercase label, no pill background (owner 2026-10-02, #156). */
+  .sw-account { @apply shrink-0 text-micro uppercase tracking-wide text-charcoal/45; }
+  /* The list's scrollbar: the site-wide rule in @layer base (task #433). */
+}
+
+/* THE ALL PROJECTS HOME TREE (pages/home.html + static/js/hometree.js; task #157). The same guide lines as the
+   switcher (.sw-guide/.sw-branch above), laid out to the LEFT of each rich project card: the row is a flex strip of
+   [guide lines][branch tick][+/− toggle][card]. The toggle sits outside the card, so the card's link overlay never
+   covers it; it is still given its own stacking context for safety. */
+@layer components {
+  /* The guides stretch to the card's full height; .sw-guide-line::before is already top-0 bottom-0. */
+  .ht-row > .sw-guide, .ht-row > .sw-branch { @apply self-stretch; }
+  .ht-toggle-gap { @apply shrink-0 w-7; }
+  .ht-toggle {
+    @apply press relative z-10 shrink-0 self-center mr-1 h-7 w-7 inline-flex items-center justify-center rounded-md
+           text-small font-semibold leading-none text-charcoal/60
+           border border-charcoal/20
+           hover:text-charcoal hover:bg-charcoal/[.06]
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/60;
+  }
+}
+
+/* THE KNOWLEDGE GRAPH (task #550; partials/knowledge_graph.html + static/js/knowledge-graph.js). The page chrome is
+   components (it is in the templates); what the script creates inside the SVG is plain CSS below, outside any layer,
+   because class names built at run time (kg-k-<kind>) are invisible to Tailwind's content scan. Every colour is a
+   theme token, so dark mode needs no rule of its own. Kind colours are categorical and never the only cue: each node's
+   label and tooltip say its kind. */
+@layer components {
+  .kg { @apply flex flex-col gap-3; }
+  .kg-bar { @apply flex flex-wrap items-center gap-2; }
+  .kg-lens { @apply min-w-0; }
+  .kg-zoom { @apply flex items-center gap-1 ml-auto; }
+  .kg-zoom-btn { @apply min-w-[34px] justify-center text-small font-semibold tabular-nums; }
+  .kg-fit { @apply font-medium; }
+  .kg-stage { @apply relative overflow-hidden p-0; }
+  .kg-empty { @apply p-8 text-center text-small text-charcoal/50; }
+  .kg-legend { @apply flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-charcoal/60; letter-spacing: 0; }
+  .kg-key { @apply inline-flex items-center gap-1.5; }
+  .kg-house { @apply p-4 flex flex-col gap-4; }
+  .kg-house-h { @apply text-small font-semibold mb-0.5; }
+  .kg-house-list { @apply mt-1.5 flex flex-col gap-1 text-small; }
+  .kg-house-list a { @apply font-medium text-indigo underline decoration-indigo/30 hover:decoration-current; }
+  .kg-none { @apply mt-1 text-small text-charcoal/40; }
+}
+
+.kg-svg { display: block; width: 100%; height: min(62vh, 560px); min-height: 320px; touch-action: none; cursor: grab;
+          user-select: none; -webkit-user-select: none; }
+.kg-svg.kg-panning { cursor: grabbing; }
+.kg-edge { stroke: rgb(var(--c-charcoal) / .26); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.kg-edge-supersedes { stroke: rgb(var(--c-charcoal) / .5); stroke-dasharray: 5 3; }
+.kg-edge-task { stroke: rgb(var(--c-charcoal) / .2); stroke-dasharray: 1.5 3; }
+.kg-node circle { stroke: rgb(var(--c-surface)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.kg-node:focus-visible { outline: none; }
+.kg-node:focus-visible circle { stroke: var(--focus); stroke-width: 3; }
+.kg-label { fill: rgb(var(--c-charcoal) / .78); font-size: 11px; pointer-events: none;
+            paint-order: stroke; stroke: rgb(var(--c-surface)); stroke-width: 3px; stroke-linejoin: round; }
+.kg-tlabel { display: none; fill: rgb(var(--c-charcoal) / .5); font-size: 9px; }
+.kg-near .kg-tlabel { display: inline; }
+.kg-far .kg-label { display: none; }
+.kg-k-decision circle { fill: rgb(var(--c-indigo)); }
+.kg-k-responsibility circle { fill: var(--stream-labour); }
+.kg-k-fact circle { fill: var(--stream-ai); }
+.kg-k-note circle { fill: var(--stream-mon); }
+.kg-k-link circle { fill: var(--warn); }
+.kg-k-objective circle, .kg-k-rule circle, .kg-k-skill circle { fill: rgb(var(--c-charcoal) / .55); }
+.kg-inherited circle { stroke: rgb(var(--c-charcoal) / .55); stroke-dasharray: 2 2; }
+.kg-old circle { fill: rgb(var(--c-line)); stroke: rgb(var(--c-charcoal) / .35); }   /* opaque: edges never show through */
+.kg-old .kg-label { fill: rgb(var(--c-charcoal) / .42); }
+.kg-task circle { fill: rgb(var(--c-surface)); stroke: rgb(var(--c-charcoal) / .55); }
+.kg-task-done circle { stroke: rgb(var(--c-charcoal) / .25); }
+.kg-node, .kg-edge { transition: opacity 150ms var(--ease-out); }
+.kg-hovering .kg-node:not(.kg-hot), .kg-hovering .kg-edge:not(.kg-hot) { opacity: .3; }
+.kg-lensed .kg-node:not(.kg-lit), .kg-lensed .kg-edge { opacity: .14; }
+.kg-lensed .kg-lit circle { stroke: rgb(var(--c-flame)); stroke-width: 2.5; }
+/* legend swatches are spans, so `fill` above does nothing for them: give them the same colour as a background */
+.kg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 9999px; background: currentColor; }
+.kg-swatch.kg-k-decision { color: rgb(var(--c-indigo)); }
+.kg-swatch.kg-k-responsibility { color: var(--stream-labour); }
+.kg-swatch.kg-k-fact { color: var(--stream-ai); }
+.kg-swatch.kg-k-note { color: var(--stream-mon); }
+.kg-swatch.kg-k-link { color: var(--warn); }
+.kg-swatch.kg-k-objective, .kg-swatch.kg-k-rule, .kg-swatch.kg-k-skill { color: rgb(var(--c-charcoal) / .55); }
+.kg-swatch-task { width: 8px; height: 8px; background: transparent; border: 1.5px solid rgb(var(--c-charcoal) / .55); }
+.kg-swatch-old { color: rgb(var(--c-line)); box-shadow: inset 0 0 0 1px rgb(var(--c-charcoal) / .35); }
+.kg-line { display: inline-block; width: 16px; height: 0; border-top: 1.5px dashed rgb(var(--c-charcoal) / .5); }
+.kg-line-task { border-top-style: dotted; border-top-color: rgb(var(--c-charcoal) / .35); }

@@ -1,0 +1,31 @@
+{# YOU: the profile menu, in the ERP's #user-menu shape: who you are, the theme pill, Runners for someone who has no Administration group, then
+   the account rows and Sign out. Drawn in the drawer's foot on a desktop and moved into the avatar popover on a phone (js/chrome.js),
+   so it is ONE list. "You" is the signed-in account (#394, app/web_auth.py); with sign-in off it is the owner. data-theme buttons: js/chrome.js. #}
+{% set me = request.state.web_user if request.state.web_user is defined else none %}
+<div class="px-3 py-2 border-b border-line">
+  {% if me %}
+  <div class="font-medium truncate">{{ me.name or me.username }}</div>
+  <div class="text-xs text-charcoal/50 truncate">{{ me.username }} &middot; {{ signin_label(me) }}</div>
+  {% else %}
+  <div class="font-medium truncate">Owner</div>
+  <div class="text-xs text-charcoal/50 truncate">Sign-in off</div>
+  {% endif %}
+</div>
+<div class="px-3 py-2 border-b border-line">
+  <div class="text-2xs text-charcoal/40 mb-1.5">Theme</div>
+  {# ICONS, not words: sun / moon / half-circle in a round pill; the aria-label carries the word and js/chrome.js marks the chosen one (aria-pressed). #}
+  <div class="theme-switch theme-pill" role="group" aria-label="Theme">
+    {% for val, lbl, ico in [('light','Light','light_mode'), ('dark','Dark','dark_mode'), ('system','Auto','contrast')] %}
+    <button type="button" data-theme="{{ val }}" aria-pressed="false" aria-label="{{ lbl }}" title="{{ lbl }}" class="theme-ico"><svg viewBox="0 -960 960 960" aria-hidden="true"><path d="{{ icon(ico) }}"/></svg></button>
+    {% endfor %}
+  </div>
+</div>
+{% for m in nav_menu %}
+<a href="{{ m.href }}" class="block px-3 py-2 text-charcoal/70 hover:bg-creamwarm border-b border-line" data-menu="{{ m.key }}">{{ m.label }}</a>
+{% endfor %}
+{% for l in menu_links() %}
+<a href="{{ l.url }}" class="block px-3 py-2 text-charcoal/70 hover:bg-creamwarm border-b border-line" data-surface="link" rel="noopener">{{ l.label }}</a>
+{% endfor %}
+<button type="button" class="block w-full text-left px-3 py-2 text-charcoal/70 hover:bg-creamwarm border-b border-line" data-tour-restart>How-to</button>
+{% if me and me.user_id %}<a href="/account/security" class="block px-3 py-2 text-charcoal/70 hover:bg-creamwarm border-b border-line" data-account-security>Account security</a>{% endif %}
+{% if me %}<form method="post" action="/auth/logout"><button type="submit" class="block w-full text-left px-3 py-2 text-charcoal/70 hover:bg-creamwarm" data-sign-out>Sign out</button></form>{% endif %}

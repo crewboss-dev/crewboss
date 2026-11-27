@@ -1,0 +1,42 @@
+{# Agent files to review (#829): ONE card per project the viewer owns that has agent, command or skill files nobody has pinned yet. A job
+   starts only when every such file in its repository is pinned (path + sha256 of the bytes). The Owner reads the text here, read-only, then
+   "Pin all". What a file "declares" is shown for convenience only: nothing is approved by parsing, only by reading. A changed file has a new
+   hash, so it comes back here. Needs: agent_cards (app/agent_pins.card), base. #}
+<section class="mb-5" aria-label="Agent files to review" id="agent-files" data-section="agent-files">
+  {% for c in agent_cards %}
+  <article class="card px-4 py-3 mb-3" data-agent-card="{{ c.slug }}">
+    {% if c.pending %}
+    <h2 class="text-lead font-semibold">Agent files to review <span class="text-small font-normal text-charcoal/55">{{ c.name }}</span></h2>
+    <p class="text-small text-charcoal/75 mt-1">This project's repository carries {{ c.pending|length }} agent, command or skill file{{ 's' if c.pending|length != 1 }} no one has reviewed. Jobs on it are blocked until you read {{ 'them' if c.pending|length != 1 else 'it' }} and pin {{ 'them' if c.pending|length != 1 else 'it' }}: a pin lets Claude Code load exactly these bytes. Change a file and it needs pinning again.</p>
+    <ul class="divide-y divide-line mt-2">
+      {% for f in c.pending %}
+      <li class="py-2" data-agent-file="{{ f.id }}">
+        <details>
+          <summary class="press cursor-pointer text-small font-medium touch-target flex flex-wrap items-center gap-x-3"><span class="font-mono break-all">{{ f.path }}</span><span class="text-micro font-normal text-charcoal/55">{{ f.size }} bytes · {{ f.short }}{% if f.source == 'job' %} · written by a job{% endif %}</span></summary>
+          {% set d = f.declared %}
+          <p class="text-micro text-charcoal/65 mt-1" data-declared>Declares (shown, not judged): tools {{ d.tools|join(', ') if d.tools else 'none listed' }} · hooks {{ d.hooks|join(', ') if d.hooks else 'none' }} · MCP servers {{ d.mcp_servers|join(', ') if d.mcp_servers else 'none' }} · permission mode {{ d.permission_mode or 'default' }}{% if d.note %} · {{ d.note }}{% endif %}</p>
+          <pre class="mt-1 p-2 bg-line/40 text-micro font-mono whitespace-pre-wrap break-words max-h-96 overflow-auto" tabindex="0">{{ f.text }}</pre>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="{{ base }}/machines/agent-files/pin" class="mt-2">
+      {% for f in c.pending %}<input type="hidden" name="ids" value="{{ f.id }}">{% endfor %}
+      <button class="btn-primary text-small touch-target" type="submit" data-pin-all>Pin all {{ c.pending|length }} after reading</button>
+      <span class="text-micro text-charcoal/60 ml-2">Asks you to confirm with your passkey.</span>
+    </form>
+    {% endif %}
+    {% if c.pinned %}
+    <details class="{{ 'mt-2' if c.pending }}" data-pinned-files>
+      <summary class="press cursor-pointer text-small font-medium touch-target">{{ 'Pinned' if c.pending else 'Pinned agent files, ' ~ c.name }} ({{ c.pinned|length }})</summary>
+      <ul class="divide-y divide-line">
+        {% for f in c.pinned %}
+        <li class="py-1 flex flex-wrap items-center gap-x-3" data-pinned-file="{{ f.id }}"><span class="font-mono text-small break-all">{{ f.path }}</span><span class="text-micro text-charcoal/55">{{ f.short }}</span>
+          <form method="post" action="{{ base }}/machines/agent-files/{{ f.id }}/unpin" class="ml-auto"><button class="btn-ghost text-micro border border-line" type="submit">Unpin</button></form></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Recent assets{% endblock %}
+{% block page_title %}Recent{% endblock %}
+{% block content %}
+<div class="max-w-4xl" data-assets-recent>
+  <h1 class="text-xl font-semibold mb-1">Recent</h1>
+  <p class="text-small text-charcoal/65 mb-4">The newest materials across your projects. Skills and rules do not carry change dates yet.</p>
+  <div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+    {% for r in rows %}
+    <a href="{{ r.href }}" class="flex items-center justify-between gap-3 px-4 py-2.5 text-small hover:bg-charcoal/[.04]" data-asset><span class="font-medium truncate">{{ r.title }}</span><span class="text-charcoal/55 truncate">{{ r.project_name }} · {{ r.kind_label }} · {{ r.created_at.strftime('%-d %b %Y') }}</span></a>
+    {% else %}
+    <p class="px-4 py-8 text-center text-small text-charcoal/45" data-assets-empty>Nothing yet.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

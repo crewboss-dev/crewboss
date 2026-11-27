@@ -1,0 +1,13 @@
+{# Shown ONCE, right after they are made (only hashes are stored). Copy and download as a .txt file are script (js/recovery-codes.js). #}
+<section class="rounded-md border border-line p-3 my-3" data-recovery-codes>
+  <h2 class="text-sm font-semibold mb-1">Your recovery codes</h2>
+  <p class="text-xs text-charcoal/70 mb-2">Save these now somewhere safe (a password manager is ideal); they are not shown again. Each works once. If you lose your
+    phone, a code lets you sign in and set up your authenticator app again. Making new codes voids these.</p>
+  <pre class="text-sm font-mono leading-relaxed select-all" data-codes>{% for c in codes %}{{ c }}
+{% endfor %}</pre>
+  <div class="flex gap-2 mt-2">
+    <button type="button" class="text-2xs rounded-md border border-line px-2 py-1" data-codes-copy hidden>Copy</button>
+    <button type="button" class="text-2xs rounded-md border border-line px-2 py-1" data-codes-download hidden>Download .txt</button>
+  </div>
+</section>
+<script src="{{ asset('js/recovery-codes.js') }}" defer></script>

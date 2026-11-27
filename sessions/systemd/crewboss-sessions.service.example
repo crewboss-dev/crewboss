@@ -1,0 +1,26 @@
+# Boot: start every project's standing Claude sessions in tmux (the plan comes from the dashboard).
+# Copy to /etc/systemd/system/crewboss-sessions.service and replace the CAPITALISED placeholders. Settings (dashboard URL, token
+# folder, ...) go in $CREWBOSS_HOME/sessions.env (sessions/sessions.example.env), not here.
+[Unit]
+Description=Start every project's standing Claude sessions in tmux (plan from the dashboard)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=SESSIONS_USER
+Environment=HOME=/home/SESSIONS_USER
+# systemd's PATH lacks ~/.local/bin (claude) and node (the dashboard-channel MCP server): without these every session
+# dies at start with 'claude: command not found'. Update the node path if it moves.
+Environment=PATH=/home/SESSIONS_USER/.local/bin:/home/SESSIONS_USER/NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+# Give the dashboard container time to come up so the launcher's "starting" beat and the hooks land.
+ExecStartPre=/bin/sleep 30
+ExecStart=CREWBOSS_REPO/sessions/crewboss-sessions.sh start
+# The tmux server outlives this oneshot; systemd must never kill it when the unit stops. KillMode=process (not
+# the deprecated 'none'): on stop systemd signals only the unit's main process (this script, long gone) and leaves
+# the rest of the cgroup, i.e. the tmux server and its Claude sessions, running.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

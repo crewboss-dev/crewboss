@@ -1,0 +1,12 @@
+{# One change that is decided but not done (the middle list on the Changes page). Needs: c, is_rollup. Rendered by the
+   page, and returned by the decide route (app/routers/pages.py) as the row an approved change MOVES to (#582). #}
+<div class="px-4 py-3" data-change="{{ c.id }}" data-ca-entity="change:{{ c.id }}" data-ca-title="{{ c.title }}" data-fold="dec:{{ c.id }}">
+  <div class="flex flex-wrap items-baseline gap-2">
+    <span class="chip bg-status-ok/15 text-status-ok">{{ c.decision }}</span>
+    {% if is_rollup %}<a href="/{{ c.project_slug }}" class="project-chip" data-project-chip="{{ c.project_slug }}">{{ c.project_name }}</a>{% endif %}
+    <span class="text-small font-medium break-words">#{{ c.id }} {{ c.title }}</span>
+    <span class="ml-auto text-micro text-charcoal/50">{{ c.decided_at|timeago }}</span>
+  </div>
+  {% if c.decision_note %}<div class="text-small text-charcoal/70 mt-1 whitespace-pre-line break-words">{{ c.decision_note }}</div>{% endif %}
+  {% set cbase = '/' ~ c.project_slug %}{% include "partials/change_chat_decision.html" %}
+</div>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Import a skill' if mode == 'import' else 'New skill' }}{% endblock %}
+{% block page_title %}{{ 'Import a skill' if mode == 'import' else 'New skill' }}{% endblock %}
+{% block content %}
+{# New skill / Import a skill (#718). Needs: skills_base, scope_project, mode ('new' | 'import'), targets, bases, error, form, max_zip_mb, allowed_hosts. #}
+<div class="max-w-3xl min-w-0" data-skill-form="{{ mode }}">
+  <p class="mb-3 text-small"><a href="{{ skills_base }}" class="hover:underline">&larr; Skills</a></p>
+  <div class="flex gap-2 mb-4" role="tablist">
+    <a href="{{ skills_base }}/new" class="{{ 'fchip-on' if mode == 'new' else 'fchip' }}" data-mode-new>Write one</a>
+    <a href="{{ skills_base }}/import" class="{{ 'fchip-on' if mode == 'import' else 'fchip' }}" data-mode-import>Import a community skill</a>
+  </div>
+  {% if error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-error>{{ error }}</p>{% endif %}
+  {% if not targets %}
+  <p class="card px-4 py-3 text-small text-charcoal/65" data-no-targets>You can look at skills here but not add one.</p>
+  {% else %}
+  {% if mode == 'import' %}
+  <p class="text-small text-charcoal/70 mb-3">Bring in a skill someone else published. Its text is kept as plain text and never run here. Only skills under a permissive licence (MIT, Apache-2.0, BSD, ISC, 0BSD, Unlicense, CC0) are accepted; a skill with no licence we can find is saved but not used until an admin confirms its licence. Every imported version also waits for a person to review it before any job follows it. The source and licence stay with it.</p>
+  <form method="post" action="{{ skills_base }}/import" enctype="multipart/form-data" class="grid gap-3" data-import-form>
+    <label class="block"><span class="kb-label">GitHub address <span class="kb-label-hint">a skill's folder or its SKILL.md on {{ allowed_hosts|join(' or ') }}</span></span>
+      <input name="url" type="url" class="field text-small font-mono" maxlength="500" value="{{ form.url or '' }}" placeholder="https://github.com/owner/repo/tree/main/skills/my-skill" autocomplete="off"></label>
+    <p class="text-micro text-charcoal/55">From a folder address Crewboss reads SKILL.md, the licence file and the files SKILL.md names. For a skill with other files, upload it as a zip instead.</p>
+    <label class="block"><span class="kb-label">Or a file <span class="kb-label-hint">a SKILL.md, or a zip of the skill folder (up to {{ max_zip_mb }} MB)</span></span>
+      <input name="file" type="file" accept=".md,.zip,text/markdown,application/zip" class="field text-small"></label>
+    {% include 'partials/skill_install_to.html' %}
+    <div><button class="btn-primary text-small touch-target" type="submit" data-submit-import>Import</button></div>
+  </form>
+  {% else %}
+  <form method="post" action="{{ skills_base }}/new" enctype="multipart/form-data" class="grid gap-3" data-new-form>
+    <label class="block"><span class="kb-label">Name</span>
+      <input name="name" class="field text-small" required maxlength="120" value="{{ form.name or '' }}" autocomplete="off"></label>
+    <label class="block"><span class="kb-label">Key <span class="kb-label-hint">optional: lower-case letters, numbers, dashes. Made from the name when empty</span></span>
+      <input name="key" class="field text-small font-mono" maxlength="64" value="{{ form.key or '' }}" autocomplete="off" autocapitalize="none"></label>
+    <label class="block"><span class="kb-label">Description <span class="kb-label-hint">what it is for and when an agent should use it</span></span>
+      <textarea name="description" class="field text-small" rows="2" required maxlength="1024">{{ form.description or '' }}</textarea></label>
+    <label class="block"><span class="kb-label">The skill (SKILL.md text)</span>
+      <textarea name="body" class="field text-small font-mono" rows="14" required>{{ form.body or '' }}</textarea></label>
+    <label class="block"><span class="kb-label">Built on <span class="kb-label-hint">optional: another skill whose text goes first, so several skills can share one base</span></span>
+      <select name="base" class="field text-small"><option value="">None</option>{% for b in bases %}<option value="{{ b.key }}"{% if form.base == b.key %} selected{% endif %}>{{ b.name }} ({{ b.key }})</option>{% endfor %}</select></label>
+    <label class="block"><span class="kb-label">Extra files <span class="kb-label-hint">optional: reference notes or scripts the skill points to</span></span>
+      <input name="files" type="file" multiple class="field text-small"></label>
+    {% include 'partials/skill_install_to.html' %}
+    <label class="block"><span class="kb-label">Note <span class="kb-label-hint">optional: shown in the version history</span></span>
+      <input name="note" class="field text-small" maxlength="300" value="{{ form.note or '' }}"></label>
+    <div><button class="btn-primary text-small touch-target" type="submit" data-submit-new>Create skill</button></div>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

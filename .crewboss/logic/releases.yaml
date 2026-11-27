@@ -1,0 +1,156 @@
+workflows:
+  - id: release.request-gate-deploy
+    name: Release requested, gated and deployed
+    summary: A person asks to deploy a commit. Production takes only a commit that ran on dev, must pass the logic map gate, and waits for an Admin; then the server pulls and runs the target's command.
+    trigger:
+      type: button
+      control: "Releases page: Deploy"
+      detail: Someone asks to deploy a commit to a target
+      route: "POST /releases/deploy"
+      code_ref: {file: app/routers/releases_pages.py, function: request_release}
+    data: ["table:server_jobs", "table:logic_reports", "table:logic_overrides", "table:activity"]
+    steps:
+      - id: request
+        kind: action
+        label: Create the release request
+        code_ref: {file: app/deploys.py, function: request_release}
+        effects: ["create:server_jobs (requested)", "log:activity"]
+      - id: promoted
+        kind: decision
+        question: Did this commit already run on dev or staging (or is it a hotfix)?
+        label: Promote-only rule
+        code_ref: {file: app/deploys.py, function: _ran_before}
+      - id: logic-gate
+        kind: decision
+        question: Is the logic map valid, fresh and without new uncovered entry points?
+        label: Logic map gate (production)
+        detail: Refused when the map fails its schema, an entry points at gone code, or new entry points are uncovered. An Admin can override ONE release, recorded.
+        code_ref: {file: app/logic.py, function: gate}
+        data: ["table:logic_reports", "table:logic_overrides"]
+        effects: ["change:logic_overrides (used up)"]
+      - id: approve
+        kind: action
+        label: An Admin approves (fresh second factor)
+        code_ref: {file: app/deploys.py, function: approve_checked}
+        effects: ["change:server_jobs (approved)", "create:follow-up task (hotfix only)", "log:activity"]
+      - id: deploy
+        kind: action
+        label: The server signs a one-deploy SSH pass and runs the pull
+        detail: Pull fast-forward only, HEAD checked against the approved sha, then the target's post command. It may run as long as the target's own time limit (default 600 s).
+        code_ref: {file: app/deploys.py, function: _run_deploy}
+        effects: ["sync:target server (ssh)", "change:server_jobs (done, failed or orphaned)"]
+    edges:
+      - {from: trigger, to: request}
+      - {from: request, to: promoted}
+      - {from: promoted, to: logic-gate, label: yes}
+      - {from: logic-gate, to: approve, label: passes or overridden}
+      - {from: approve, to: deploy}
+
+  - id: logic.report-recorded
+    name: Logic map reported for a commit
+    summary: A job or CI runs the logic check on a commit and posts its report; the gate and the Logic page read it.
+    trigger:
+      type: route
+      detail: POST /api/logic/report, or the job MCP's record_logic
+      route: "POST /logic/report"
+      code_ref: {file: app/routers/api.py, function: api_logic_report}
+    data: ["table:logic_reports"]
+    steps:
+      - id: build
+        kind: action
+        label: Read .crewboss/logic and discover entry points in the code
+        code_ref: {file: app/logic_map.py, function: build_report}
+      - id: store
+        kind: action
+        label: Store the report per project and commit
+        code_ref: {file: app/logic.py, function: record_report}
+        effects: ["create:logic_reports", "log:activity"]
+    edges:
+      - {from: trigger, to: build}
+      - {from: build, to: store}
+
+  - id: release.merge-executor
+    name: Approved branch merged to the default branch by Crewboss
+    summary: Once tests, the code-auditor pass and an Admin's approval (second factor within 5 minutes) are recorded for a commit, and the repository is enrolled by the instance owner, Crewboss itself fast-forwards the project's default branch to exactly that commit on GitHub. A diverged or moved branch is sent back with a reason; it never force-pushes.
+    trigger:
+      type: button
+      control: "Releases page: Approve merge (project opted in to the merge executor)"
+      detail: The Admin approves with a fresh second factor; the executor loop also retries approved requests after a GitHub error
+      route: "POST /releases/merges/{merge_id}/approve"
+      code_ref: {file: app/routers/releases_pages.py, function: approve_merge}
+    data: ["table:merge_requests", "table:projects", "table:activity"]
+    steps:
+      - id: approve
+        kind: action
+        label: An Admin approves (fresh second factor)
+        code_ref: {file: app/release_gates.py, function: approve_merge}
+        effects: ["change:merge_requests (approved)", "log:activity"]
+      - id: claim
+        kind: action
+        label: Claim the request (approved to merging)
+        detail: Only an approval made after the opt-in and younger than 24 hours, not waiting out a backoff, with web sign-in on. recover() returns a claim a dead process left for over 3 minutes.
+        code_ref: {file: app/merge_executor.py, function: _claim}
+        effects: ["change:merge_requests (merging)"]
+      - id: authority
+        kind: decision
+        question: Is the approver still an enabled Admin, and do the request's repository, the project's remote, the opt-in and the instance owner's enrolment all still name the same repository?
+        label: Authority check (the repository's, not the project's)
+        code_ref: {file: app/merge_executor.py, function: _check_authority}
+      - id: identity
+        kind: decision
+        question: Is the GitHub credential still the configured bot account (GET /user, once per pass), and not a person on the deny-list?
+        label: Identity re-check before the write (fails closed)
+        detail: Enabling refuses with no bot login configured. A mismatch sends the request back (re-queueable), makes no write and logs a warning. Every outcome write is fenced on the claim (merging_at and merge_attempts), so a stalled earlier attempt cannot overwrite a re-claimed row.
+        code_ref: {file: app/merge_executor.py, function: _check_identity}
+      - id: head
+        kind: decision
+        question: Is the pushed branch still at the approved commit, and does it fast-forward the default branch?
+        label: Exact commit and fast-forward check on GitHub
+        detail: Branch head must equal the approved sha; compare with the default branch must say ahead. Diverged or moved is sent back; already included is recorded without a change.
+        code_ref: {file: app/merge_executor.py, function: execute}
+        effects: ["read:GitHub (repo, branch, compare)"]
+      - id: ff
+        kind: action
+        label: Move the default branch to the approved commit
+        detail: One ref update with force false, so GitHub refuses anything that is not a fast-forward.
+        code_ref: {file: app/merge_executor.py, function: execute}
+        effects: ["sync:GitHub default branch", "change:merge_requests (merged)", "log:activity", "create:task comment"]
+      - id: back
+        kind: action
+        label: Send it back with the reason
+        code_ref: {file: app/merge_executor.py, function: _back}
+        effects: ["change:merge_requests (sent_back)", "change:task (back to doing)", "create:task comment", "log:activity"]
+      - id: retry
+        kind: action
+        label: Wait out a GitHub error (exponential backoff, about 25 minutes)
+        code_ref: {file: app/merge_executor.py, function: _retry}
+        effects: ["change:merge_requests (approved, next_attempt_at)"]
+      - id: preoptin
+        kind: action
+        label: Send back approvals decided before the opt-in (ask again)
+        detail: The note reads approved before Crewboss merging was on, ask again. A plain sent_back, not re-queueable. Done when the executor is turned on and on every pass.
+        code_ref: {file: app/merge_executor.py, function: send_back_pre_optin}
+        effects: ["change:merge_requests (sent_back)", "create:task comment", "log:activity"]
+      - id: requeue
+        kind: action
+        label: An Admin re-queues a request sent back for a GitHub failure or an expired approval (fresh factor, no new commit)
+        code_ref: {file: app/release_gates.py, function: requeue_merge}
+        effects: ["change:merge_requests (approved)", "log:activity"]
+    edges:
+      - {from: trigger, to: approve}
+      - {from: approve, to: claim}
+      - {from: claim, to: authority}
+      - {from: authority, to: head, label: all agree}
+      - {from: authority, to: back, label: repository changed or approver gone or not enrolled}
+      - {from: head, to: retry, label: GitHub error 5xx or network}
+      - {from: retry, to: claim}
+      - {from: back, to: requeue, label: GitHub failure or expired}
+      - {from: requeue, to: claim}
+      - {from: head, to: identity, label: fast-forwardable}
+      - {from: identity, to: ff, label: still the bot}
+      - {from: identity, to: back, label: not the bot or a person's account}
+      - {from: head, to: back, label: diverged, moved or refused}
+
+# Entry points deliberately not mapped here yet (everything else shows in `crewboss logic uncovered`).
+ignore:
+  - {file: "app/routers/runner.py", reason: "runner protocol endpoints, described in docs/runner-protocol.md"}

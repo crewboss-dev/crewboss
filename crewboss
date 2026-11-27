@@ -1,0 +1,1315 @@
+#!/usr/bin/env python3
+"""crewboss: install and run your own Crewboss (app + Postgres in Docker, bound to 127.0.0.1). Stdlib only, Python 3.10+.
+
+    ./crewboss install            ask a few questions (or pass flags + --yes), then build, start and make the owner account
+    ./crewboss up | down | restart | status | logs [-f] [service]
+    ./crewboss owner [--reset]    create (or reset) the owner account of a running install; prints a one-time temporary password
+    ./crewboss deploy-test        a throwaway fresh install of the exact snapshot, checked and deleted (docs/deploy-test.md)
+    ./crewboss reset-owner        the owner lost their passkey AND recovery codes: print a new temporary password (server shell only)
+
+Where things live (task #707, change #62). Everything of one install is in ONE folder, the instance folder (default
+~/.crewboss, `--home DIR`):
+
+    instance.yaml    this install's settings (name, public_url, sign-in, certificate check ...)
+    compose.env      the env file the CLI hands to docker compose (project name, port, database password, folders). 0600.
+                     It is NOT the repo's own `.env`, which is never read or written here.
+    secrets/         0700: ssh-ca-enc-key, vapid-private.pem, runner-identity-key (0600). Back them up with the database.
+    materials/       the shared materials folder
+    compose.override.yml  optional: this install's extra mounts / add-ons, added as a second -f when present
+    Caddyfile        only with the bundled proxy
+    proxy/           only with "I already run a reverse proxy": ready-made Caddy and nginx snippets
+
+Every docker compose call is `docker compose -p <project> --env-file <home>/compose.env --project-directory <checkout>
+-f <checkout>/docker-compose.yml [-f <home>/compose.override.yml] [--profile caddy] ...` with every COMPOSE_*, CREWBOSS_* and POSTGRES_* variable removed from the
+environment, so it can never act on another project (the project name always comes from compose.env).
+
+Certificates: a network install always uses a publicly trusted certificate (Let's Encrypt). Plain http is for localhost only.
+Either you already run a reverse proxy with HTTPS (we print a snippet), or the bundled Caddy gets the certificate by HTTP-01
+(ports 80 and 443 must reach this machine). The app itself refuses to start without a good certificate (`tls_check: enforce`).
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import getpass
+import ipaddress
+import json
+import os
+import re
+import secrets
+import shutil
+import socket
+import ssl
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent
+DEFAULT_PORT = 8931
+DEFAULT_PROJECT = "crewboss"
+ENV_NAME = "compose.env"
+OVERRIDE_NAME = "compose.override.yml"
+LAN_WARNING = ("LAN mode is for a local network. Don't expose it to the internet without upgrading to a signed certificate "
+               "and passkey sign-in.")
+LAN_HOST_RE = re.compile(r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$")
+FRONT_DOOR_HEADERS = ("X-Crewboss-Front-Door", "X-MDD-Front-Door")     # TODO(#589 compat): drop the second with the old name
+SAFE_PATH = re.compile(r"^[A-Za-z0-9_./@+~ -]+$")
+PROJECT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
+DOMAIN_RE = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+# env names removed from the environment of every docker call: nothing from the caller's shell may redirect compose
+STRIP_PREFIXES = ("COMPOSE_", "CREWBOSS_", "POSTGRES_", "APP_PORT")
+
+
+class Fail(SystemExit):
+    """A problem the person can fix; printed without a traceback."""
+
+    def __init__(self, message: str, code: int = 1):
+        super().__init__(code)
+        self.message = message
+
+
+def say(msg: str = "") -> None:
+    print(msg, flush=True)
+
+
+# --- small pure helpers (tested) ----------------------------------------------------------------------------------------
+
+def valid_domain(name: str) -> bool:
+    name = name.strip().lower()
+    if not DOMAIN_RE.match(name) or name.endswith(".localhost") or name == "localhost":
+        return False
+    try:
+        ipaddress.ip_address(name)
+        return False
+    except ValueError:
+        return True
+
+
+def port_is_free(port: int, host: str = "127.0.0.1") -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def port_is_listening(port: int, host: str = "127.0.0.1") -> bool:
+    """True when something accepts connections there (used for 80/443, which a normal user may not bind to test)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        return s.connect_ex((host, port)) == 0
+
+
+def pick_port(preferred: int, is_free=port_is_free, limit: int = 200) -> int:
+    """`preferred` if free, else the next free port above it."""
+    for p in range(preferred, min(preferred + limit, 65536)):
+        if is_free(p):
+            return p
+    raise Fail(f"no free port found between {preferred} and {preferred + limit}")
+
+
+def clean_env(environ: dict | None = None) -> dict:
+    env = dict(os.environ if environ is None else environ)
+    for k in list(env):
+        if k.startswith(STRIP_PREFIXES):
+            del env[k]
+    return env
+
+
+def check_path(path: Path) -> None:
+    if not SAFE_PATH.match(str(path)):
+        raise Fail(f"the folder {path} has a character docker compose can't take safely in an env file or a volume path "
+                   f"(allowed: letters, digits and _ . / @ + ~ - and space). Pick another --home.")
+
+
+def env_value(v: str) -> str:
+    return f"'{v}'" if " " in v else v
+
+
+def render_env(*, project: str, port: int, home: Path, password: str, proxy: str, mode: str,
+               http_port: int = 80, https_port: int = 443, uid: int | None = None, gid: int | None = None) -> str:
+    lines = [
+        "# Written by `./crewboss install`. Passed to docker compose with --env-file. Holds the database password: keep it 0600.",
+        f"COMPOSE_PROJECT_NAME={project}",
+        f"CREWBOSS_IMAGE={project}-app",
+        f"APP_PORT={port}",
+        f"CREWBOSS_DB_VOLUME={project}_db-data",
+        f"CREWBOSS_HOME={env_value(str(home))}",
+        f"CREWBOSS_SECRETS_DIR={env_value(str(home / 'secrets'))}",
+        f"CREWBOSS_MATERIALS_HOST_DIR={env_value(str(home / 'materials'))}",
+        f"CREWBOSS_EXPORTS_HOST_DIR={env_value(str(home / 'exports'))}",
+        f"CREWBOSS_CA_UPLOADS_HOST_DIR={env_value(str(home / 'ca-uploads'))}",
+        f"CREWBOSS_FRONTDOOR_DIR={env_value(str(home / 'frontdoor'))}",
+        f"CREWBOSS_UID={os.getuid() if uid is None and hasattr(os, 'getuid') else (uid or 0)}",
+        f"CREWBOSS_GID={os.getgid() if gid is None and hasattr(os, 'getgid') else (gid or 0)}",
+        f"POSTGRES_PASSWORD={password}",
+        f"CREWBOSS_INSTALL_MODE={mode}",
+        f"CREWBOSS_INSTALL_PROXY={proxy}",
+    ]
+    if proxy == "caddy":
+        lines += [f"CREWBOSS_HTTP_PORT={http_port}", f"CREWBOSS_HTTPS_PORT={https_port}"]
+    return "\n".join(lines) + "\n"
+
+
+def parse_env(text: str) -> dict:
+    out = {}
+    for ln in text.splitlines():
+        ln = ln.strip()
+        if not ln or ln.startswith("#") or "=" not in ln:
+            continue
+        k, _, v = ln.partition("=")
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] == "'":
+            v = v[1:-1]
+        out[k.strip()] = v
+    return out
+
+
+# The two comment lines the installer writes right above its trusted_proxies key: the only thing that marks the block as ours.
+TP_COMMENT = ("# The reverse proxy whose X-Forwarded-For is believed (the sign-in rate limits key on the client address). Only this",
+              "# address: if your proxy reaches the app from another one, list that here.")
+INSTANCE_MARKER = "# crewboss-installer: this folder was made by ./crewboss install"
+
+
+def q(value) -> str:
+    """A YAML-safe scalar (JSON strings are valid YAML): `off`, `on`, `yes`, numbers and colons can't be misread."""
+    return json.dumps(value)
+
+
+def render_instance(*, name: str, public_url: str, domain: str | None, port: int, tls_check: str | None,
+                    tls_connect: str | None, trusted_proxies: list[str] | None = None,
+                    lan_hosts: list[str] | None = None, https_port: int = 443) -> str:
+    pm = re.match(r"^https://[^/:]+:(\d+)$", public_url)
+    hosts = ([domain] if domain else []) + ([f"{domain}:{pm.group(1)}"] if domain and pm else []) + [f"127.0.0.1:{port}", f"localhost:{port}"]
+    for h in lan_hosts or []:           # LAN mode: the names and addresses people type (with the port when it is not 443)
+        hosts += [h] + ([f"{h}:{https_port}"] if https_port != 443 else [])
+    lines = [
+        INSTANCE_MARKER,
+        "# This install's settings (written by `./crewboss install`). The full list of keys, with comments, is",
+        "# instance.example.yaml in the Crewboss checkout. Changes need `./crewboss restart`.",
+        f"name: {q(name)}",
+        f"public_url: {q(public_url)}",
+        "auth: local",
+        "origin_hosts:",
+        *[f"  - {q(h)}" for h in hosts],
+    ]
+    if domain:
+        lines += ["mcp_allowed_hosts:", f"  - {q(domain)}"]
+    elif lan_hosts:
+        lines += ["mcp_allowed_hosts:", *[f"  - {q(h)}" for h in lan_hosts]]
+    if tls_check:
+        lines += ["# The app checks its public certificate at start-up and every 12 h. enforce = refuse to start without a",
+                  "# publicly trusted, name-matching one; warn = log + banner only; off. LAN mode uses warn: its certificate is", "# self-signed on purpose.", f"tls_check: {q(tls_check)}"]
+    if tls_connect:
+        lines += ["# The check dials the bundled proxy directly (still verifying the certificate for the public name).",
+                  f"tls_check_connect: {q(tls_connect)}"]
+    if trusted_proxies:
+        lines += [*TP_COMMENT, "trusted_proxies:", *[f"  - {q(a)}" for a in trusted_proxies]]
+    return "\n".join(lines) + "\n"
+
+
+def proxy_peers(inspected: str, proxy: str) -> list[str]:
+    """The addresses the app sees the reverse proxy connect from, as /32 entries, from `docker inspect` JSON of the container that
+    matters: the bundled proxy's own container (its address on the compose network), or, for a proxy on the host that reaches the app
+    through its published 127.0.0.1 port, the app container's network gateway (docker's userland proxy connects from it).
+    Loopback is always included. Anything unparseable gives loopback only (safe: the header is then simply not believed)."""
+    import ipaddress
+    out = ["127.0.0.1/32"]
+    try:
+        nets = (json.loads(inspected) or [{}])[0].get("NetworkSettings", {}).get("Networks", {}) or {}
+    except (ValueError, IndexError, AttributeError):
+        return out
+    key = "IPAddress" if proxy == "caddy" else "Gateway"
+    for n in nets.values():
+        try:
+            addr = str(ipaddress.ip_address((n or {}).get(key) or ""))
+        except ValueError:
+            continue
+        if f"{addr}/32" not in out:
+            out.append(f"{addr}/32")
+    return out
+
+
+def set_trusted_proxies(home: Path, peers: list[str], span=None) -> bool:
+    """Write the installer's trusted_proxies block into the install's own instance.yaml (an installer-written file only): replace
+    exactly the span trusted_proxies_span() found (pass it in, or it is found here), or append the block when the file has no
+    trusted_proxies key. Nothing else in the file is touched. The new text is checked before it replaces the file: it must still be
+    the old text outside the block, and (when PyYAML is there, as it is in the app) parse to the old mapping with only
+    trusted_proxies set to `peers`. A mismatch writes nothing, prints a warning and returns False. Without PyYAML a block is added to
+    the end of the file only when its last line is a plain `key: value`. The write is atomic (temp file beside the real file, then
+    rename), keeps the file's mode, and follows a symlink to its target."""
+    f = home / "instance.yaml"
+    text = f.read_text()
+    if not text.endswith("\n"):
+        text += "\n"
+    span = span or trusted_proxies_span(text)
+    if span is None:
+        return _tp_refused(f, "its trusted_proxies is not the installer's block")
+    block = "\n".join([*TP_COMMENT, "trusted_proxies:", *[f"  - {q(a)}" for a in peers]]) + "\n"
+    start, end, _ = span if span != "absent" else (len(text), len(text), [])
+    new = text[:start] + block + text[end:]
+    # The text check, which needs no YAML library: read the NEW text back with the same finder the reader uses. Its block must hold
+    # exactly the merged list, and everything outside it must be the old text outside the old block, byte for byte.
+    got = trusted_proxies_span(new)
+    if got in (None, "absent") or got[2] != list(peers) or new[:got[0]] != text[:start] or new[got[1]:] != text[end:]:
+        return _tp_refused(f, "the rewritten block does not read back as the new list with the rest of the file unchanged")
+    try:
+        import yaml
+    except ImportError:          # a host without PyYAML (the app has it): only the text check above, plus a safe place to append
+        yaml = None
+    if yaml is None and span == "absent":
+        last = [ln for ln in text.splitlines() if ln.strip()][-1:] or [""]
+        if last[0] and not re.fullmatch(r"[A-Za-z_][\w.-]*:(\s+[^\s#{\[|>&*!%@`].*)?", last[0]):   # `...`, a flow mapping, a block scalar ...
+            return _tp_refused(f, "its last line is not a plain `key: value`, so a block cannot safely be added after it")
+    if yaml is not None:
+        try:
+            before, after = yaml.safe_load(text) or {}, yaml.safe_load(new)
+            ok = (isinstance(before, dict) and isinstance(after, dict) and after.get("trusted_proxies") == list(peers)
+                  and {k: v for k, v in after.items() if k != "trusted_proxies"} == {k: v for k, v in before.items() if k != "trusted_proxies"})
+        except yaml.YAMLError:
+            ok = False
+        if not ok:
+            return _tp_refused(f, "the result would not read back as the same settings plus the new list")
+    real = f.resolve()           # a symlinked instance.yaml stays a symlink: the target is what changes
+    tmp = real.with_name(real.name + ".tmp")
+    try:
+        tmp.write_text(new)
+        shutil.copymode(real, tmp)
+        os.replace(tmp, real)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return True
+
+
+def _tp_refused(f: Path, why: str) -> bool:
+    print(f"warning: left {f} alone ({why}). Add your proxy's address to trusted_proxies there by hand, then run ./crewboss restart.",
+          file=sys.stderr)
+    return False
+
+
+def installer_managed(home: Path) -> bool:
+    """True only for an instance.yaml this installer wrote (it carries the marker): we never edit one we did not write."""
+    f = home / "instance.yaml"
+    return f.is_file() and INSTANCE_MARKER in f.read_text()
+
+
+_TP_ENTRY = re.compile(r'''^  - (?:"([^"#\s]+)"|'([^'#\s]+)'|([^"'#\s]+))$''')
+_TP_KEY = re.compile(r"^[A-Za-z_][\w.-]*:")
+
+
+def trusted_proxies_span(text: str):
+    """Find the installer's trusted_proxies block ONCE, with no pattern that can cross lines. Returns (start, end, entries): the
+    span of the two installer comment lines, `trusted_proxies:` and the entry lines right after it; "absent" when the file has no
+    trusted_proxies key at all; None for anything else, which means leave the file alone. The block must be exactly: the two comment
+    lines, the key on the very next line, then only entry lines (two-space indent, an address, quoted or not, no comment) up to the end
+    of the file or the next column-0 key. A blank line, a comment, another key in between, odd indentation, a repeated comment or a
+    second trusted_proxies key is not a shape we rewrite."""
+    if not text.endswith("\n"):
+        text += "\n"
+    keys = [m.start() for m in re.finditer(r"(?m)^trusted_proxies:", text)]
+    if not keys:
+        return "absent"
+    head = "\n".join(TP_COMMENT) + "\ntrusted_proxies:\n"
+    if len(keys) != 1 or text.count(head) != 1:
+        return None
+    start = text.index(head)
+    if start + len(head) - len("trusted_proxies:\n") != keys[0] or (start and text[start - 1] != "\n"):
+        return None
+    pos, entries = start + len(head), []
+    for line in text[pos:].splitlines(keepends=True):
+        body = line.rstrip("\n")
+        if _TP_KEY.match(body):
+            break
+        e = _TP_ENTRY.fullmatch(body)
+        if not e:
+            return None
+        entries.append(next(g for g in e.groups() if g))
+        pos += len(line)
+    return start, pos, entries
+
+
+def current_trusted_proxies(home: Path) -> list[str] | None:
+    """The addresses in the installer-written trusted_proxies block (including any the owner added there), [] if there is no
+    trusted_proxies key, None if the key is there in a shape we do not rewrite (see trusted_proxies_span)."""
+    span = trusted_proxies_span((home / "instance.yaml").read_text())
+    return [] if span == "absent" else None if span is None else span[2]
+
+
+def refresh_trusted_proxies(inst: "Install", wait: int = 90) -> bool:
+    """Make trusted_proxies match the proxy that actually reaches the app now (a docker gateway or the bundled proxy's address can
+    change, and an install made before the loopback-only default has none). Only an installer-written instance.yaml with no
+    hand-written trusted_proxies is touched, and only by ADDING addresses: every entry already there (the owner's own proxy included)
+    is kept. Restarts the app once, and only when the list changed. Returns True when it changed."""
+    if not installer_managed(inst.home):
+        return False
+    have = current_trusted_proxies(inst.home)
+    if have is None:
+        return _tp_refused(inst.home / "instance.yaml", "its trusted_proxies is not the installer's block")
+    proxy = "caddy" if inst.env.get("CREWBOSS_INSTALL_PROXY") == "caddy" else "existing"
+    target = run(inst.compose("ps", "-q", "caddy" if proxy == "caddy" else "app"), check=False, capture=True).stdout.strip().split("\n")[0]
+    if not target:
+        return False
+    peers = proxy_peers(run(["docker", "inspect", target], check=False, capture=True).stdout or "", proxy)
+    peers = have + [p for p in peers if p not in have]      # MERGE: an address the owner added to the block is never dropped
+    if peers == have:
+        return False
+    if not set_trusted_proxies(inst.home, peers):            # refused (it said why): the file is as it was, no restart
+        return False
+    run(inst.compose("restart", "app"))
+    port = inst.env.get("APP_PORT", str(DEFAULT_PORT))
+    if not wait_healthy(f"http://127.0.0.1:{port}/healthz", wait):
+        raise Fail("The app did not come back after setting trusted_proxies. See: ./crewboss logs")
+    return True
+
+
+def render_caddyfile(domain: str, email: str | None = None) -> str:
+    glob = f"{{\n\temail {email}\n}}\n\n" if email else ""
+    strips = "".join(f"\trequest_header -{h}\n" for h in FRONT_DOOR_HEADERS)
+    return (f"# Written by `./crewboss install`: the bundled proxy. Let's Encrypt via HTTP-01 (port 80 answers only the ACME\n"
+            f"# challenge and a redirect to https; 443 serves the app).\n"
+            f"{glob}{domain} {{\n\tencode zstd gzip\n\theader Strict-Transport-Security \"max-age=31536000\"\n"
+            f"{strips}\treverse_proxy app:8000\n}}\n")
+
+
+def render_snippets(domain: str, port: int) -> dict[str, str]:
+    caddy = (f"# Caddy: add to your Caddyfile. Websocket upgrades (the /runner socket) work with no extra setting.\n"
+             f"{domain} {{\n"
+             + "".join(f"\trequest_header -{h}\n" for h in FRONT_DOOR_HEADERS)
+             + f"\treverse_proxy 127.0.0.1:{port}\n}}\n")
+    nginx = (f"# nginx: the `map` goes in the http {{}} block; the server block in your sites config. Adjust the certificate\n"
+             f"# paths (certbot writes these). The empty X-*-Front-Door lines stop a client from claiming to be the satellite door.\n"
+             f"map $http_upgrade $connection_upgrade {{\n\tdefault upgrade;\n\t''      close;\n}}\n\n"
+             f"server {{\n\tlisten 443 ssl;\n\tserver_name {domain};\n"
+             f"\tssl_certificate     /etc/letsencrypt/live/{domain}/fullchain.pem;\n"
+             f"\tssl_certificate_key /etc/letsencrypt/live/{domain}/privkey.pem;\n\n"
+             f"\tlocation / {{\n\t\tproxy_pass http://127.0.0.1:{port};\n\t\tproxy_http_version 1.1;\n"
+             f"\t\tproxy_set_header Host $host;\n\t\tproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
+             f"\t\tproxy_set_header X-Forwarded-Proto $scheme;\n"
+             + "".join(f"\t\tproxy_set_header {h} \"\";\n" for h in FRONT_DOOR_HEADERS)
+             + f"\t\t# websocket upgrade (the /runner socket)\n\t\tproxy_set_header Upgrade $http_upgrade;\n"
+             f"\t\tproxy_set_header Connection $connection_upgrade;\n\t\tproxy_read_timeout 3600s;\n\t}}\n}}\n")
+    return {"caddy.txt": caddy, "nginx.txt": nginx}
+
+
+DUCKDNS = """No domain name? A free one takes two minutes (any name you own works just as well):
+  1. Go to https://www.duckdns.org and sign in (GitHub, Google, ...).
+  2. Pick a name, e.g. myteam, and press "add domain": you get myteam.duckdns.org.
+  3. Put this server's PUBLIC IP address in the "current ip" box and press "update ip".
+  4. Make sure ports 80 and 443 reach this server (router/firewall forwarding), then run install again with
+         ./crewboss install --mode network --domain myteam.duckdns.org
+Keep the name for good: passkeys are tied to it, so changing it later means enrolling them again."""
+
+
+def http01_requirements(domain: str, https_port: int = 443, http_port: int = 80) -> str:
+    return (f"For the certificate (Let's Encrypt, HTTP-01) to be issued, all of this must be true:\n"
+            f"  - {domain} has a public DNS record pointing at this server's public IP address;\n"
+            f"  - TCP port 80 from the internet reaches this machine (port {http_port} here): it answers only the challenge and a redirect;\n"
+            f"  - TCP port 443 from the internet reaches this machine (port {https_port} here, forwarded from 443: browsers use https://{domain});\n"
+            f"  - nothing else on this machine is listening on 80 or 443.\n"
+            f"This installer cannot test reachability from outside. If you already checked, add --skip-checks.")
+
+
+def host_addresses() -> set[str]:
+    """This machine's interface addresses (incl. a mesh interface such as wt0 or tailscale0); best effort, stdlib + `ip`."""
+    found: set[str] = set()
+    ip = shutil.which("ip")
+    if ip:
+        try:
+            out = subprocess.run([ip, "-o", "addr"], capture_output=True, text=True, timeout=5).stdout
+            for ln in out.splitlines():
+                m = re.search(r"\binet6? ([0-9a-fA-F:.]+)/", ln)
+                if m:
+                    found.add(m.group(1))
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            found.add(info[4][0])
+    except OSError:
+        pass
+    return found
+
+
+def resolve(domain: str) -> set[str]:
+    return {i[4][0] for i in socket.getaddrinfo(domain, None)}
+
+
+def domain_findings(domain: str, local: set[str] | None = None, resolver=resolve, extra: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """(errors, warnings). Not resolving is an error; resolving to none of this host's addresses (or --public-ip) is a warning,
+    because NAT, a mesh or a CDN make that comparison fuzzy."""
+    try:
+        addrs = resolver(domain)
+    except OSError:
+        return [f"{domain} does not resolve (no DNS record yet?)."], []
+    mine = (host_addresses() if local is None else set(local)) | set(extra or [])
+    if addrs & mine:
+        return [], []
+    return [], [f"{domain} resolves to {', '.join(sorted(addrs))}, which is none of this server's addresses "
+                f"({', '.join(sorted(mine)) or 'unknown'}). Fine behind NAT (pass --public-ip ADDR to say which), a mesh or a "
+                f"load balancer; otherwise the certificate will not be issued."]
+
+
+# --- docker plumbing ------------------------------------------------------------------------------------------------------
+
+def run(cmd: list[str], *, input: str | None = None, check: bool = True, capture: bool = False, env: dict | None = None,
+        timeout: int | None = None) -> subprocess.CompletedProcess:
+    """The one place a process is started (tests replace it)."""
+    res = subprocess.run(cmd, input=input, text=True, capture_output=capture, env=env if env is not None else clean_env(),
+                         timeout=timeout)
+    if check and res.returncode != 0:
+        raise Fail(f"command failed ({res.returncode}): {' '.join(cmd[:6])} ...\n{(res.stderr or '').strip()[-800:]}")
+    return res
+
+
+class Install:
+    """One install = (project, home). Builds every compose command line."""
+
+    def __init__(self, project: str, home: Path, repo: Path = REPO, env: dict | None = None):
+        self.project, self.home, self.repo = project, Path(home), Path(repo)
+        self.env = env or {}
+
+    @property
+    def env_file(self) -> Path:
+        return self.home / ENV_NAME
+
+    def compose(self, *args: str) -> list[str]:
+        cmd = ["docker", "compose", "-p", self.project, "--env-file", str(self.env_file),
+               "--project-directory", str(self.repo), "-f", str(self.repo / "docker-compose.yml")]
+        # An install's own extra mounts and add-ons (docker-compose.addons.example.yml shows the shape): picked up
+        # when <home>/compose.override.yml exists. Plain COMPOSE_FILE can't do this: it is stripped from every call.
+        if (self.home / OVERRIDE_NAME).is_file():
+            cmd += ["-f", str(self.home / OVERRIDE_NAME)]
+        if self.env.get("CREWBOSS_INSTALL_PROXY") == "caddy":
+            cmd += ["--profile", "caddy"]
+        return cmd + list(args)
+
+    @classmethod
+    def load(cls, home: Path, project: str | None = None, repo: Path = REPO) -> "Install":
+        home = Path(home).expanduser()
+        f = home / ENV_NAME
+        if not f.is_file():
+            raise Fail(f"{f} not found: no Crewboss install in {home} (run `./crewboss install`, or pass --home).")
+        env = parse_env(f.read_text())
+        name = env.get("COMPOSE_PROJECT_NAME")
+        if not name or not PROJECT_RE.match(name):
+            raise Fail(f"{f} has no valid COMPOSE_PROJECT_NAME.")
+        if project and project != name:
+            raise Fail(f"--project {project} does not match this install's project {name} (from {f}).")
+        if "CREWBOSS_IMAGE" not in env:      # an install from before the explicit image name: add it (never changes an existing key)
+            add = f"CREWBOSS_IMAGE={name}-app\n"
+            text = f.read_text()
+            write_private(f, text + ("" if text.endswith("\n") else "\n") + add, overwrite=True)
+            env = parse_env(f.read_text())
+        return cls(name, home, repo, env)
+
+    def instance(self) -> dict:
+        data = {}
+        f = self.home / "instance.yaml"
+        if f.is_file():
+            for ln in f.read_text().splitlines():
+                m = re.match(r"^(public_url|auth|tls_check): *(.+?) *$", ln)
+                if m:
+                    data[m.group(1)] = m.group(2).strip('"')
+        return data
+
+
+def mount_problems(cfg: dict, home: Path, project: str) -> list[str]:
+    """What a rendered compose config (`docker compose config --format json`) would reach OUTSIDE this install: a bind-mount source
+    that is not inside the instance folder, or a named volume that is not this project's (so an install can never attach to another
+    install's data, e.g. a default like crewboss_db-data or ~/.local/share/...)."""
+    out = []
+    root = os.path.realpath(home)
+    for svc, spec in (cfg.get("services") or {}).items():
+        for v in spec.get("volumes") or []:
+            if isinstance(v, dict) and v.get("type") == "bind":
+                src = os.path.realpath(v.get("source", ""))
+                if src != root and not src.startswith(root + os.sep):
+                    out.append(f"service {svc} mounts {v.get('source')} (outside {home})")
+    for kind in ("secrets", "configs"):
+        for key, item in (cfg.get(kind) or {}).items():
+            f = (item or {}).get("file")
+            if f:
+                src = os.path.realpath(f)
+                if src != root and not src.startswith(root + os.sep):
+                    out.append(f"{kind[:-1]} {key} reads the file {f} (outside {home})")
+    for svc, spec in (cfg.get("services") or {}).items():
+        if spec.get("devices"):
+            out.append(f"service {svc} asks for host devices {spec['devices']}")
+    for key, vol in (cfg.get("volumes") or {}).items():
+        name = (vol or {}).get("name") or f"{project}_{key}"
+        if not name.startswith(project + "_"):
+            out.append(f"volume {key} is named {name!r}, not {project}_...")
+    return out
+
+
+def build_failure(home: Path, log: str) -> str:
+    return (f"The image did not build. Last 40 lines (the whole log is {home / 'build.log'}):\n"
+            + "\n".join(log.strip().splitlines()[-40:]))
+
+
+def check_mounts(inst: "Install") -> None:
+    res = run(inst.compose("config", "--format", "json"), check=False, capture=True)
+    if res.returncode != 0:
+        raise Fail(f"docker compose could not render this install's configuration:\n{(res.stderr or '').strip()[-800:]}")
+    try:
+        cfg = json.loads(res.stdout)
+    except ValueError:
+        raise Fail("docker compose config did not return JSON.") from None
+    problems = mount_problems(cfg, inst.home, inst.project)
+    if problems:
+        raise Fail("Refusing to start: this install would reach outside its own folder:\n  " + "\n  ".join(problems) +
+                   "\nNothing was started. This is a bug in the installer's env file or in a compose override.")
+
+
+def preflight(repo: Path = REPO) -> None:
+    if sys.version_info < (3, 10):
+        raise Fail("Python 3.10 or newer is needed to run this script.")
+    if not shutil.which("docker"):
+        raise Fail("docker is not installed (or not on PATH). Install Docker Engine: https://docs.docker.com/engine/install/")
+    res = run(["docker", "compose", "version", "--short"], check=False, capture=True)
+    ver = (res.stdout or "").strip().lstrip("v")
+    if res.returncode != 0 or not ver or not ver[0].isdigit() or int(ver.split(".")[0]) < 2:
+        raise Fail("`docker compose` (Compose v2) is needed. Install the docker-compose-plugin package.")
+    if run(["docker", "info"], check=False, capture=True).returncode != 0:
+        raise Fail("the docker daemon is not reachable. Start it, and make sure your user may use it (docker group).")
+    if not (repo / ".git").exists() or not (repo / "docker-compose.yml").is_file():
+        raise Fail(f"{repo} is not a Crewboss git checkout (no .git or docker-compose.yml). Get it with `git clone` (a ZIP download from GitHub has no .git and won't install) and run it from the clone.")
+
+
+def project_in_use(project: str) -> str | None:
+    """A reason the project name is taken (containers or its database volume exist), else None."""
+    lab = f"label=com.docker.compose.project={project}"
+    if run(["docker", "ps", "-a", "-q", "--filter", lab], check=False, capture=True).stdout.strip():
+        return f"a compose project named {project!r} already has containers"
+    if run(["docker", "volume", "ls", "-q", "--filter", lab], check=False, capture=True).stdout.strip():
+        return f"a compose project named {project!r} already has volumes"
+    if run(["docker", "volume", "inspect", f"{project}_db-data"], check=False, capture=True).returncode == 0:
+        return f"the database volume {project}_db-data already exists"
+    return None
+
+
+def refuse_rules(home: Path, project: str) -> None:
+    """The refusals that protect every other folder and install. Nothing bypasses them (there is no --force). Raises Fail.
+    Accepted: a missing or EMPTY folder, or one that is a re-run of THIS install (a compose.env naming this project and, if it
+    has an instance.yaml, our install marker in it)."""
+    if not PROJECT_RE.match(project):
+        raise Fail("--project must be lowercase letters, digits, - or _ (max 40), starting with a letter or digit.")
+    if home.is_symlink():
+        raise Fail(f"{home} is a symlink ({os.path.realpath(home)}): it may be another install's instance folder. Pick a real, new folder as --home.")
+    if not home.exists():
+        pass
+    elif not home.is_dir():
+        raise Fail(f"{home} exists and is not a folder.")
+    else:
+        real = home.resolve()
+        repo = REPO.resolve()
+        if (home / ".git").exists() or repo == real or real in repo.parents:
+            raise Fail(f"{home} is, or contains, a git checkout. The instance folder holds secrets and is mounted into the "
+                       f"container: use a separate folder such as ~/.crewboss.")
+        if any(home.iterdir()):
+            env_file = home / ENV_NAME
+            same = env_file.is_file() and parse_env(env_file.read_text()).get("COMPOSE_PROJECT_NAME") == project
+            inst = home / "instance.yaml"
+            if not same:
+                raise Fail(f"{home} is not empty and is not an install of project {project!r} (no matching {ENV_NAME}). "
+                           f"Pick a missing or empty folder as --home.")
+            if inst.exists() and INSTANCE_MARKER not in inst.read_text():
+                raise Fail(f"{inst} was not written by this installer (no install marker). Pick another --home.")
+    why = project_in_use(project)
+    if why:
+        raise Fail(f"{why}. Pick another --project (default {DEFAULT_PROJECT}); this installer never touches an existing project.")
+
+
+# --- prompts --------------------------------------------------------------------------------------------------------------
+
+def ask(question: str, default: str = "", args=None) -> str:
+    if args is not None and args.yes:
+        return default
+    suffix = f" [{default}]" if default else ""
+    try:
+        ans = input(f"{question}{suffix}: ").strip()
+    except EOFError:
+        ans = ""
+    return ans or default
+
+
+def ask_yes(question: str, default: bool, args=None) -> bool:
+    if args is not None and args.yes:
+        return default
+    ans = ask(f"{question} ({'Y/n' if default else 'y/N'})", "", None).lower()
+    return default if not ans else ans.startswith("y")
+
+
+# --- install --------------------------------------------------------------------------------------------------------------
+
+def write_private(path: Path, text: str, overwrite: bool = False) -> bool:
+    """Create a 0600 file from its first byte. False (untouched) when it exists and overwrite is off."""
+    if path.exists() and not overwrite:
+        return False
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if overwrite else os.O_EXCL)
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(text)
+    os.chmod(path, 0o600)
+    return True
+
+
+def make_secrets(inst: Install) -> None:
+    """The secrets the app needs at start-up. Existing files are never replaced."""
+    sec = inst.home / "secrets"
+    # Fernet key (urlsafe base64 of 32 random bytes): opens each account's SSH CA private key.
+    if write_private(sec / "ssh-ca-enc-key", base64.urlsafe_b64encode(os.urandom(32)).decode() + "\n"):
+        say("  made secrets/ssh-ca-enc-key")
+    image = image_name(inst)
+    uid = f"{os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") else "0:0"
+    for module, fname in (("app.push", "vapid-private.pem"), ("app.runner_identity", "runner-identity-key")):
+        if (sec / fname).exists():
+            continue
+        run(["docker", "run", "--rm", "--user", uid, "-v", f"{sec}:/out", "--entrypoint", "python", image,
+             "-m", module, "keygen", f"/out/{fname}"], capture=True)
+        if (sec / fname).exists():
+            os.chmod(sec / fname, 0o600)
+        say(f"  made secrets/{fname}")
+
+
+CLICK_THROUGH = "Your browser will warn you once. That's expected on your own network: click Advanced, then Continue."
+
+
+def lan_card(url: str, fingerprint: str) -> str:
+    """The first half of the LAN result card (the one-time password follows, printed by the app; the warning closes it)."""
+    host = url.split("//", 1)[1].split("/", 1)[0]
+    return (f"Crewboss is ready:  {url}\n{CLICK_THROUGH}\n"
+            f"To be extra careful, check the browser shows this fingerprint for the connection:\n"
+            f"  {fingerprint}   (also at http://{host}/trust)")
+
+
+def make_frontdoor(inst: Install, *, lan_hosts: list[str] | None = None, domain: str | None = None, email: str | None = None,
+                   name: str = "Crewboss", https_port: int = 443, http_port: int = 80, reissue: bool = False, out_dir: Path | None = None) -> dict:
+    """The front door's files: <home>/frontdoor/ (Caddyfile, front_door.json, the LAN certificate) and secrets/frontdoor-token.
+    Made by the app image's own `frontdoor_agent init` (it has the cryptography library), as the install user."""
+    fd = out_dir or inst.home / "frontdoor"
+    (fd / "logs").mkdir(parents=True, exist_ok=True)
+    os.chmod(fd, 0o755)
+    os.chmod(fd / "logs", 0o755)
+    sec = inst.home / "secrets"
+    sec.mkdir(parents=True, exist_ok=True)
+    if write_private(sec / "frontdoor-token", secrets.token_urlsafe(32) + "\n"):
+        say("  made secrets/frontdoor-token")
+    uid = f"{os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") else "0:0"
+    cmd = ["docker", "run", "--rm", "--user", uid, "-v", f"{fd}:/out", "--entrypoint", "python", image_name(inst),
+           "-m", "app.frontdoor_agent", "init", "--out", "/out", "--name", name,
+           "--https-port", str(https_port), "--http-port", str(http_port)]
+    for h in lan_hosts or []:
+        cmd += ["--lan-host", h]
+    if domain:
+        cmd += ["--from-domain", domain] + (["--email", email] if email else [])
+    if reissue:
+        cmd.append("--reissue")
+    res = run(cmd, check=False, capture=True)
+    if res.returncode != 0:
+        raise Fail("Could not set up the front door files:\n" + ((res.stderr or res.stdout or "").strip()[-500:]))
+    try:
+        return json.loads((res.stdout or "").strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        raise Fail("The front door setup gave an answer the installer could not read.") from None
+
+
+def write_env_lines(inst: Install, extra: dict) -> None:
+    """Add (never change) keys in compose.env, keeping it 0600."""
+    f = inst.env_file
+    text = f.read_text()
+    have = parse_env(text)
+    add = "".join(f"{k}={env_value(v)}\n" for k, v in extra.items() if k not in have)
+    if add:
+        write_private(f, text + ("" if text.endswith("\n") else "\n") + add, overwrite=True)
+    inst.env = parse_env(f.read_text())
+
+
+INSTALLER_CADDYFILE = "# Written by `./crewboss install`"
+
+
+def ensure_frontdoor(inst: Install) -> str:
+    """Bring an install that has the bundled Caddy from before #976 onto the front door sidecar (run by `up`, safe to repeat):
+    makes frontdoor/, the sidecar token and the env keys, and moves the Caddyfile in. An installer-written Caddyfile is re-rendered
+    by the sidecar's own template (so the card can manage it); a hand-edited one is copied untouched and the card stays read-only.
+    Returns 'done' | 'kept-hand-edited' | 'not-needed'."""
+    if inst.env.get("CREWBOSS_INSTALL_PROXY") != "caddy" or "CREWBOSS_FRONTDOOR_DIR" in inst.env:
+        return "not-needed"
+    fd = inst.home / "frontdoor"
+    tmp = inst.home / "frontdoor.new"
+    old = inst.home / "Caddyfile"
+    uid, gid = (os.getuid(), os.getgid()) if hasattr(os, "getuid") else (0, 0)
+    text = old.read_text() if old.is_file() else ""
+    if not text:
+        raise Fail(f"There is no {old} to move under the front door, so nothing was changed. Run `./crewboss up` again once it is back.")
+    domain = email = None
+    m = re.search(r"^([a-z0-9.-]+) \{$", text, re.M)
+    e = re.search(r"^\temail (\S+)$", text, re.M)
+    cand_domain, cand_email = (m.group(1) if m else None), (e.group(1) if e else None)
+    # Installer-written ONLY if it is byte-for-byte what the old installer rendered for its own domain and email.
+    if cand_domain and valid_domain(cand_domain) and text == render_caddyfile(cand_domain, cand_email):
+        domain, email = cand_domain, cand_email
+    shutil.rmtree(tmp, ignore_errors=True)         # a failed earlier try leaves nothing that counts: the env key is the last thing written
+    if domain:
+        run(inst.compose("build", "app"), check=True, capture=True)
+        make_frontdoor(inst, domain=domain, email=email, https_port=int(inst.env.get("CREWBOSS_HTTPS_PORT", "443")),
+                       http_port=int(inst.env.get("CREWBOSS_HTTP_PORT", "80")), out_dir=tmp)
+        kind = "done"
+    else:
+        (tmp / "logs").mkdir(parents=True, exist_ok=True)
+        os.chmod(tmp, 0o755)
+        os.chmod(tmp / "logs", 0o755)
+        if write_private(inst.home / "secrets" / "frontdoor-token", secrets.token_urlsafe(32) + "\n"):
+            say("  made secrets/frontdoor-token")
+        (tmp / "Caddyfile").write_text(text)
+        kind = "kept-hand-edited"
+    if not (tmp / "Caddyfile").is_file():
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise Fail("The front door files were not made (no Caddyfile), so nothing was changed. Run `./crewboss up` again to retry.")
+    shutil.rmtree(fd, ignore_errors=True)
+    tmp.rename(fd)
+    write_env_lines(inst, {"CREWBOSS_FRONTDOOR_DIR": str(fd), "CREWBOSS_UID": str(uid), "CREWBOSS_GID": str(gid)})   # only now is it migrated
+    if kind == "done":
+        say("Moved the bundled proxy's settings into frontdoor/ (the Administration -> Front door card manages them now).")
+    else:
+        say("Your Caddyfile was edited by hand, so it is left as it is. The Front door card will be read-only for this install.")
+    return kind
+
+
+def image_name(inst: Install) -> str:
+    res = run(inst.compose("config", "--images"), check=False, capture=True)
+    for ln in (res.stdout or "").split():
+        if ln.endswith("-app"):
+            return ln
+    return f"{inst.project}-app"
+
+
+def wait_healthy(url: str, seconds: int, opener=urllib.request.urlopen, sleep=time.sleep) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            with opener(url, timeout=3) as r:
+                if r.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        sleep(2)
+    return False
+
+
+def port_number(text: str) -> int:
+    try:
+        n = int(text)
+    except ValueError:
+        n = 0
+    if not 1 <= n <= 65535:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a port (1-65535)")
+    return n
+
+
+def choose_public_port(args, proxy: str, domain: str | None = None) -> int:
+    """The port browsers put in the address (public_url, origin_hosts, passkeys), which is NOT always the port the container binds
+    (--https-port): a router that forwards 443 to it leaves browsers on plain https://name. Default 443; --public-port says otherwise;
+    interactively, a non-443 --https-port with the bundled proxy asks."""
+    if getattr(args, "public_port", None) is not None:
+        return args.public_port
+    if proxy == "caddy" and args.https_port != 443 and not args.yes:
+        if ask_yes(f"The bundled proxy listens on port {args.https_port} here. Do browsers reach it as https://{domain or 'NAME'} "
+                   f"(your router forwards 443 to port {args.https_port})? 'n' means https://{domain or 'NAME'}:{args.https_port}", True, args):
+            return 443
+        return args.https_port
+    return 443
+
+
+def parse_route_src(text: str) -> str | None:
+    """The `src` address out of `ip route get 1.1.1.1` output (it sends nothing)."""
+    m = re.search(r"\bsrc\s+(\d{1,3}(?:\.\d{1,3}){3})\b", text or "")
+    return m.group(1) if m else None
+
+
+def usable_lan_ip(ip: str | None) -> bool:
+    try:
+        a = ipaddress.ip_address(ip or "")
+    except ValueError:
+        return False
+    return a.version == 4 and not (a.is_loopback or a.is_unspecified or a.is_link_local or a.is_multicast)
+
+
+def lan_address(runner=None, udp=None) -> str | None:
+    """This computer's address on the local network: `ip route get 1.1.1.1` src, else the UDP-connect trick. Neither sends a packet."""
+    try:
+        res = (runner or (lambda: subprocess.run(["ip", "-4", "route", "get", "1.1.1.1"], capture_output=True, text=True, timeout=5)))()
+        ip = parse_route_src(getattr(res, "stdout", res) if res is not None else "")
+        if usable_lan_ip(ip):
+            return ip
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        if udp:
+            ip = udp()
+        else:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+                sk.connect(("1.1.1.1", 9))
+                ip = sk.getsockname()[0]
+        return ip if usable_lan_ip(ip) else None
+    except OSError:
+        return None
+
+
+def mdns_name(resolver=None) -> str | None:
+    """`<hostname>.local` when this computer's name resolves that way (the person may prefer a name to an address)."""
+    name = f"{socket.gethostname().split('.')[0].lower()}.local"
+    try:
+        (resolver or socket.gethostbyname)(name)
+    except OSError:
+        return None
+    return name if LAN_HOST_RE.match(name) else None
+
+
+def valid_lan_host(h: str) -> bool:
+    """An IPv4 address or a plain host name. IPv6 addresses are refused in v1 (the Caddyfile brackets and the app's origin check do not
+    agree on them yet), and with them zone IDs (`fe80::1%eth0`), whose text could carry newlines or braces into the Caddyfile."""
+    if not isinstance(h, str) or h != h.strip():
+        return False
+    try:
+        return ipaddress.ip_address(h).version == 4
+    except ValueError:
+        return bool(LAN_HOST_RE.match(h or ""))
+
+
+MODE_QUESTION = """How will people open Crewboss?
+  1) Just on this computer                     (quickest, for trying it out)
+  2) On my home or office network              (other computers and phones on the same Wi-Fi)  [recommended]
+  3) On the internet with my own web address   (needs a web address and port 80 opened on your router)"""
+MODE_CHOICES = {"1": "localhost", "2": "lan", "3": "network"}
+
+
+def ask_mode(args) -> str:
+    if args.yes:
+        return "localhost"
+    say(MODE_QUESTION)
+    while True:
+        ans = ask("Choose 1, 2 or 3", "2").strip()
+        if ans in MODE_CHOICES:
+            return MODE_CHOICES[ans]
+        say("Please type 1, 2 or 3.")
+
+
+def collect_lan_hosts(args) -> list[str]:
+    hosts = [h.strip().lower() for h in (args.lan_host or []) if h.strip()]
+    for h in hosts:
+        if not valid_lan_host(h):
+            raise Fail(f"{h!r} is not a network address or name (an IPv4 address like 192.0.2.20, or a name like office-pc.local). IPv6 addresses are not supported yet: use the IPv4 address or a name.")
+    if hosts:
+        return list(dict.fromkeys(hosts))
+    ip = lan_address()
+    if not ip and args.yes:
+        raise Fail("Could not work out this computer's address on your network. Pass it yourself: --lan-host 192.0.2.20")
+    while not ip:
+        ip = ask("This computer's address on your network (like 192.0.2.20)").strip()
+        if not valid_lan_host(ip):
+            say("That does not look like an address.")
+            ip = None
+    say(f"Other computers will open Crewboss at https://{ip}")
+    if not ask_yes("Is that right?", True, args):
+        ip = ""
+        while not valid_lan_host(ip):
+            ip = ask("Type the address other computers should use").strip().lower()
+    hosts = [ip]
+    nm = None if args.yes else mdns_name()
+    if nm and ask_yes(f"This computer also answers to {nm}. Let people use that name too?", False, args):
+        hosts.append(nm)
+    say("Tip: ask your router to always give this computer the same address (often called 'DHCP reservation').")
+    return hosts
+
+
+def collect_answers(args) -> dict:
+    """Mode, domain, proxy, port: from flags, else asked. Returns the plan. Raises Fail with advice."""
+    mode = args.mode or ask_mode(args)
+    plan = {"mode": mode, "domain": None, "proxy": "none"}
+    if mode == "lan":
+        plan.update(proxy="caddy", lan_hosts=collect_lan_hosts(args))
+    if mode == "network":
+        domain = (args.domain or "").strip().lower()
+        if not domain and not args.yes:
+            domain = ask("Domain name for this install (e.g. crewboss.example.com; leave empty if you have none)").strip().lower()
+        if not domain:
+            raise Fail("A network install needs a domain name (certificates are issued to names).\n\n" + DUCKDNS, 2)
+        if not valid_domain(domain):
+            raise Fail(f"{domain!r} is not a valid domain name (a host name like crewboss.example.com; not an IP address).")
+        plan["domain"] = domain
+        proxy = args.proxy
+        if not proxy:
+            have = False if args.yes else ask_yes("Do you already run a reverse proxy with HTTPS on this machine?", False)
+            proxy = "existing" if have else "bundled"
+        plan["proxy"] = "caddy" if proxy == "bundled" else "existing"
+    return plan
+
+
+def do_install(args) -> int:
+    repo = REPO
+    preflight(repo)
+    home = Path(args.home).expanduser()
+    if not home.is_absolute():
+        home = Path.cwd() / home
+    project = args.project
+    check_path(home)
+    refuse_rules(home, project)
+    plan = collect_answers(args)
+    mode, domain, proxy = plan["mode"], plan["domain"], plan["proxy"]
+    lan_hosts = plan.get("lan_hosts") or []
+
+    # domain checks (network): resolves; points here (warn, --skip-dns-check to go on); what must be true for HTTP-01
+    if mode == "network":
+        if args.skip_checks:
+            say("Skipping the domain and port checks (--skip-checks).")
+        else:
+            errors, warnings = domain_findings(domain, extra=args.public_ip)
+            for w in warnings:
+                say("WARNING: " + w)
+            if errors:
+                raise Fail("\n".join(errors) + "\nPoint the name at this server first, or re-run with --skip-checks.")
+            if warnings and not args.skip_dns_check:
+                if args.yes or not ask_yes("Continue anyway?", False):
+                    raise Fail("Stopping: the name does not obviously point here. Re-run with --skip-dns-check (or --skip-checks) to go on.")
+        if proxy == "caddy":
+            say(http01_requirements(domain, args.https_port, args.http_port))
+            if not args.skip_checks:
+                for p in (args.http_port, args.https_port):
+                    if port_is_listening(p):
+                        raise Fail(f"port {p} on this machine is already in use, and the bundled proxy needs 80 and 443. "
+                                   f"Stop whatever uses it, or answer 'yes' to \"I already run a reverse proxy\" and use the snippet.")
+        say("Remember: keep this name for good. Passkeys are tied to it; changing it means enrolling them again.")
+
+    if mode == "lan" and not args.skip_checks:
+        for p in (args.http_port, args.https_port):
+            if port_is_listening(p):
+                raise Fail(f"port {p} on this computer is already in use, and the network address needs ports 80 and 443. "
+                           f"Stop whatever uses it, or choose other ports with --http-port and --https-port.")
+
+    # port
+    port = args.port
+    if port is None:
+        port = DEFAULT_PORT
+        free = pick_port(DEFAULT_PORT)
+        if free != DEFAULT_PORT:
+            say(f"Port {DEFAULT_PORT} is already in use on this machine.")
+            if ask_yes(f"Use {free} instead?", True, args):
+                port = free
+            else:
+                raise Fail("Pass --port N to choose another port.")
+    elif not port_is_free(port):
+        raise Fail(f"port {port} is already in use; the next free one is {pick_port(port)} (--port {pick_port(port)}).")
+
+    pub_port = choose_public_port(args, plan["proxy"], domain) if mode == "network" else 443
+    public_url = (f"https://{domain}" + (f":{pub_port}" if pub_port != 443 else "")) if mode == "network" else f"http://localhost:{port}"
+    if mode == "lan":
+        public_url = f"https://{lan_hosts[0]}" + (f":{args.https_port}" if args.https_port != 443 else "")
+    tls_check = None
+    if mode == "lan":
+        tls_check = args.tls_check or "warn"          # the certificate is self-signed on purpose
+    if mode == "network":
+        tls_check = args.tls_check or "enforce"
+        if proxy == "existing" and not args.proxy_ready and not args.tls_check:
+            if args.yes or not ask_yes("Is your proxy already set up for this name (after you add the snippet below)?", False):
+                tls_check = "warn"
+    inst = Install(project, home, REPO, {"CREWBOSS_INSTALL_PROXY": proxy})
+
+    say(f"\nInstalling '{args.name}' as compose project '{project}' in {home}")
+    say(f"  address: {public_url}   (app on 127.0.0.1:{port})")
+    if not args.yes and not ask_yes("Go ahead?", True):
+        raise Fail("Nothing was changed.")
+
+    # write the instance folder
+    old_env = parse_env((home / ENV_NAME).read_text()) if (home / ENV_NAME).is_file() else {}
+    for d in (home, home / "secrets", home / "materials", home / "exports", home / "ca-uploads"):
+        d.mkdir(parents=True, exist_ok=True)
+    os.chmod(home, 0o700)
+    os.chmod(home / "secrets", 0o700)
+    os.chmod(home / "exports", 0o700)
+    password = old_env.get("POSTGRES_PASSWORD") or secrets.token_urlsafe(32)
+    write_private(home / ENV_NAME, render_env(project=project, port=port, home=home, password=password, proxy=proxy, mode=mode,
+                                              http_port=args.http_port, https_port=args.https_port), overwrite=True)
+    (home / "instance.yaml").write_text(render_instance(
+        name=args.name, public_url=public_url, domain=domain, port=port, tls_check=tls_check,
+        tls_connect="caddy:443" if proxy == "caddy" else None, lan_hosts=lan_hosts, https_port=args.https_port))
+    inst.env = parse_env(inst.env_file.read_text())
+    if proxy == "existing":
+        (home / "proxy").mkdir(exist_ok=True)
+        snippets = render_snippets(domain, port)
+        for fname, text in snippets.items():
+            (home / "proxy" / fname).write_text(text)
+        say("\nYour reverse proxy must send https://%s to 127.0.0.1:%d. Ready-made snippets (also saved in %s):\n" % (domain, port, home / "proxy"))
+        say(snippets["caddy.txt"])
+        say(snippets["nginx.txt"])
+        if tls_check == "enforce" and not args.yes:
+            input("Add one of them to your proxy and reload it, then press Enter to continue ")
+        elif tls_check == "warn":
+            say("The certificate check is set to 'warn' for now. Once the proxy serves the name, set tls_check: enforce in "
+                f"{home / 'instance.yaml'} and run ./crewboss restart.")
+    say("Building the image (the first time takes a few minutes; the log goes to build.log in the instance folder) ...")
+    res = run(inst.compose("--progress", "plain", "build", "app"), check=False, capture=True)
+    (home / "build.log").write_text((res.stdout or "") + (res.stderr or ""))
+    os.chmod(home / "build.log", 0o600)
+    if res.returncode != 0:
+        raise Fail(build_failure(home, (res.stderr or "") + (res.stdout or "")))
+    say("Making the secrets the app needs ...")
+    make_secrets(inst)
+    front = None
+    if proxy == "caddy":
+        front = make_frontdoor(inst, lan_hosts=lan_hosts, domain=domain, email=args.acme_email, name=args.name,
+                               https_port=args.https_port, http_port=args.http_port, reissue=(home / "frontdoor" / "lan.key").is_file())
+    check_mounts(inst)
+    say("Starting ...")
+    run(inst.compose("up", "-d"))
+    wait = 90 + (args.tls_grace if tls_check == "enforce" else 0)
+    if not wait_healthy(f"http://127.0.0.1:{port}/healthz", wait):
+        logs = run(inst.compose("logs", "--tail", "25", "app"), check=False, capture=True).stdout
+        raise Fail(f"The app did not answer /healthz within {wait} s. Last log lines:\n{logs}\n"
+                   f"See: ./crewboss logs{'' if home == Path.home() / '.crewboss' else f' --home {home}'}. "
+                   + ("With tls_check: enforce the app refuses to start until the public certificate is valid for the name." if tls_check == "enforce" else ""))
+    # Trust X-Forwarded-For from the actual proxy only: the app's default is loopback, and the proxy reaches it from a container address.
+    refresh_trusted_proxies(inst, wait)
+    if mode == "lan":
+        say(lan_card(public_url, (front.get("lan") or {}).get("cert_sha256", "?")))
+    else:
+        say(f"Crewboss is up: {public_url}")
+    code = create_owner(inst, args)
+    if mode == "lan":
+        say(f"{LAN_WARNING} (Administration → Front door)")
+    say()
+    say("Day to day: ./crewboss up | down | status | logs" + ("" if home == Path.home() / ".crewboss" else f" --home {home}"))
+    return code
+
+
+def create_owner(inst: Install, args, reset: bool = False) -> int:
+    """Make (or --reset) the owner: the app prints a one-time TEMPORARY PASSWORD (24 h, once). Nobody chooses a password (#809)."""
+    cmd = inst.compose("exec", "-T", "app", "python", "-m", "app.cli", "owner", "create", "--username", args.owner_username)
+    if reset:
+        cmd.append("--reset")
+    res = run(cmd, check=False, capture=True)
+    sys.stdout.write(res.stdout or "")
+    if res.returncode != 0:
+        raise Fail((res.stderr or "owner create failed").strip()[-400:])
+    return 0
+
+
+def cmd_reset_owner(args) -> int:
+    inst = Install.load(Path(args.home).expanduser(), args.project)
+    res = run(inst.compose("exec", "-T", "app", "python", "-m", "app.cli", "reset-owner", "--yes"), check=False, capture=True)
+    sys.stdout.write(res.stdout or "")
+    if res.returncode != 0:
+        raise Fail((res.stderr or "reset-owner failed").strip()[-400:])
+    return 0
+
+
+# --- up / down / status / logs ---------------------------------------------------------------------------------------------
+
+def cmd_up(args) -> int:
+    inst = Install.load(Path(args.home).expanduser(), args.project)
+    ensure_frontdoor(inst)                  # an install from before #976: bundled Caddy moves under the front door sidecar
+    run(inst.compose("up", "-d"))
+    port = inst.env.get("APP_PORT", str(DEFAULT_PORT))
+    if refresh_trusted_proxies(inst):      # an upgraded install: keep trusted_proxies right (one restart, only when it changed)
+        say("Updated trusted_proxies in instance.yaml to the address your proxy connects from.")
+    say(f"{inst.project} is starting: {inst.instance().get('public_url', 'http://localhost:' + port)}")
+    return 0
+
+
+def cmd_lan_address(args) -> int:
+    """After this computer's address changes: new certificate (same key), instance.yaml's hosts, restart."""
+    inst = Install.load(Path(args.home).expanduser(), args.project)
+    fdj = inst.home / "frontdoor" / "front_door.json"
+    try:
+        lan = (json.loads(fdj.read_text()) or {}).get("lan")
+    except (OSError, ValueError):
+        lan = None
+    if not lan:
+        raise Fail("This install is not in LAN mode (no network address certificate in frontdoor/front_door.json).")
+    new = (args.ip or lan_address() or "").strip().lower()
+    if not usable_lan_ip(new):
+        raise Fail("Could not work out this computer's address on your network. Pass it: ./crewboss lan-address 192.0.2.20")
+    old_ips = [h for h in lan["hosts"] if usable_lan_ip(h)]
+    names = [h for h in lan["hosts"] if h not in old_ips]
+    hosts = [new] + names
+    if hosts == lan["hosts"]:
+        say(f"The address is already {new}: nothing to change.")
+        return 0
+    make_frontdoor(inst, lan_hosts=hosts, name=inst.instance().get("name", "Crewboss"), https_port=int(lan.get("https_port", 443)),
+                   http_port=int(lan.get("http_port", 80)), reissue=True)
+    f = inst.home / "instance.yaml"
+    if f.is_file() and installer_managed(inst.home):
+        text = f.read_text()
+        for o in old_ips:
+            text = re.sub(rf"(?<![\w.]){re.escape(o)}(?![\w.])", new, text)
+        f.write_text(text)
+    run(inst.compose("up", "-d", "--force-recreate"))
+    say(f"Crewboss now answers at https://{new}{'' if int(lan.get('https_port', 443)) == 443 else ':' + str(lan.get('https_port'))}. "
+        "The certificate is new, so browsers will warn once more.")
+    return 0
+
+
+def cmd_down(args) -> int:
+    inst = Install.load(Path(args.home).expanduser(), args.project)
+    if args.delete_data:
+        typed = args.confirm_project
+        if typed is None:
+            typed = input(f"This deletes the DATABASE and every volume of '{inst.project}'. Type the project name to confirm: ").strip()
+        if typed != inst.project:
+            raise Fail("The name did not match: nothing was deleted.")
+        run(inst.compose("down", "-v"))
+        say(f"Stopped and deleted the data of {inst.project}. The folder {inst.home} (settings, secrets) is untouched.")
+    else:
+        run(inst.compose("down"))
+        say(f"Stopped {inst.project}. Your data is kept (volume {inst.env.get('CREWBOSS_DB_VOLUME', '')}).")
+    return 0
+
+
+def cmd_restart(args) -> int:
+    inst = Install.load(Path(args.home).expanduser(), args.project)
+    run(inst.compose("up", "-d", "--force-recreate"))
+    return 0
+
+
+def cert_days_left(domain: str, port: int = 443, timeout: float = 5) -> tuple[int | None, str]:
+    """(days left, '') or (None, problem) for the certificate a normal client would get from domain:port."""
+    try:
+        with socket.create_connection((domain, port), timeout=timeout) as raw:
+            with ssl.create_default_context().wrap_socket(raw, server_hostname=domain) as tls:
+                cert = tls.getpeercert()
+        return int((ssl.cert_time_to_seconds(cert["notAfter"]) - time.time()) // 86400), ""
+    except ssl.SSLCertVerificationError as exc:
+        return None, f"not trusted: {getattr(exc, 'verify_message', exc)}"
+    except (OSError, KeyError, ValueError) as exc:
+        return None, f"could not check ({exc.__class__.__name__})"
+
+
+def cmd_status(args) -> int:
+    inst = Install.load(Path(args.home).expanduser(), args.project)
+    ins = inst.instance()
+    port = inst.env.get("APP_PORT", str(DEFAULT_PORT))
+    url = ins.get("public_url", f"http://localhost:{port}")
+    say(f"Project: {inst.project}    folder: {inst.home}")
+    run(inst.compose("ps"), check=False)
+    healthy = wait_healthy(f"http://127.0.0.1:{port}/healthz", 3)
+    say(f"Health:  {'ok' if healthy else 'NOT answering'} (http://127.0.0.1:{port}/healthz)")
+    say(f"URL:     {url}")
+    if url.startswith("https://"):
+        host = url.split("//", 1)[1].split("/", 1)[0].split(":")[0]
+        days, problem = cert_days_left(host)
+        say("Certificate: " + (f"valid, {days} day(s) left" if days is not None else f"PROBLEM, {problem}"))
+    return 0 if healthy else 1
+
+
+def cmd_logs(args) -> int:
+    inst = Install.load(Path(args.home).expanduser(), args.project)
+    extra = (["-f"] if args.follow else []) + ["--tail", str(args.tail)] + ([args.service] if args.service else [])
+    return run(inst.compose("logs", *extra), check=False).returncode
+
+
+def cmd_owner(args) -> int:
+    inst = Install.load(Path(args.home).expanduser(), args.project)
+    return create_owner(inst, args, reset=args.reset)
+
+
+def cmd_deploy_test(args) -> int:
+    """Hand everything to scripts/deploy_test.py (it cleans its own environment and never reads an install's)."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    return subprocess.run([sys.executable, "-I", str(REPO / "scripts" / "deploy_test.py"), *args.rest], env=env).returncode
+
+
+def cmd_logic(args) -> int:
+    """`crewboss logic export` etc.: run the app's logic commands on the folder you are in (needs python3 and PyYAML)."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    return subprocess.run([sys.executable, "-I", str(REPO / "scripts" / "crewboss_logic.py"), *args.rest], env=env).returncode
+
+
+# --- arguments --------------------------------------------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="crewboss", description="Install and run your own Crewboss (Docker, 127.0.0.1).")
+    sub = p.add_subparsers(dest="command", required=True)
+
+    def common(sp, project_default=None):
+        sp.add_argument("--home", default="~/.crewboss", help="the instance folder (default ~/.crewboss)")
+        sp.add_argument("--project", default=project_default, help="compose project name")
+
+    i = sub.add_parser("install", help="install and start a new Crewboss")
+    common(i, DEFAULT_PROJECT)
+    i.add_argument("--name", default="Crewboss", help="the install's display name")
+    i.add_argument("--mode", choices=("localhost", "lan", "network"), help="localhost = this computer only, plain http; lan = other computers on your home or office network (self-signed certificate: the browser warns once); network = your own web address with a Let's Encrypt certificate")
+    i.add_argument("--lan-host", action="append", default=[], help="lan mode: the address or name people use (repeatable; default: this computer's network address)")
+    i.add_argument("--domain", help="network mode: the name people use (kept for good: passkeys are tied to it)")
+    i.add_argument("--proxy", choices=("existing", "bundled"), help="network mode: I already run a reverse proxy with HTTPS / use the bundled Caddy")
+    i.add_argument("--acme-email", help="bundled Caddy: contact address for Let's Encrypt notices")
+    i.add_argument("--port", type=int, help=f"the app's port on 127.0.0.1 (default {DEFAULT_PORT}, or the next free one)")
+    i.add_argument("--http-port", type=int, default=80, help="bundled Caddy: host port for http (must reach port 80 from outside)")
+    i.add_argument("--https-port", type=int, default=443, help="bundled Caddy: host port the container binds for https")
+    i.add_argument("--public-port", type=port_number, help="the port browsers use in the address (default 443, i.e. https://name; a router may forward 443 to --https-port)")
+    i.add_argument("--public-ip", action="append", default=[], help="this server's public address (for the 'does the name point here' check); repeatable")
+    i.add_argument("--tls-check", choices=("enforce", "warn", "off"), help="certificate check (default enforce for network installs)")
+    i.add_argument("--tls-grace", type=int, default=150, help=argparse.SUPPRESS)
+    i.add_argument("--proxy-ready", action="store_true", help="existing proxy: it already serves the name (so the check can enforce from the first start)")
+    i.add_argument("--skip-checks", action="store_true", help="skip the DNS and port checks")
+    i.add_argument("--skip-dns-check", action="store_true", help="go on despite a name that does not obviously point to this server")
+    i.add_argument("--yes", "-y", action="store_true", help="no questions: flags and defaults only")
+    i.add_argument("--owner-username", default="owner")
+    i.set_defaults(func=do_install)
+
+    for name, fn, h in (("up", cmd_up, "start the install"), ("down", cmd_down, "stop it (data kept)"),
+                        ("restart", cmd_restart, "recreate the containers (after editing instance.yaml)"),
+                        ("status", cmd_status, "containers, health, URL, certificate days left")):
+        sp = sub.add_parser(name, help=h)
+        common(sp)
+        sp.set_defaults(func=fn)
+        if name == "down":
+            sp.add_argument("--delete-data", action="store_true", help="also delete the database and volumes (asks you to type the project name)")
+            sp.add_argument("--confirm-project", help="the project name, for a non-interactive --delete-data")
+    la = sub.add_parser("lan-address", help="LAN mode: this computer's network address changed: new certificate, settings, restart")
+    common(la)
+    la.add_argument("ip", nargs="?", help="the new address (default: worked out from this computer's network)")
+    la.set_defaults(func=cmd_lan_address)
+    lg = sub.add_parser("logs", help="show the logs")
+    common(lg)
+    lg.add_argument("service", nargs="?", help="app, db or caddy")
+    lg.add_argument("-f", "--follow", action="store_true")
+    lg.add_argument("--tail", type=int, default=100)
+    lg.set_defaults(func=cmd_logs)
+    ow = sub.add_parser("owner", help="create (or --reset) the owner account of a running install")
+    common(ow)
+    ow.add_argument("--reset", action="store_true", help="replace an existing owner: new password, all factors and sessions cleared")
+    ow.add_argument("--owner-username", default="owner")
+    ow.set_defaults(func=cmd_owner, yes=False)
+    ro = sub.add_parser("reset-owner", help="owner lost passkey and recovery codes: new temporary password (run on the server)")
+    common(ro)
+    ro.set_defaults(func=cmd_reset_owner, yes=False)
+    dt = sub.add_parser("deploy-test", help="a throwaway fresh install of the exact snapshot: check it, optionally keep it on the LAN, delete it")
+    dt.add_argument("rest", nargs=argparse.REMAINDER, help="run (default) | down ID | list, and their options (--ref, --keep [MIN], --lan-ip)")
+    dt.set_defaults(func=cmd_deploy_test)
+    lg2 = sub.add_parser("logic", help="the logic map of the app in this folder: check | uncovered | report | export (runs here, no install needed)")
+    lg2.add_argument("rest", nargs=argparse.REMAINDER, help="check, uncovered, report or export, and their options (--dir defaults to here)")
+    lg2.set_defaults(func=cmd_logic)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["deploy-test"]:       # argparse's REMAINDER would reject a leading --flag; this one has its own parser
+        return cmd_deploy_test(argparse.Namespace(rest=argv[1:]))
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args) or 0
+    except Fail as exc:
+        print(f"crewboss: {exc.message}", file=sys.stderr)
+        return exc.code if isinstance(exc.code, int) and exc.code else 1
+    except KeyboardInterrupt:
+        print("\ncrewboss: interrupted", file=sys.stderr)
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

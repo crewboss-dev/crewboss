@@ -1,0 +1,26 @@
+{# DANGER ZONE (task #148): archive (or bring back) this project or account. Owner only — the browser IS the owner
+   and the same-origin guard refuses anyone else; the owner types the name to confirm. repo refuses archiving while
+   active sub-projects remain, and unarchiving under an archived parent. Needs: current_project. #}
+{% set dz = current_project %}
+{% set archived = dz.archived_at is not none %}
+{% set noun = 'account' if dz.kind == 'account' else 'project' %}
+<details class="mt-10 rounded-xl border border-status-disaster/30 group" data-danger-zone>
+  <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+    <span class="text-small font-semibold text-status-disaster">Danger zone</span>
+    <span class="text-micro text-charcoal/50">{{ 'Unarchive' if archived else 'Archive' }} this {{ noun }}</span>
+    <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+  </summary>
+  <form method="post" action="/projects/{{ dz.id }}/{{ 'unarchive' if archived else 'archive' }}"
+        class="px-4 pb-4 flex flex-col gap-2 max-w-lg" x-data="{ typed: '' }">
+    <p class="text-small text-charcoal/70">
+      {% if archived %}Bring {{ dz.name }} back: it shows everywhere again.{% if dz.session_roles %} <span data-session-note>Its session starts within a minute.</span>{% endif %}
+      {% else %}Archiving hides {{ dz.name }} from every list, plan and session briefing (nothing is deleted).{% if dz.kind == 'account' %} Archive or move its projects first.{% elif place is defined and place and place.children %} Archive or move its sub-projects first.{% endif %}{% if dz.session_roles %} <span data-session-note>Its Claude sessions stop within ~10 minutes.</span>{% endif %}{% endif %}
+    </p>
+    <label class="text-micro text-charcoal/60" for="dz-confirm">Type <span class="font-semibold text-charcoal">{{ dz.name }}</span> to confirm</label>
+    <div class="flex flex-col sm:flex-row gap-2">
+      <input id="dz-confirm" name="confirm" x-model="typed" autocomplete="off" class="field text-small flex-1" required>
+      <button type="submit" class="btn text-small shrink-0 {{ 'btn-ghost border border-line' if archived else 'bg-status-disaster text-white hover:bg-status-disaster/90' }}"
+              :disabled="typed.trim() !== {{ dz.name|tojson }}">{{ 'Unarchive' if archived else 'Archive' }} {{ noun }}</button>
+    </div>
+  </form>
+</details>

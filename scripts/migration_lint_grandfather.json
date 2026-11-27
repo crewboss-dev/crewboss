@@ -1,0 +1,74 @@
+{
+ "0004_triage_rank_objectives.sql": {
+  "reason": "UPDATE: backfills tasks.rank from id on existing rows (generic, no instance names; migrate-time backfill of a new column)",
+  "sha256": "ae4e8372b06b3e2b955938ec0c15d8b1e916ba6e6af3096e01de43f72c102aaa"
+ },
+ "0006_assignee_and_subtasks.sql": {
+  "reason": "UPDATE: backfills tasks.assignee for existing rows after adding the column (generic backfill)",
+  "sha256": "dbb871b2069e215bbebfc449fef60e7d2cb8473362ee281250d9384a5faa9b12"
+ },
+ "0008_status_flow.sql": {
+  "reason": "UPDATE: maps the old task status values to the new status flow on existing rows (generic value migration)",
+  "sha256": "2ec4e12cbe11ad985892703d45993e4869238be712c7b20e8dea5b2a1a6d71ba"
+ },
+ "0010_knowledge_summary_backfill.py": {
+  "reason": "Python data migration: derives knowledge.summary for existing rows (generic backfill)",
+  "sha256": "7ba28c1c9802ab62ec86d7dd31a88a199a6b62a814244b1ab8601f5ba03e197d"
+ },
+ "0011_project_sessions.py": {
+  "reason": "Python data migration: seeds project session rows for existing projects (generic backfill)",
+  "sha256": "11885998b72b1598122c3c2021a77b763395f8edef8301edcfc05f34293ee870"
+ },
+ "0019_project_tree_seed.py": {
+  "reason": "Python data migration: builds the project tree for existing projects (generic backfill)",
+  "sha256": "ae7618166e6260f5556309aefdbf489272f03c9ffc05c99f48e827d3b99b18bf"
+ },
+ "0023_account_sessions.py": {
+  "reason": "Python data migration: moves existing sessions under accounts; ships a rollback(conn) (generic backfill)",
+  "sha256": "1270f4c32ba94f5367456cd4daf95932a030a55c5cb92d423cac7798f4c8e4e7"
+ },
+ "0028_web_push.sql": {
+  "reason": "UPDATE: marks already-existing health problems as pushed so they do not all notify at once (generic backfill)",
+  "sha256": "72196523c773382ecbe689e402cc08eee8d1ca8e213ac94d87e277b62d74eabd"
+ },
+ "0043_multi_user.sql": {
+  "reason": "UPDATE x2: backfills users.role and projects.owner_user_id for the existing owner after adding multi-user (generic backfill)",
+  "sha256": "b2f9f208b304c8ea18eaec5f6b24c549e80debe35a9353239f922bab164911f8"
+ },
+ "0044_tree_root_is_not_a_project.py": {
+  "reason": "Python data migration: reparents existing rows off the tree root (generic repair)",
+  "sha256": "923ab7c7e8153251a106a918316c46dade752d5ebee6cf3b83cf2a7ebe014b0e"
+ },
+ "0045_release_governance.sql": {
+  "reason": "UPDATE: copies deploy_targets.env onto existing server_jobs rows (generic backfill)",
+  "sha256": "0fd07d3034fef6b5615b34bef469d6e8e612f21809fe52d6edadcfe78942a005"
+ },
+ "0061_ca_uploads.sql": {
+  "reason": "UPDATE: backfills ca_conversations.entity_kind/entity_id from context on existing rows (generic backfill)",
+  "sha256": "228a7bfbd6295a1841e8de86fb3ce6cf5e70445dfc9383b5651b673ba47d3402"
+ },
+ "0080_projects_partition.sql": {
+  "reason": "DO block PERFORMs projects_refresh_partition() for every existing top-level project, and the function body UPDATEs (generic recompute of derived data)",
+  "sha256": "a97c46e57d94c42b0f35a761aa12eb86cfdd7ec176c3b7e2a9cae059b3c5a2c2"
+ },
+ "0087_passwordless_signin.sql": {
+  "reason": "UPDATE: clears existing password hashes when moving to passkey-only sign-in (generic, security-driven)",
+  "sha256": "754485f2ab07b4bdd57a2d38804c998e56436bbee6262df77ded7db703cf505c"
+ },
+ "0096_tab_key_ai_features.sql": {
+  "reason": "UPDATE: renames the stored tab key 'skills' to 'ai_features' in saved project tab layouts (generic rename)",
+  "sha256": "c6452691a50d1111c6a2c4fd480211503bbff687525a133c393d42653da72c11"
+ },
+ "0109_profile_agent.sql": {
+  "reason": "UPDATE: appends the generic 'Skill' tool to existing agent_profiles.allowed_tools (generic seed-table fix-up)",
+  "sha256": "0087be1736d8d2eb2fa3116914ca61805d510bb1dbf4b13c1b75ccbfdc6f5235"
+ },
+ "0110_merge_executor.sql": {
+  "reason": "UPDATE: resets stuck merge_requests rows to sent_back on upgrade (generic state repair)",
+  "sha256": "13cf8978558b9293678be91c95a03c719d0b8e32b4a431cb58caf735ee860873"
+ },
+ "0113_tour_progress.sql": {
+  "reason": "INSERT ... SELECT into tour_progress: marks existing users as having finished the tour (derived from users, no instance names; not a seed table)",
+  "sha256": "249f9f8f0b96bfe019bf5a624531a1511ce4e01b3c3647edf8ebd075bfb5d3ab"
+ }
+}

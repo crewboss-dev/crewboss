@@ -1,0 +1,7 @@
+#!/bin/sh
+# Crewboss pre-commit: refuse a commit while a tracked file carries an instance-only value or a secret.
+# Install with scripts/install-hooks.sh. See scripts/commit_guard.py.
+# The migration lint reads the STAGED blobs (what the commit records), not the working tree.
+root="$(git rev-parse --show-toplevel)" || exit 1
+python3 "$root/scripts/migration_lint.py" --staged || exit 1
+exec python3 "$root/scripts/commit_guard.py"

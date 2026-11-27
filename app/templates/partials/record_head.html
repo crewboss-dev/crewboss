@@ -1,0 +1,103 @@
+{# THE RECORD HEAD (#733, #773): a project's or account's page is a record with a title and a Jira-style TAB BAR. Tabs are plain text with an icon, the active one in the accent
+   colour with a 2px underline, the whole bar over a 1px divider. The bar is the project's own (app/tabs.py; shared, edited by the project's owner or an admin): the starting
+   layout is Summary, List, Board; every other page is in the "+" catalogue and still opens by its URL. Hover a tab's icon (or focus it) and it becomes "...": Set as default,
+   Rename, Move left/right, Remove. js/tabs.js drives the menu and the catalogue; people who can't manage get the bar and nothing else. The head sits on the PAGE colour
+   (css/shell.css .rec-head), not the ERP's card-pane surface. #}
+{% import "partials/ui.html" as ui %}
+{% set _p = current_project %}
+{% set _acct = _p.kind == 'account' %}
+{% set _t = record_tabs %}
+<div class="rec-head mb-4" data-record-head>
+  <div class="hub-title-block">
+    <div class="hub-head-meta">
+      <span class="meta-text"><span class="rec-id">{{ _p.short_name }}</span> &middot; {{ 'account' if _acct else 'project' }}{% if _p.archived_at %} &middot; archived{% endif %}</span>
+    </div>
+    <div class="hub-head-main">
+      <h2 class="scroll-x whitespace-nowrap min-w-0" title="{{ _p.name }}" data-record-title>{{ _p.name }}</h2>
+      {% if not _acct and not _p.archived_at %}<button type="button" class="nav-fav head-fav{{ ' is-on' if _p.id in fav_ids }} shrink-0" data-fav="{{ _p.slug }}" data-name="{{ _p.name }}" data-href="/{{ _p.slug }}" aria-pressed="{{ 'true' if _p.id in fav_ids else 'false' }}" aria-label="Favourite {{ _p.name }}" title="Favourite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8 6.8 19.6l1-5.8L3.5 9.7l5.9-.9z"/></svg></button>{% endif %}
+      {% if runs_on_pill %}{% set _ro = runs_on_pill %}
+      {# "Runs on" (#810): which of MY runners this project's jobs go to, saved per person per project. A popover on a desktop; a bottom sheet on a phone
+         (js/runs-on.js, swipe down closes via chrome.js's dragSheet). Plain forms: it works without JS. #}
+      <div class="ro shrink-0" data-runs-on>
+        <button type="button" class="ro-pill" aria-haspopup="dialog" aria-expanded="false" data-ro-open title="Which of your runners runs this project's jobs">
+          <span class="ro-lbl">Runs on</span>
+          <span class="ro-dot{{ ' is-on' if _ro.current and _ro.current.connected }}" aria-hidden="true"></span>
+          <b data-ro-name>{{ _ro.current.name if _ro.current else 'Any runner' }}</b>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="ro-backdrop" hidden data-ro-backdrop></div>
+        <div class="ro-panel popover" role="dialog" aria-label="Runs on" hidden data-ro-panel>
+          <span class="ro-grab" data-sheet-grab aria-hidden="true"></span>
+          <p class="ro-h">Run this project's jobs on</p>
+          <form method="post" action="/{{ _p.slug }}/runs-on" data-ro-form="any">
+            <input type="hidden" name="next" value="{{ request.url.path }}"><input type="hidden" name="device_id" value="">
+            <button type="submit" class="ro-opt{{ ' is-sel' if _ro.any }}" aria-pressed="{{ 'true' if _ro.any else 'false' }}"><span class="ro-dot" aria-hidden="true"></span><span><b>Any of my runners</b><small>The first that is free and has the labels</small></span></button>
+          </form>
+          {% for d in _ro.devices %}
+          <form method="post" action="/{{ _p.slug }}/runs-on" data-ro-form="{{ d.id }}">
+            <input type="hidden" name="next" value="{{ request.url.path }}"><input type="hidden" name="device_id" value="{{ d.id }}">
+            <button type="submit" class="ro-opt{{ ' is-sel' if d.selected }}" aria-pressed="{{ 'true' if d.selected else 'false' }}">
+              <span class="ro-dot{{ ' is-on' if d.connected }}" aria-hidden="true"></span>
+              <span><b>{{ d.name }}</b><small>{{ 'online' if d.connected else 'offline' }}{% if d.labels %} · {{ d.labels|join(', ') }}{% endif %}</small></span>
+              {% if d.env %}<span class="ro-env is-{{ d.env.state }}" data-ro-env="{{ d.env.state }}">{{ d.env.label }}</span>{% endif %}
+            </button>
+          </form>
+          {% if d.selected and d.env and d.env.state == 'missing' %}
+          <p class="ro-warn" data-ro-env-warn>{{ d.name }} is missing {{ d.env.missing }} thing{{ 's' if d.env.missing != 1 }} this project needs. <a class="ro-add" href="/{{ _p.slug }}/environment">See Environment</a>. Jobs still run.</p>
+          {% endif %}
+          {% if d.selected %}{% for m in d.missing %}
+          <form method="post" action="/{{ _p.slug }}/runs-on/label" class="ro-warn" data-ro-missing="{{ m.label }}">
+            <input type="hidden" name="next" value="{{ request.url.path }}"><input type="hidden" name="device_id" value="{{ d.id }}"><input type="hidden" name="label" value="{{ m.label }}">
+            <span>{{ d.name }} has no {{ m.label }}: {{ m.profiles|join(', ') }} jobs won't start there.</span>
+            <button type="submit" class="ro-add">Add the label</button>
+          </form>
+          {% endfor %}{% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      <span class="flex-1"></span>
+      <span class="hub-mark shrink-0">{{ ui.status_mark('archived', 'Archived') if _p.archived_at else ui.status_mark('active', 'Active') }}</span>
+    </div>
+  </div>
+  <nav class="rtabs" aria-label="Pages of {{ _p.name }}" data-record-pills data-tabs="{{ _t.slug }}" data-manage="{{ 1 if _t.manage else 0 }}">
+    {% for t in _t.tabs %}
+    <div class="rtab{{ ' is-active' if t.active }}" data-tab="{{ t.key }}" data-orig="{{ t.orig }}" data-label="{{ t.label }}"{% if t.default %} data-default="1"{% endif %}>
+      <a href="{{ t.href }}" class="rtab-link"{% if t.active %} aria-current="page"{% endif %} data-pill="{{ t.key }}"><svg class="rtab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ t.icon }}"/></svg><span data-tab-label>{{ t.label }}</span></a>
+      {% if _t.manage and not t.pinned and not t.transient %}<button type="button" class="rtab-more" aria-label="More actions for {{ t.label }}" title="More actions" aria-haspopup="menu" aria-expanded="false" data-tab-more="{{ t.key }}"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18.5" cy="12" r="1.8"/></svg></button>{% endif %}
+    </div>
+    {% endfor %}
+    {% if _t.manage %}<button type="button" class="rtab-add" aria-label="Add a page to the navigation" title="Add to navigation" aria-haspopup="dialog" data-tab-add><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>{% endif %}
+  </nav>
+  {% if _t.manage %}
+  <div class="rtab-menu" role="menu" aria-label="Tab actions" hidden data-tab-menu>
+    <button type="button" role="menuitem" data-act="default">Set as default</button>
+    <button type="button" role="menuitem" data-act="rename">Rename</button>
+    <hr role="separator">
+    <button type="button" role="menuitem" data-act="left">Move tab left</button>
+    <button type="button" role="menuitem" data-act="right">Move tab right</button>
+    <hr role="separator">
+    <button type="button" role="menuitem" data-act="remove">Remove</button>
+  </div>
+  <div class="rtab-cat" role="dialog" aria-label="Add to navigation" hidden data-tab-cat>
+    <div class="rtab-cat-list">
+      <p class="rtab-cat-h">Views</p>
+      {% for c in _t.catalogue %}
+      <button type="button" class="rtab-cat-item" data-cat="{{ c.key }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ c.icon }}"/></svg><span>{{ c.label }}</span></button>
+      {% else %}
+      <p class="rtab-cat-empty" data-cat-empty>Every page is already on the bar.</p>
+      {% endfor %}
+    </div>
+    <div class="rtab-cat-view">
+      {% for c in _t.catalogue %}
+      <div class="rtab-cat-pane" data-cat-pane="{{ c.key }}" hidden>
+        <div class="rtab-cat-prev">{{ c.preview }}</div>
+        <h3>{{ c.label }}</h3>
+        <p>{{ c.desc }}</p>
+        <button type="button" class="rtab-cat-go" data-cat-add="{{ c.key }}">Add to navigation</button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>

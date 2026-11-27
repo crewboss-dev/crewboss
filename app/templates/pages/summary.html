@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% import "partials/ui.html" as ui %}
+{% block title %}Summary · {{ current_project.name }}{% endblock %}
+{% block page_title %}Summary{% endblock %}
+{% block content %}
+{# SUMMARY (#772): the project's landing page, a dashboard of THIS project (and the live projects under it), in the Dashboard's shape
+   (pages/snapshot.html: its tiles, section headers and card lists; app/snapshot.py project_summary). Only what is wanted at a glance;
+   everything else is a pill away. Every figure is scoped to the project's branch and to what the person may see. #}
+<h1 class="sr-only" data-area-title>Summary</h1>
+<div data-summary data-landing="summary" data-project-ids="{{ project_ids|join(',') }}">
+{% if milestones %}{% include "partials/milestone_strip.html" %}{% endif %}
+
+{% if handoffs_open is defined %}
+<p class="text-small mb-4" data-handoffs-entry><a href="{{ base }}/handoffs" class="hover:underline"><span class="font-semibold tabular">{{ handoffs_open }}</span> open handoff{{ '' if handoffs_open == 1 else 's' }}</a> <span class="text-charcoal/55">between this {{ 'account' if account else 'project' }}'s AI session and the others</span></p>
+{% endif %}
+
+{% if account %}
+{# An account's Summary (#773): its projects (each card = that project's branch) and what it shares with them, above the roll-up figures. #}
+{% set a = account %}
+<section aria-labelledby="acct-projects" class="mb-6" data-account-projects>
+  <h2 id="acct-projects" class="text-lead font-semibold mb-2">Projects <span class="text-small font-normal text-charcoal/55">{{ a.projects|length }}</span></h2>
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+    {% for p in a.projects %}{% set b = p.branch %}
+    <a href="/{{ p.slug }}" class="card press relative px-3.5 py-3 flex flex-col gap-1.5 min-w-0 hover:shadow-float" data-project-card="{{ p.slug }}" data-depth="{{ p.depth }}">
+      <span class="flex items-center gap-2 min-w-0">
+        {% if p.depth > 1 %}<span class="text-micro text-charcoal/45 truncate shrink min-w-0 max-w-[45%]" data-parent>{{ p.parent_name }} &rsaquo;</span>{% endif %}
+        <span class="text-base font-semibold truncate">{{ p.name }}</span>
+        {% if p.child_count %}<span class="text-micro text-charcoal/45 shrink-0">+{{ p.child_count }}</span>{% endif %}
+      </span>
+      <span class="flex flex-wrap gap-x-3 gap-y-0.5 text-micro tabular text-charcoal/60">
+        <span data-count="open"><span class="font-semibold text-charcoal">{{ b.open or 0 }}</span> open</span>
+        <span data-count="doing"><span class="font-semibold text-charcoal">{{ b.doing or 0 }}</span> in progress</span>
+        <span data-count="review" class="{{ 'text-flame font-semibold' if b.review }}"><span class="font-semibold">{{ b.review or 0 }}</span> to check</span>
+        {% if b.questions %}<span data-count="questions" class="text-flame font-semibold">{{ b.questions }} blocked on you</span>{% endif %}
+      </span>
+    </a>
+    {% else %}<div class="card p-4 text-small text-charcoal/50">No projects under this account yet.</div>{% endfor %}
+  </div>
+</section>
+<section aria-labelledby="acct-shared" class="card px-4 py-3 mb-6 flex flex-wrap items-center gap-x-5 gap-y-2" data-account-shared>
+  <h2 id="acct-shared" class="text-small font-semibold w-full sm:w-auto">Shared with every project</h2>
+  <a href="{{ base }}/ai-features" class="text-small hover:underline"><span class="font-semibold tabular">{{ a.shared.skills }}</span> AI skill{{ '' if a.shared.skills == 1 else 's' }}</a>
+  <a href="{{ base }}/rules" class="text-small hover:underline"><span class="font-semibold tabular">{{ a.shared.rules }}</span> rule{{ '' if a.shared.rules == 1 else 's' }}</a>
+  <a href="{{ base }}/knowledge" class="text-small hover:underline"><span class="font-semibold tabular">{{ a.shared.knowledge }}</span> knowledge entr{{ 'y' if a.shared.knowledge == 1 else 'ies' }}</a>
+</section>
+{% endif %}
+
+{{ ui.section("Outstanding", s.open, subtitle="by status") }}
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3" data-by-status>
+  {% for st in s.by_status %}{{ ui.tile(st.n, st.label, base ~ '/board', tone=('alert' if st.key == 'review' else '')) }}{% endfor %}
+</div>
+
+{% if conns_shown %}
+{{ ui.section("Connections", subtitle="how this project relates to others") }}
+<div class="card px-4 py-1" data-connections-card>{% from "partials/connections.html" import conn_list %}{{ conn_list(conns, conn_labels) }}</div>
+{% endif %}
+
+{% set peak = [1] %}
+{% for w in s.weeks %}{% if w.opened > peak[0] %}{% set _ = peak.__setitem__(0, w.opened) %}{% endif %}{% if w.closed > peak[0] %}{% set _ = peak.__setitem__(0, w.closed) %}{% endif %}{% endfor %}
+{{ ui.section("Opened and closed", subtitle="per week, the last " ~ s.weeks|length) }}
+<div class="rounded-xl border border-line bg-surface p-4" data-flow>
+  <div class="flex items-end gap-2 h-28" role="img" aria-label="Tasks opened and closed per week">
+    {% for w in s.weeks %}
+    <div class="flex-1 min-w-0 flex flex-col items-center gap-1" title="Week of {{ w.week }}: {{ w.opened }} opened, {{ w.closed }} closed">
+      <div class="flex items-end gap-0.5 h-24 w-full justify-center">
+        <span class="w-2.5 rounded-t bg-indigodeep" style="height: {{ (w.opened / peak[0] * 100)|round|int }}%"></span>
+        <span class="w-2.5 rounded-t bg-status-ok" style="height: {{ (w.closed / peak[0] * 100)|round|int }}%"></span>
+      </div>
+      <span class="text-2xs text-charcoal/45 tabular">{{ w.week.strftime('%d/%m') }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="mt-2 flex gap-4 text-2xs text-charcoal/55"><span><i class="inline-block w-2 h-2 rounded-sm bg-indigodeep align-middle"></i> Opened {{ s.weeks|sum(attribute='opened') }}</span>
+    <span><i class="inline-block w-2 h-2 rounded-sm bg-status-ok align-middle"></i> Closed {{ s.weeks|sum(attribute='closed') }}</span></div>
+</div>
+
+<div class="grid md:grid-cols-2 gap-x-6">
+  <div data-waiting>
+    {{ ui.section("Waiting on you", (s.reviews|length + s.questions|length + s.changes_waiting|length), subtitle="reviews, questions, decisions") }}
+    {% if s.reviews or s.questions or s.changes_waiting %}
+    <div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+      {% for t in s.reviews %}
+      <a href="/{{ t.project_slug }}/board?open={{ t.id }}" class="press flex items-center gap-3 px-4 py-2.5" data-review>
+        <span class="flex-1 min-w-0"><span class="block truncate text-sm">{{ t.title }}</span><span class="block truncate text-2xs text-charcoal/45">Review &middot; #{{ t.id }}</span></span>
+        <span class="text-xs text-charcoal/45 shrink-0 tabular">{{ t.updated_at|timeago }}</span></a>
+      {% endfor %}
+      {% for q in s.questions %}
+      <a href="/{{ q.project_slug }}/board?open={{ q.task_id }}" class="press flex items-center gap-3 px-4 py-2.5" data-question>
+        <span class="flex-1 min-w-0"><span class="block truncate text-sm">{{ q.question }}</span><span class="block truncate text-2xs text-charcoal/45">Question &middot; {{ q.task_title }}</span></span>
+        <span class="text-xs text-charcoal/45 shrink-0 tabular">{{ q.asked_at|timeago }}</span></a>
+      {% endfor %}
+      {% for c in s.changes_waiting %}
+      <a href="/{{ c.project_slug }}/changes" class="press flex items-center gap-3 px-4 py-2.5" data-change>
+        <span class="flex-1 min-w-0"><span class="block truncate text-sm">{{ c.title }}</span><span class="block truncate text-2xs text-charcoal/45">Decision</span></span>
+        <span class="text-xs text-charcoal/45 shrink-0 tabular">{{ c.created_at|timeago }}</span></a>
+      {% endfor %}
+    </div>
+    {% else %}<p class="text-sm text-charcoal/40 px-1">Nothing is waiting on you.</p>{% endif %}
+  </div>
+  <div data-jobs>
+    {{ ui.section("Agent jobs", s.jobs_live ~ " live") }}
+    {% if s.jobs %}
+    <div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+      {% for j in s.jobs %}
+      <a href="/{{ j.project_slug }}/board?open={{ j.task_id }}" class="press flex items-center gap-3 px-4 py-2.5">
+        <span class="chip {{ 'bg-indigo/10 text-indigo' if j.state in ('queued', 'running') else ('bg-status-ok/15 text-status-ok' if j.state == 'done' else 'bg-charcoal/[.07] text-charcoal/70') }}">{{ j.state }}</span>
+        <span class="flex-1 min-w-0 truncate text-sm">{{ j.title }} <span class="task-no">#{{ j.task_id }}</span></span>
+        <span class="text-xs text-charcoal/45 shrink-0 tabular">{{ (j.finished_at or j.created_at)|timeago }}</span></a>
+      {% endfor %}
+    </div>
+    {% else %}<p class="text-sm text-charcoal/40 px-1">No agent jobs yet.</p>{% endif %}
+  </div>
+</div>
+
+
+{% if kpis %}
+{# What Overview had that Summary lacked (#773): the workflows, the objectives, the health slot, tasks by stream and the recently changed workflows. #}
+{{ ui.section("Workflows and health", subtitle="what the code runs") }}
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3" data-overview-tiles>
+  {{ ui.tile(kpis.workflows_total, "Workflows", base ~ '/workflows') }}
+  {{ ui.tile(kpis.workflows_ai, "AI-powered", base ~ '/workflows') }}
+  {% if health_slot and health_slot.state not in ('off', 'waiting') %}
+  {{ ui.tile(health_slot.open, "Failing now", (base ~ '/health') if is_owner else '', tone=('alert' if health_slot.open else ''), sub=health_slot.label) }}
+  {% endif %}
+  {{ ui.tile(kpis.done_this_week, "Done this week", base ~ '/list') }}
+</div>
+<div class="grid md:grid-cols-2 gap-x-6">
+  <div data-changes>
+    {{ ui.section("Recently changed workflows") }}
+    <div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+      {% for c in changes %}
+      <a href="{{ base }}/workflows/{{ c.workflow_id }}" class="press flex items-center gap-3 px-4 py-2.5 text-sm"><span class="chip shrink-0 bg-charcoal/[.07] text-charcoal/70">{{ c.change_type }}</span>
+        <span class="flex-1 min-w-0 truncate">{{ c.workflow_name }}</span><span class="text-xs text-charcoal/45 shrink-0 tabular">{{ c.created_at|timeago }}</span></a>
+      {% else %}<p class="px-4 py-3 text-sm text-charcoal/40">No catalog scans yet.</p>{% endfor %}
+    </div>
+  </div>
+  <div data-objectives>
+    {{ ui.section("Objectives") }}
+    <div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+      {% for o in objectives %}
+      <a href="{{ base }}/objectives" class="press flex items-center justify-between gap-3 px-4 py-2.5 text-sm"><span class="truncate">{{ o.title }}</span>{% if o.target_value %}<span class="text-xs text-charcoal/55 shrink-0 tabular">{{ '{:,.0f}'.format(o.target_value) }}{% if o.target_period %}/{{ o.target_period }}{% endif %}</span>{% endif %}</a>
+      {% else %}<p class="px-4 py-3 text-sm text-charcoal/40">No objectives set yet.</p>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{{ ui.section("Recent activity", subtitle="latest") }}
+<div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden" data-activity>
+  {% for a in s.activity %}
+  <div class="px-4 py-2 text-sm"><span class="font-medium">{{ a.actor }}</span> {{ a.summary }} <span class="text-2xs text-charcoal/45 ml-1">{{ a.at|timeago }}</span></div>
+  {% else %}<p class="px-4 py-3 text-sm text-charcoal/40">Nothing yet.</p>{% endfor %}
+  <a href="/recent?project={{ current_project.slug }}" class="block px-4 py-2 text-sm text-indigo hover:bg-charcoal/[.03]" data-recent-link>All recent activity &rarr;</a>
+</div>
+</div>
+{% endblock %}

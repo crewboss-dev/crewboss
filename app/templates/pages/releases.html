@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Releases · {{ current_project.name }}{% endblock %}
+{% block page_title %}Releases{% endblock %}
+{% block content %}
+{# Releases (change #77): dev first, production by promotion, an Admin approves. Needs: targets, requests, merges, is_admin, can_work, policy, admins, can_manage, pickable, envs, target_error, target_form. #}
+<div class="max-w-5xl" data-releases-page>
+  <p class="text-small text-charcoal/65 mb-4">Release policy: <strong>{{ 'production only (a runner preview stands in for dev)' if policy == 'production_only' else 'standard (dev or staging first, then production)' }}</strong>. Production takes only a commit that already ran there; an Admin approves it with a fresh second factor{% if admins >= 2 %}, and not the person who asked{% endif %}.</p>
+
+  <section class="mb-5" aria-label="Deploy targets" data-section="targets">
+    <h2 class="text-lead font-semibold mb-2">Targets</h2>
+    {% if targets %}
+    <ul class="card divide-y divide-line">
+      {% for t in targets %}
+      <li class="px-4 py-3 flex flex-wrap items-center gap-3" data-target="{{ t.id }}" data-env="{{ t.env }}">
+        <span class="flex-1 min-w-0"><strong>{{ t.name }}</strong> <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ 'production' if t.env == 'prod' else t.env }}</span> · {{ t.server_name }} · <span class="font-mono break-all">{{ t.repo_path }}</span> · {{ t.branch }}{% if not t.enabled %} · disabled{% endif %}</span>
+        {% if t.state_warning %}<p class="basis-full text-micro rounded-lg bg-status-warn/15 text-charcoal px-3 py-1.5" data-state-warning role="status">{{ t.state_warning.warning|capitalize }}: its compose file shows {{ t.state_warning.found|join(', ') }}. <a class="underline" href="{{ base }}/where">Say what must be backed up</a>{% if t.state_warning.block %} (this project requires it: deploys are refused until then){% endif %}.</p>{% endif %}
+        {% if can_manage %}
+        <span class="flex flex-wrap items-center gap-2" data-target-controls>
+          <form method="post" action="{{ base }}/releases/targets/{{ t.id }}/env" data-env-form>
+            <select name="env" class="field text-micro !w-auto !py-0.5" aria-label="{{ t.name }} environment" @change="$el.form.requestSubmit()">
+              {% for e in envs %}<option value="{{ e }}"{% if e == t.env %} selected{% endif %}>{{ e }}</option>{% endfor %}
+            </select>
+            <noscript><button class="btn-ghost text-micro border border-line" type="submit">Set</button></noscript>
+          </form>
+          <form method="post" action="{{ base }}/releases/targets/{{ t.id }}/{{ 'disable' if t.enabled else 'enable' }}">
+            <button class="btn-ghost text-small touch-target border border-line" type="submit" data-toggle>{{ 'Disable' if t.enabled else 'Enable' }}</button></form>
+        </span>
+        {% endif %}
+        {% if can_work and t.enabled %}
+        <form method="post" action="{{ base }}/releases/deploy" class="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="target_id" value="{{ t.id }}">
+          <input name="sha" class="field text-small font-mono" placeholder="40-character commit" required pattern="[0-9a-fA-F]{40}" aria-label="Commit for {{ t.name }}">
+          {% if t.env == 'prod' %}
+          <label class="text-micro"><input type="checkbox" name="hotfix" value="1"> hotfix</label>
+          <input name="reason" class="field text-small" placeholder="hotfix reason" aria-label="Hotfix reason">
+          {% endif %}
+          <button class="btn-primary text-small touch-target" type="submit">{{ 'Request production' if t.env == 'prod' else 'Deploy to ' ~ t.env }}</button>
+        </form>
+        {% if t.env == 'prod' and t.previous %}
+        <form method="post" action="{{ base }}/releases/rollback"><input type="hidden" name="target_id" value="{{ t.id }}">
+          <button class="btn-ghost text-small touch-target border border-line" type="submit" data-rollback>Roll back to {{ t.previous.tag or t.previous.sha[:12] }}</button></form>
+        {% endif %}
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="card px-4 py-3 text-small text-charcoal/65" data-no-targets>No deploy targets yet.</p>{% endif %}
+    {% if can_manage %}
+    {# "Add a place to deploy" (#810): a deploy target is where this project's code goes: a machine, a folder, a branch, and the command to run after git pull. #}
+    <details class="card p-3 mt-3" data-add-target{% if target_error %} open{% endif %}>
+      <summary class="press list-none cursor-pointer font-semibold text-small touch-target flex items-center">Add a place to deploy</summary>
+      <p class="text-micro text-charcoal/60 mt-1">A place is a machine, a folder on it and a branch. A deploy runs <span class="font-mono">git pull --ff-only</span> there, then your restart command, and only after an OK.</p>
+      {% if target_error %}<p class="mt-2 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-target-error>{{ target_error }}</p>{% endif %}
+      {% if pickable %}
+      <form method="post" action="{{ base }}/releases/targets" class="grid gap-3 sm:grid-cols-2 mt-2" data-target-form>
+        <label class="block"><span class="kb-label">Machine <span class="kb-label-hint">ready ones only</span></span>
+          <select name="server_id" class="field text-small" required>
+            {% for m in pickable %}<option value="{{ m.id }}"{% if target_form.server_id|string == m.id|string %} selected{% endif %}>{{ m.name }}</option>{% endfor %}
+          </select></label>
+        <fieldset class="block"><legend class="kb-label">Environment</legend>
+          <div class="flex gap-2" role="group" data-env-segment>
+            {% for e in envs %}<label class="fchip cursor-pointer"><input type="radio" name="env" value="{{ e }}" class="sr-only peer"{% if e == (target_form.env or 'dev') %} checked{% endif %}><span class="peer-checked:font-semibold">{{ 'prod' if e == 'prod' else e }}</span></label>{% endfor %}
+          </div></fieldset>
+        <label class="block sm:col-span-2"><span class="kb-label">Folder on the machine</span><input name="repo_path" class="field text-small font-mono" required value="{{ target_form.repo_path or '/opt/stacks/' ~ current_project.slug }}"></label>
+        <label class="block"><span class="kb-label">Branch</span><input name="branch" class="field text-small" value="{{ target_form.branch or 'main' }}"></label>
+        <label class="block"><span class="kb-label">Time limit <span class="kb-label-hint">seconds, blank = 600</span></span><input name="timeout_seconds" inputmode="numeric" class="field text-small" value="{{ target_form.timeout_seconds or '' }}" placeholder="600"></label>
+        <label class="block sm:col-span-2"><span class="kb-label">Restart command <span class="kb-label-hint">optional, one line</span></span>
+          <input name="post_cmd" class="field text-small font-mono" maxlength="500" list="post-cmd-examples" value="{{ target_form.post_cmd or '' }}" placeholder="docker compose up -d --build">
+          <datalist id="post-cmd-examples"><option value="docker compose up -d --build"><option value="sudo systemctl restart {{ current_project.slug }}"><option value="npm ci &amp;&amp; npm run build"></datalist></label>
+        <div class="sm:col-span-2"><button class="btn-primary text-small touch-target" type="submit">Add place to deploy</button></div>
+      </form>
+      {% else %}
+      <p class="text-small text-charcoal/65 mt-2" data-no-machines>No ready machine to deploy to yet. Add one on the Machines page and run Check access.</p>
+      {% endif %}
+    </details>
+    {% endif %}
+  </section>
+
+  <section class="mb-5" aria-label="Deploys" data-section="requests">
+    <h2 class="text-lead font-semibold mb-2">Deploys</h2>
+    {% if requests %}
+    <ul class="card divide-y divide-line">
+      {% for r in requests %}
+      <li class="px-4 py-3 flex flex-wrap items-center gap-3" data-request="{{ r.id }}" data-state="{{ r.state }}">
+        <span class="flex-1 min-w-0"><strong>{{ r.target_name }}</strong> <span class="font-mono">{{ r.sha[:12] }}</span>
+          <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ 'production' if r.env == 'prod' else r.env }}</span>
+          <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ r.state }}</span>
+          {% if r.hotfix %}<span class="chip bg-status-disaster/10 text-status-disaster">hotfix</span>{% endif %}
+          {% if r.rollback %}<span class="chip bg-charcoal/[.06] text-charcoal/70">rollback</span>{% endif %}
+          {% if r.logic %}<a class="chip bg-charcoal/[.06] text-charcoal/70 underline" href="{{ base }}/logic/diff?sha={{ r.sha }}" data-logic-chip>Logic: {% if r.logic.unreadable %}report unreadable{% elif r.logic.summary.added or r.logic.summary.removed or r.logic.summary.changed %}+{{ r.logic.summary.added }} / -{{ r.logic.summary.removed }} / ~{{ r.logic.summary.changed }}{% else %}no change{% endif %}</a> <span class="text-micro text-charcoal/55" data-logic-by>reported by {{ r.logic.reported_by }}</span>{% endif %}
+          {% if r.auto_approved %}<span class="chip bg-charcoal/[.06] text-charcoal/70">no approval needed</span>{% endif %}
+          {% for e in r.evidence %}<br><span class="text-micro text-charcoal/60" data-evidence>Ran on {{ e.env }}{% if e.target_name and e.env != 'preview' %} ({{ e.target_name }}){% endif %}{% if e.device_name %} · attested by runner "{{ e.device_name }}"{% endif %}{% if e.by_name %} · user {{ e.by_name }}{% endif %}{% if e.env == 'preview' %} · the runner's own claim{% endif %}</span>{% endfor %}
+          {% if r.state_warning %}<br><span class="text-micro text-charcoal/75 dark:text-status-warn" data-state-warning-request>{{ r.state_warning.warning|capitalize }} ({{ r.state_warning.found|join(', ') }})</span>{% endif %}
+          <br><span class="text-micro text-charcoal/60">asked by {{ r.requested_name or 'a job' }}{% if r.decided_name %} · {{ 'refused' if r.state == 'refused' else 'approved' }} by {{ r.decided_name }}{% endif %}{% if r.hotfix_reason %} · {{ r.hotfix_reason }}{% endif %}</span></span>
+        {% if r.state == 'requested' and is_admin %}
+        <form method="post" action="{{ base }}/releases/deploys/{{ r.id }}/approve"><button class="btn-primary text-small touch-target" type="submit" data-approve>Approve</button></form>
+        <form method="post" action="{{ base }}/releases/deploys/{{ r.id }}/refuse"><button class="btn-ghost text-small touch-target border border-line" type="submit">Refuse</button></form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="card px-4 py-3 text-small text-charcoal/65">No deploys yet.</p>{% endif %}
+  </section>
+
+  {% if is_project_owner %}
+  <section class="mb-5" aria-label="Branch protection" data-section="protect">
+    <h2 class="text-lead font-semibold mb-1">Protect the default branch on GitHub</h2>
+    <p class="text-small text-charcoal/65 mb-2">Makes a stray <code>git push</code> to the default branch refuse at GitHub too. Crewboss never applies this itself: its GitHub account only merges. It shows you the exact call and what it replaces, and a repository admin runs it once with their own login.</p>
+    {% if protect_error %}<p class="text-small text-status-disaster mb-2" data-protect-error>{{ protect_error }}</p>{% endif %}
+    {% if protect_card %}
+    <div class="card p-4 mb-2" data-protect-card>
+      <p class="text-small">{{ protect_card.card }}</p>
+      <p class="text-micro text-charcoal/65 mt-2">A repository admin runs this (it needs the GitHub CLI signed in as them), or sends the same JSON to <code>{{ protect_card.call.method }} {{ protect_card.call.path }}</code>:</p>
+      <pre class="font-mono text-micro mt-1 overflow-x-auto" data-protect-command>{{ protect_card.command }}</pre>
+    </div>
+    {% else %}
+    <div class="flex flex-wrap gap-2">
+      <form method="post" action="{{ base }}/releases/protect/plan"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-protect-start>Show the protection card</button></form>
+      {% if merge_by_crewboss %}
+      <form method="post" action="{{ base }}/releases/protect/plan"><input type="hidden" name="mode" value="merge-path"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-protect-merge-path>Card: only Crewboss may change it</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+    <h3 class="text-small font-semibold mt-3 mb-1">Crewboss merges approved branches</h3>
+    <p class="text-small text-charcoal/65 mb-2">{% if merge_by_crewboss %}On for {{ project_repo }}: once the tests, the code-auditor pass and an Admin's approval (valid for 24 hours) are recorded for a commit, Crewboss fast-forwards the default branch to exactly that commit. It never force-pushes; a branch that is not rebased is sent back with the reason. Changing the project's git remote turns this off.{% else %}Off: a person merges approved branches by hand. Turning it on needs {{ project_repo or 'a GitHub remote' }} to be enrolled by the instance owner.{% endif %}</p>
+    <form method="post" action="{{ base }}/releases/merge-executor"><input type="hidden" name="enable" value="{{ '' if merge_by_crewboss else '1' }}"><button class="btn-ghost text-small touch-target border border-line" type="submit" data-merge-executor>{{ 'Turn off' if merge_by_crewboss else 'Turn on' }}</button></form>
+  </section>
+  {% endif %}
+
+  {% if is_instance_owner %}
+  <section class="mb-5" aria-label="Repositories Crewboss may merge to" data-section="merge-repos">
+    <h2 class="text-lead font-semibold mb-1">Repositories Crewboss may merge to</h2>
+    <p class="text-small text-charcoal/65 mb-2">Only the instance owner edits this list. Each repository is enrolled for one project, and only that project can switch the merge executor on for it. Make sure the bot account's token reaches these repositories and no others.</p>
+    {% if merge_repos %}<ul class="card divide-y divide-line mb-2">{% for r in merge_repos %}
+      <li class="px-4 py-2 flex items-center gap-3" data-merge-repo="{{ r.full_name }}"><span class="flex-1 font-mono text-small">{{ r.full_name }}</span><span class="text-micro text-charcoal/60">for {{ r.project_slug }}{% if r.in_use %} (on){% endif %}</span>
+        <form method="post" action="{{ base }}/releases/merge-repos/remove"><input type="hidden" name="full_name" value="{{ r.full_name }}"><button class="btn-ghost text-small border border-line" type="submit">Remove</button></form></li>
+    {% endfor %}</ul>{% endif %}
+    <form method="post" action="{{ base }}/releases/merge-repos" class="flex flex-wrap items-end gap-2">
+      <input name="full_name" class="field text-small font-mono" placeholder="owner/name" required value="{{ project_repo }}" aria-label="Repository">
+      <button class="btn-ghost text-small border border-line" type="submit" data-merge-repo-add>Enrol for this project</button>
+    </form>
+  </section>
+  {% endif %}
+
+  <section class="mb-5" aria-label="Merges to main" data-section="merges">
+    <h2 class="text-lead font-semibold mb-2">Merges to the default branch</h2>
+    {% if can_work %}
+    <form method="post" action="{{ base }}/releases/merges" class="flex flex-wrap items-end gap-2 mb-3">
+      <input name="branch" class="field text-small" placeholder="branch" required aria-label="Branch">
+      <input name="sha" class="field text-small font-mono" placeholder="40-character commit" required pattern="[0-9a-fA-F]{40}" aria-label="Commit">
+      <label class="text-micro"><input type="checkbox" name="hotfix" value="1"> hotfix</label>
+      <button class="btn-ghost text-small border border-line" type="submit">Ask to merge</button>
+    </form>
+    {% endif %}
+    {% if merges %}
+    <ul class="card divide-y divide-line">
+      {% for m in merges %}
+      <li class="px-4 py-3 flex flex-wrap items-center gap-3" data-merge="{{ m.id }}" data-state="{{ m.state }}">
+        <span class="flex-1 min-w-0"><strong>{{ m.branch }}</strong> <span class="font-mono">{{ m.sha[:12] }}</span> <span class="chip bg-charcoal/[.06] text-charcoal/70">{{ m.state }}</span>{% if m.hotfix %} <span class="chip bg-status-disaster/10 text-status-disaster">hotfix</span>{% endif %}
+          <br><span class="text-micro text-charcoal/60">tests {{ 'green' if m.tests_green_at else 'not green' }} · code-auditor {{ 'passed' if m.audit_passed_at else 'not recorded' }} · asked by {{ m.requested_name or 'a job' }}{% if m.decided_name %} · decided by {{ m.decided_name }}{% if m.decided_at %} at {{ m.decided_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}{% endif %}{% if m.merged_at %} · merged to {{ m.merge_target }} at {{ m.merged_at.strftime('%Y-%m-%d %H:%M') }} ({{ m.merged_sha[:12] }}){% endif %}</span>
+          {% if m.merge_note and m.state in ('sent_back', 'approved') %}<br><span class="text-micro text-status-disaster" data-merge-reason>{{ m.merge_note }}</span>{% endif %}</span>
+        {% if m.state == 'requested' and is_admin %}
+        <form method="post" action="{{ base }}/releases/merges/{{ m.id }}/approve"><button class="btn-primary text-small touch-target" type="submit">Approve merge</button></form>
+        <form method="post" action="{{ base }}/releases/merges/{{ m.id }}/refuse"><button class="btn-ghost text-small border border-line" type="submit">Refuse</button></form>
+        {% elif m.state == 'sent_back' and m.sent_back_kind in ('github', 'expired') and is_admin %}
+        <form method="post" action="{{ base }}/releases/merges/{{ m.id }}/requeue"><button class="btn-primary text-small touch-target" type="submit" data-requeue>Re-queue (no new commit)</button></form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="card px-4 py-3 text-small text-charcoal/65">No merge requests.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

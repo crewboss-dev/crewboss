@@ -1,0 +1,33 @@
+{# 11-18 (owner): "Tasks should always open full page, with an exit to go back to previous page. So a full page window on top of the
+   current window." So the drawer became THE TASK SHEET: the task's full page (the same two-column record as /<slug>/tasks/<id>) in a
+   window over the whole page, from every list, board, plan and Focus card. Opening it puts the task's own URL in the address bar
+   (js/pagenav.js), so writes inside it answer with the full-page layout, a refresh or a shared link shows the task, and Back / Esc / the
+   exit button closes it and leaves you where you were. On a desktop with the assistant open it stops at the assistant's edge; the
+   assistant is always on top (ca.css). Layout in shell.css (.task-sheet), not Tailwind, so it holds wherever the stylesheet loads. #}
+<div x-data @keydown.escape.window="if (Alpine.store('drawer').open) window.crewbossCloseTask()">
+  {# Off-screen from the FIRST paint (.task-sheet is translated away until .is-open), so a page load never flashes it. #}
+  <aside class="task-sheet bg-surface text-charcoal" role="dialog" aria-modal="true" aria-labelledby="task-sheet-title" data-drag-sheet data-task-sheet
+         @sheet-dismiss="window.crewbossCloseTask()"
+         :class="{ 'is-open': !!(Alpine.store('drawer') && Alpine.store('drawer').open) }"
+         :aria-hidden="(Alpine.store('drawer') && Alpine.store('drawer').open) ? 'false' : 'true'">
+    <div data-sheet-grab class="task-sheet-head">
+      <div class="task-sheet-bar">
+        <button type="button" onclick="window.crewbossCloseTask()" class="task-sheet-back press" data-task-sheet-exit aria-label="Back to the page you were on">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg>
+          <span>Back</span>
+        </button>
+        <span class="task-sheet-no" data-task-sheet-no></span>
+        {% include "partials/task_tabs.html" %}
+        <button type="button" onclick="window.crewbossCloseTask()" class="task-sheet-x press" aria-label="Close">
+          <svg class="nav-ico" style="opacity:1" viewBox="0 -960 960 960" aria-hidden="true"><path d="{{ icon('close') }}"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="task-sheet-body">
+      <div class="task-sheet-inner">
+        <h1 id="task-sheet-title" class="text-lead font-semibold mb-3 break-words" data-task-sheet-title>Task</h1>
+        <div id="drawer-content"></div>
+      </div>
+    </div>
+  </aside>
+</div>

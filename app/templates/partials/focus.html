@@ -1,0 +1,217 @@
+{# FOCUS — the owner's "what now". One project (/<slug>), an account and every project under it (rollup, task
+   #148), or every active project (the global home). Only:
+   Review (the AI finished; test/OK it) · Now (<= 3 in progress) · Up next (the next 3 Ready) · Done today (+ this
+   week) · Waiting on AI (one collapsed line). The backlog is never shown here. No streaks, no overdue, no nagging.
+   Across projects, every row carries a project chip that opens its project; every write goes to the task's own
+   project and answers with this same view (the query carries layout + rollup). #}
+{% set f = focus %}
+{% set is_global = global_focus is defined and global_focus %}
+{% set is_rollup = rollup is defined and rollup %}
+{% set many = is_global or is_rollup %}
+{% set refresh = '/all/focus' if is_global else (view_base if is_rollup else base) ~ '/tasks/board?' ~ query %}
+<div id="board" data-query="{{ query }}" data-layout="{{ 'home' if is_global else 'focus' }}" class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start" data-fold-root
+     hx-get="{{ refresh }}" hx-trigger="mdd:board-stale from:body" hx-swap="outerHTML">
+
+  {% macro project_tag(t, many) %}{% if many %}<a href="/{{ t.project_slug }}" class="project-chip" data-project-chip="{{ t.project_slug }}">{{ t.project_name }}</a>{% endif %}{% endmacro %}
+  {# a row opens its task — unless the click was on one of its buttons (Done / Park / Start / Looks good) or its
+     project chip (a link to the project) #}
+  {% macro open_attrs(t) %}hx-get="/{{ t.project_slug }}/tasks/{{ t.id }}/panel" hx-trigger="click[!event.target.closest('button, a')]" hx-target="#drawer-content" hx-swap="innerHTML" hx-on::after-request="Alpine.store('drawer').open = true"{% endmacro %}
+  {% macro tick_svg() %}<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>{% endmacro %}
+  {% macro move(t, status, label, cls, query, with_tick=false) %}<button type="button" class="{{ cls }}" hx-post="/{{ t.project_slug }}/tasks/{{ t.id }}/status?{{ query }}"
+      hx-vals='{"status": "{{ status }}"}' hx-target="#board" hx-swap="outerHTML">{% if with_tick %}{{ tick_svg() }}{% endif %}<span>{{ label }}</span></button>{% endmacro %}
+
+  <div class="lg:col-span-2 flex flex-col gap-5 min-w-0">
+
+    {# --- Questions for you: a session is waiting on an answer. Each one says which task it's about and why. #}
+    {% if f.questions %}
+    <section aria-labelledby="focus-questions" class="flex flex-col gap-2" data-fold-section data-fold-hide-empty>
+      <div class="flex items-baseline gap-2">
+        <h2 id="focus-questions" class="text-lead font-semibold">Questions for you</h2>
+        <span class="text-small tabular text-charcoal/60" data-fold-count>{{ f.questions|length }}</span>
+      </div>
+      {% for q in f.questions %}
+      <div class="flex flex-col gap-1" data-fold="q:{{ q.id }}">
+        <button type="button" class="press text-left text-small text-charcoal/70 hover:underline"
+                hx-get="/{{ q.project_slug }}/tasks/{{ q.task_id }}/panel" hx-target="#drawer-content" hx-swap="innerHTML"
+                hx-on::after-request="Alpine.store('drawer').open = true">
+          Task #{{ q.task_id }} · <span class="font-medium">{{ q.task_title }}</span>
+        </button>
+        {% if many %}<a href="/{{ q.project_slug }}" class="project-chip self-start" data-project-chip="{{ q.project_slug }}">{{ q.project_name }}</a>{% endif %}
+        {% with post_url = '/' ~ q.project_slug ~ '/questions/' ~ q.id ~ '/answer?' ~ query, target = '#board', swap = 'outerHTML' %}{% include "partials/question.html" %}{% endwith %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {# --- Waiting for your decision: recommended changes (the Change log, task #134), decided here in one tap. #}
+    {% if f.changes %}
+    <section aria-labelledby="focus-changes" class="flex flex-col gap-1" data-focus-changes data-fold-section data-fold-hide-empty>
+      <div class="flex items-baseline gap-2 mb-1">
+        <h2 id="focus-changes" class="text-lead font-semibold">Waiting for your decision</h2>
+        <span class="text-small tabular text-charcoal/60" data-fold-count>{{ f.changes|length }}</span>
+      </div>
+      {% for c in f.changes %}{% include "partials/change_card.html" %}{% endfor %}
+    </section>
+    {% endif %}
+
+    {# --- Decided in chat: what sessions recorded as the owner's calls, until acknowledged or overridden (task #581). #}
+    {% if f.chat_decisions %}
+    <section aria-labelledby="focus-chat" class="flex flex-col gap-1" data-focus-chat-decisions data-fold-section data-fold-hide-empty>
+      <div class="flex items-baseline gap-2 mb-1">
+        <h2 id="focus-chat" class="text-lead font-semibold">Decided in chat</h2>
+        <span class="text-small tabular text-charcoal/60" data-fold-count>{{ f.chat_decisions|length }}</span>
+      </div>
+      {% for c in f.chat_decisions %}
+      <div class="rounded-xl border border-line p-3 mb-2" data-change="{{ c.id }}" data-fold="chat:{{ c.id }}">
+        <div class="text-small font-medium break-words">#{{ c.id }} {{ c.title }}</div>
+        <span class="chip bg-status-ok/15 text-status-ok mt-1">{{ c.decision }}</span>
+        {% set cbase = '/' ~ c.project_slug %}{% set fold_whole = true %}{% include "partials/change_chat_decision.html" %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {# --- Review: a clear call to action, above everything else, only when there is something --------- #}
+    {% if f.review %}
+    <section aria-labelledby="focus-review" class="rounded-2xl border border-flame/30 bg-flame/[.06] p-4" data-fold-section>
+      <div class="flex items-baseline gap-2 mb-3">
+        <h2 id="focus-review" class="text-lead font-semibold">Ready for your check</h2>
+        <span class="text-small tabular text-charcoal/60">{{ f.review|length }}</span>
+      </div>
+      <ul class="flex flex-col gap-2">
+        {% for t in f.review %}
+        <li data-fold="rev:{{ t.id }}" class="focus-row card press cursor-pointer relative overflow-hidden pl-4 pr-3 py-3 flex items-center gap-3" {{ open_attrs(t) }}>
+          <span class="prio-stripe {{ PRIORITY_META.get(t.priority, UNKNOWN_META).stripe }}" aria-hidden="true"></span>
+          <div class="min-w-0 flex-1">
+            <div class="text-base font-semibold leading-snug">{{ t.title }}</div>
+            <div class="flex items-center gap-2 mt-1 text-micro text-charcoal/55">
+              <span class="task-no" data-task-no>#{{ t.id }}</span>
+              {% if t.progress.total %}<span class="tabular">{{ t.progress.done }}/{{ t.progress.total }} steps</span>{% endif %}
+              {{ project_tag(t, many) }}
+            </div>
+          </div>
+          {{ move(t, 'done', 'Looks good', 'btn-primary shrink-0 touch-target', query, true) }}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {# --- Now: at most 3 ------------------------------------------------------------------------------ #}
+    <section aria-labelledby="focus-now" data-fold-section>
+      <div class="flex items-baseline gap-2 mb-3">
+        <h2 id="focus-now" class="text-title font-semibold">Now</h2>
+        <span class="text-small tabular text-charcoal/55" data-wip>{{ f.wip }} of {{ f.wip_limit }}</span>
+      </div>
+      <ul class="flex flex-col gap-2.5">
+        {% for t in f.now %}
+        <li data-fold="now:{{ t.id }}" class="focus-row card press cursor-pointer relative overflow-hidden pl-5 pr-3 py-4 flex items-center gap-3" {{ open_attrs(t) }}>
+          <span class="prio-stripe {{ PRIORITY_META.get(t.priority, UNKNOWN_META).stripe }}" aria-hidden="true"></span>
+          <div class="min-w-0 flex-1">
+            <div class="text-lead font-semibold leading-snug">{{ t.title }}</div>
+            <div class="flex items-center gap-2 mt-1.5 text-micro text-charcoal/55">
+              <span class="task-no" data-task-no>#{{ t.id }}</span>
+              <span class="font-semibold uppercase tracking-wide">{{ PRIORITY_META.get(t.priority, UNKNOWN_META).short }}</span>
+              {% if t.progress.total %}
+              <span class="inline-flex items-center gap-1.5 tabular">
+                <span class="w-16 h-1.5 rounded-full bg-charcoal/10 overflow-hidden" aria-hidden="true">
+                  <span class="block h-full rounded-full bg-status-ok" style="width: {{ (t.progress.done / t.progress.total * 100)|round(0) }}%"></span>
+                </span>
+                {{ t.progress.done }}/{{ t.progress.total }}
+              </span>
+              {% endif %}
+              {{ project_tag(t, many) }}
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            {{ move(t, 'ready', 'Park', 'btn-ghost text-small touch-target hidden sm:inline-flex', query) }}
+            {{ move(t, 'done', 'Done', 'btn-primary touch-target', query, true) }}
+          </div>
+        </li>
+        {% endfor %}
+        {% set free = f.wip_limit - f.wip %}
+        {% if f.now|length < f.wip_limit %}
+        <li class="rounded-xl border border-dashed border-line px-4 py-4 text-small text-charcoal/45">
+          {% if free <= 0 %}{% set elsewhere = f.wip - f.now|length %}{{ elsewhere }} more in progress {{ 'outside this account' if is_rollup else ('in another project' if elsewhere == 1 else 'in other projects') }}. That's your {{ f.wip_limit }}.
+          {% elif not f.now %}Nothing in progress. Start one from Up next.
+          {% else %}{{ free }} free slot{{ '' if free == 1 else 's' }}{% endif %}
+        </li>
+        {% endif %}
+      </ul>
+    </section>
+
+    {# --- Up next: the next 3 Ready, one click into Now -------------------------------------------------- #}
+    <section aria-labelledby="focus-next" data-fold-section>
+      <div class="flex items-baseline gap-2 mb-3">
+        <h2 id="focus-next" class="text-lead font-semibold">Up next</h2>
+        {% if f.wip_full and f.up_next %}<span class="text-small text-charcoal/55">Finish or park one to start another</span>{% endif %}
+      </div>
+      <ul class="flex flex-col gap-2">
+        {% for t in f.up_next %}
+        <li data-fold="up:{{ t.id }}" class="focus-row card press cursor-pointer relative overflow-hidden pl-4 pr-3 py-3 flex items-center gap-3" {{ open_attrs(t) }}>
+          <span class="prio-stripe {{ PRIORITY_META.get(t.priority, UNKNOWN_META).stripe }}" aria-hidden="true"></span>
+          <div class="min-w-0 flex-1">
+            <div class="text-base font-medium leading-snug">{{ t.title }}</div>
+            <div class="flex items-center gap-2 mt-1 text-micro text-charcoal/55">
+              <span class="task-no" data-task-no>#{{ t.id }}</span>
+              <span class="font-semibold uppercase tracking-wide">{{ PRIORITY_META.get(t.priority, UNKNOWN_META).short }}</span>
+              {{ project_tag(t, many) }}
+            </div>
+          </div>
+          {% if f.wip_full %}
+          <button type="button" class="btn-ghost text-small shrink-0 touch-target" disabled aria-disabled="true"
+                  title="You have {{ f.wip_limit }} in progress. Finish or park one first.">Start</button>
+          {% else %}
+          {{ move(t, 'doing', 'Start', 'btn-ghost text-small shrink-0 touch-target border border-line', query) }}
+          {% endif %}
+        </li>
+        {% else %}
+        <li class="rounded-xl border border-dashed border-line px-4 py-4 text-small text-charcoal/45">
+          Nothing ready for you.{% if not is_global %} Move one to Ready on the <a href="{{ view_base if is_rollup else base }}/board" class="underline">Board</a>.{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+
+  {# --- right column: Done today + Waiting on AI --------------------------------------------------------- #}
+  <div class="flex flex-col gap-4 min-w-0">
+    <section aria-labelledby="focus-done" class="card p-4">
+      <h2 id="focus-done" class="sr-only">Done today</h2>
+      <div class="flex items-end gap-2">
+        <span class="text-[2.75rem] leading-none font-semibold tabular text-status-ok {{ 'celebrate-count' if celebrate_id }}"
+              data-done-today>{{ f.done_today|length }}</span>
+        <span class="text-base font-medium pb-1">done today</span>
+      </div>
+      <div class="text-small text-charcoal/55 mt-1 tabular" data-done-week>This week: {{ f.done_week }} done</div>
+      {% if f.done_today %}
+      <ul class="mt-3 flex flex-col gap-1">
+        {% for t in f.done_today %}
+        <li data-fold="done:{{ t.id }}" class="flex items-start gap-2 rounded-lg px-1.5 py-1 text-small {{ 'celebrate-row' if celebrate_id == t.id }} cursor-pointer" {{ open_attrs(t) }}>
+          <span class="tick text-status-ok mt-0.5 shrink-0">{{ tick_svg() }}</span>
+          <span class="min-w-0"><span class="block leading-snug">{{ t.title }} <span class="task-no" data-task-no>#{{ t.id }}</span></span>{{ project_tag(t, many) }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    <details class="card group" data-ai-waiting>
+      <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+        <svg class="w-4 h-4 text-indigo shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg>
+        <span class="text-small"><span class="font-semibold tabular">{{ f.ai_doing|length }}</span> {{ 'task' if f.ai_doing|length == 1 else 'tasks' }} in progress with AI</span>
+        <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </summary>
+      <ul class="px-4 pb-3 flex flex-col gap-1.5">
+        {% for t in f.ai_doing %}
+        <li data-fold="ai:{{ t.id }}" class="press cursor-pointer flex items-start gap-2 text-small rounded-lg px-1 py-1 hover:bg-charcoal/[.04]" {{ open_attrs(t) }}>
+          <span class="chip bg-indigo/10 text-indigo shrink-0">{{ t.owner_stream }}</span>
+          <span class="min-w-0"><span class="block leading-snug">{{ t.title }} <span class="task-no" data-task-no>#{{ t.id }}</span></span>{{ project_tag(t, many) }}</span>
+        </li>
+        {% else %}
+        <li class="text-small text-charcoal/45">Nothing right now.</li>
+        {% endfor %}
+      </ul>
+    </details>
+  </div>
+</div>

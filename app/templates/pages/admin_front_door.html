@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Front door{% endblock %}
+{% block page_title %}Front door{% endblock %}
+{% block content %}
+{# Front door card (#976): owner only. Needs: mode (lan|public|proxy|local), lan_url, fingerprint, public_host, public_url, warning,
+   svc_problem, rotation, can_change, no_passkey, this_computer. Plain words only. #}
+<div class="max-w-3xl" data-front-door data-mode="{{ mode }}">
+  <h1 class="text-xl font-semibold mb-1">Front door</h1>
+  <p class="text-small text-charcoal/65 mb-4">How people open Crewboss.</p>
+  {% if svc_problem %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-svc-problem>{{ svc_problem }}</p>{% endif %}
+
+  <section class="card p-4 mb-4" data-section="state">
+    {% if mode == "lan" %}
+    <p>People on your network use <strong data-lan-url>{{ lan_url }}</strong> <span class="text-charcoal/65">(your browser warns once)</span>.</p>
+    {% if fingerprint %}<p class="text-micro text-charcoal/60 mt-1">Fingerprint: <span class="font-mono break-all select-all">{{ fingerprint }}</span> (a code that identifies this connection; also shown at <a class="underline" href="/trust">/trust</a>)</p>{% endif %}
+    <p class="mt-3 text-small rounded-md border border-flame/30 bg-flame/5 px-3 py-2 text-flame" data-lan-warning>{{ warning }}</p>
+    {% elif mode == "public" %}
+    <p>People open Crewboss at <strong data-public-url>{{ public_url }}</strong>, with a padlock and no browser warning.</p>
+    {% if lan_url %}<p class="text-small text-charcoal/65 mt-1">{{ lan_url }} on your network keeps working too.</p>{% endif %}
+    {% if no_passkey %}<p class="text-small mt-2" data-no-passkey>{{ no_passkey }} {{ 'person still signs' if no_passkey == 1 else 'people still sign' }} in without a passkey. A passkey is safer on the internet; each person can add one on their account page.</p>{% endif %}
+    {% elif mode == "proxy" %}
+    <p>Crewboss is behind your own web server, which looks after the secure connection. Nothing to change here.</p>
+    {% else %}
+    <p>Crewboss is open on this computer only. To let other computers in, run <code>./crewboss install --mode lan</code> on this computer.</p>
+    {% endif %}
+  </section>
+
+  {% if mode == "lan" %}
+  <section class="card p-4 mb-4" data-section="pitch">
+    <p class="font-medium">Get a padlock for your own web address: no browser warning, and it unlocks passwordless sign-in with a passkey.</p>
+    <p class="text-small text-charcoal/65 mt-1">Three steps. Your network address keeps working alongside it.</p>
+  </section>
+
+  {% if can_change %}
+  <div class="space-y-4" data-front-door-form>
+    <section class="card p-4" data-step="1">
+      <h2 class="text-lead font-semibold mb-1">1. Your web address</h2>
+      <label class="block"><span class="kb-label">Web address <span class="kb-label-hint">like crew.example.com</span></span>
+        <input name="domain" id="fd-domain" class="field w-full text-small" maxlength="253" autocapitalize="off" spellcheck="false" placeholder="crew.example.com" required></label>
+      <label class="block mt-2"><span class="kb-label">Your email <span class="kb-label-hint">optional, only so you get a warning before the padlock runs out</span></span>
+        <input name="email" id="fd-email" type="email" class="field w-full text-small" maxlength="320" autocomplete="email"></label>
+      <details class="mt-2 text-small"><summary class="cursor-pointer">Don't have one? A free one takes two minutes</summary>
+        <ol class="list-decimal ml-5 mt-1 text-charcoal/70">
+          <li>Go to duckdns.org and sign in.</li><li>Pick a name, for example myteam. You get myteam.duckdns.org.</li>
+          <li>Put your internet connection's address in the "current ip" box and press "update ip".</li></ol>
+        <p class="mt-1 text-charcoal/70">Keep the name for good: passkeys are tied to it.</p></details>
+    </section>
+
+    <section class="card p-4" data-step="2">
+      <h2 class="text-lead font-semibold mb-1">2. Point it here and open port 80</h2>
+      <p class="text-small">At your web address provider, point the address at your internet connection's address. On your router, forward port 80 (and 443) to this computer, <strong>{{ this_computer }}</strong>.</p>
+      <details class="mt-2 text-small"><summary class="cursor-pointer">Where do I find that on my router?</summary>
+        <p class="mt-1 text-charcoal/70">Look for a menu called Port Forwarding, Virtual Server or NAT. Add a rule for port 80 and another for 443, both to {{ this_computer }}. It is often easier if the router always gives this computer the same address (a "DHCP reservation").</p></details>
+      <p class="text-micro text-charcoal/55 mt-2">Some routers can't open their own public address from inside the network. That is why the network address keeps working.</p>
+    </section>
+
+    <section class="card p-4" data-step="3">
+      <h2 class="text-lead font-semibold mb-1">3. Check and switch on</h2>
+      <button type="button" class="btn-primary text-small touch-target" hx-post="/admin/front-door/check" hx-include="#fd-domain"
+              hx-target="#fd-check" hx-swap="innerHTML" {% if busy %}disabled{% endif %}>Check</button>
+      <div id="fd-check" class="mt-3" aria-live="polite" data-check-area></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% elif mode == "public" and can_change %}
+  <section class="card p-4 mb-4" data-section="stop">
+    <h2 class="text-lead font-semibold mb-1">Stop using {{ public_host }}</h2>
+    <p class="text-small text-charcoal/65 mb-2">Goes back to the network address only. Anyone who added a passkey on {{ public_host }} will need to sign in with a password and code.</p>
+    <button type="button" class="btn-ghost text-small border border-line" hx-post="/admin/front-door/remove-public" hx-target="#fd-result"
+            hx-confirm="Stop using {{ public_host }}?">Stop using this address</button>
+  </section>
+  {% endif %}
+
+  {% if rotation and rotation.get('next_fp') and can_change %}
+  <section class="card p-4 mb-4" data-section="renewal">
+    <h2 class="text-lead font-semibold mb-1">Your network connection is due for renewal</h2>
+    <p class="text-small text-charcoal/65 mb-2">First tell your computers that run agents about the new one. Then switch. Browsers will warn once more after the switch.</p>
+    <button type="button" class="btn-primary text-small" hx-post="/admin/front-door/lan-cert/prepare" hx-target="#fd-renewal" hx-swap="innerHTML">Get computers ready</button>
+    <div id="fd-renewal" class="mt-3" aria-live="polite"></div>
+  </section>
+  {% endif %}
+
+  <div id="fd-result" aria-live="polite"></div>
+  <p class="text-micro text-charcoal/55 mt-4">More: docs/getting-started.md#10-give-it-your-own-web-address-optional</p>
+</div>
+{% endblock %}

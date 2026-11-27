@@ -1,0 +1,28 @@
+{% extends "pages/auth_layout.html" %}
+{% block title %}Trust this connection{% endblock %}
+{% block heading %}Opening Crewboss for the first time{% endblock %}
+{% block width %}max-w-xl{% endblock %}
+{% block content %}
+{# /trust (#976): open page. Needs: fingerprint, address, lan, https_url, not_after. #}
+<div class="text-sm" data-trust-page>
+  <p class="mb-3">Your browser will warn you once. That's expected on your own network: click Advanced, then Continue.</p>
+  {% if https_url %}<p class="mb-3"><a class="btn-primary inline-block" href="{{ https_url }}" data-trust-open>Open Crewboss</a></p>{% endif %}
+
+  {% if fingerprint %}
+  <h2 class="font-semibold mt-4 mb-1">To be extra careful</h2>
+  <p class="text-charcoal/70 mb-2">Check that your browser shows this fingerprint for the connection. A <strong>fingerprint</strong> is a short code that identifies this server's secure connection, like a name badge.</p>
+  <p class="font-mono text-xs break-all select-all rounded-md border border-line px-3 py-2" data-fingerprint>{{ fingerprint }}</p>
+  <p class="text-xs text-charcoal/60 mt-2">This code is only as trustworthy as where you got it. Compare it with the one printed on the computer that runs Crewboss when it was installed.</p>
+  {% endif %}
+
+  <h2 class="font-semibold mt-5 mb-2">What to click</h2>
+  <dl class="space-y-2" data-browser-help>
+    <div><dt class="font-medium">Edge or Chrome (Windows, Mac, Android)</dt><dd class="text-charcoal/70">Click <strong>Advanced</strong>, then <strong>Continue to {{ address or 'this address' }} (unsafe)</strong>. To see the fingerprint, click "Not secure" next to the address, then the certificate.</dd></div>
+    <div><dt class="font-medium">Firefox</dt><dd class="text-charcoal/70">Click <strong>Advanced...</strong>, then <strong>Accept the Risk and Continue</strong>. The fingerprint is under "View Certificate".</dd></div>
+    <div><dt class="font-medium">Safari on a Mac</dt><dd class="text-charcoal/70">Click <strong>Show Details</strong>, then <strong>visit this website</strong>, and confirm.</dd></div>
+    <div><dt class="font-medium">iPhone or iPad</dt><dd class="text-charcoal/70">Tap <strong>Show Details</strong>, then <strong>visit this website</strong>, and confirm.</dd></div>
+  </dl>
+  <p class="text-xs text-charcoal/60 mt-3">Chrome and Edge ask again after about a week (or after the browser restarts). Firefox and Safari remember it.</p>
+  {% if not lan %}<p class="text-xs mt-3 rounded-md border border-line px-3 py-2">This Crewboss is not set up for a home or office network, so there is no fingerprint to show.</p>{% endif %}
+</div>
+{% endblock %}

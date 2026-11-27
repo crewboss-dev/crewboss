@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% set is_objective = (kind == 'objective') %}
+{# An account's shared rule / AI skill (task #148) keeps its kind, like an objective: no Kind picker. #}
+{% set is_shared = kind in ('rule', 'skill') %}
+{% set fixed_kind = is_objective or is_shared %}
+{% set noun = 'objective' if is_objective else ('shared AI skill' if kind == 'skill' else ('shared rule' if kind == 'rule' else 'entry')) %}
+{% set section = {'objective': ('/objectives', 'Objectives'), 'skill': ('/ai-features', 'App AI features'), 'rule': ('/rules', 'Rules')}.get(kind, ('/knowledge', 'Knowledge')) %}
+{% block title %}{{ 'Edit' if e else 'New' }} {{ noun }}{% endblock %}
+{% block page_title %}
+<a href="{{ base }}{{ section[0] }}" class="text-charcoal/40 hover:text-charcoal">{{ section[1] }}</a>
+<span class="text-charcoal/30 mx-1">/</span>{{ 'Edit' if e else 'New' }} {{ noun }}
+{% endblock %}
+{% block head %}<script src="{{ asset('js/knowledge-editor.js') }}" defer></script>{% endblock %}
+{% block content %}
+{# The knowledge editor. Title (one line) and summary (two lines) are required, with live counters; the
+   body is a WYSIWYG-lite rich text editor (static/js/knowledge-editor.js, TipTap) that submits MARKDOWN
+   in the `body` textarea — without JavaScript the textarea itself is the (Markdown) editor. #}
+{% set d = draft or {} %}
+{% set v_title = d.title if d.title is defined else (e.title if e else '') %}
+{% set v_summary = d.summary if d.summary is defined else (e.summary if e else '') %}
+{% set v_body = d.body if d.body is defined else (e.body if e else '') %}
+{% set v_source = d.source if d.source is defined else (e.source if e else '') %}
+{% set v_tags = d.subprojects if d.subprojects is defined else (e.subprojects if e else []) %}
+{% set v_kind = (d.kind or kind) if d.kind is defined else kind %}
+<form method="post" action="{{ base }}/knowledge{% if e %}/{{ e.id }}{% endif %}" class="kb-editor-page"
+      x-data="{ title: {{ v_title|tojson|forceescape }}, summary: {{ v_summary|tojson|forceescape }} }" data-kb-form>
+  {% if error %}<div role="alert" class="kb-note kb-note-error">{{ error }} &mdash; nothing was lost; fix it and save again.</div>{% endif %}
+
+  <div class="card kb-editor-card">
+    {% if is_shared %}
+    <input type="hidden" name="kind" value="{{ kind }}">
+    <p class="text-small text-charcoal/65" data-shared-kind>Shared with every project in {{ current_project.name }}.
+      {% if kind == 'skill' %}Title = the skill's name, summary = what it's for, body = the instructions an AI follows.{% else %}Title = the rule, summary = it in two lines, body = the detail.{% endif %}</p>
+    {% elif not is_objective %}
+    <fieldset>
+      <legend class="kb-label">Kind</legend>
+      <div class="seg" role="radiogroup">
+        {% for k in kinds %}
+        <label class="seg-opt"><input type="radio" name="kind" value="{{ k }}" {% if v_kind == k %}checked{% endif %}><span>{{ k|capitalize }}</span></label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% else %}
+    <input type="hidden" name="kind" value="objective">
+    {% endif %}
+
+    <div>
+      <div class="kb-label-row">
+        <label for="kb-title" class="kb-label">Title <span class="kb-label-hint">one line</span></label>
+        <span class="kb-counter tabular" :class="title.length > {{ TITLE_MAX - 10 }} && 'kb-counter-near'" aria-live="polite"><span x-text="title.length">{{ v_title|length }}</span>/{{ TITLE_MAX }}</span>
+      </div>
+      <input id="kb-title" name="title" x-model="title" required maxlength="{{ TITLE_MAX }}" value="{{ v_title }}" class="field kb-title-field"
+             placeholder="{{ 'e.g. Grow monthly invoicing' if is_objective else ('e.g. Humanizer' if kind == 'skill' else 'e.g. Xero tokens expire after 30 minutes') }}" autocomplete="off">
+    </div>
+
+    <div>
+      <div class="kb-label-row">
+        <label for="kb-summary" class="kb-label">Summary <span class="kb-label-hint">two lines &mdash; what someone needs without opening it</span></label>
+        <span class="kb-counter tabular" :class="summary.length > {{ SUMMARY_MAX - 20 }} && 'kb-counter-near'" aria-live="polite"><span x-text="summary.length">{{ v_summary|length }}</span>/{{ SUMMARY_MAX }}</span>
+      </div>
+      <textarea id="kb-summary" name="summary" x-model="summary" required maxlength="{{ SUMMARY_MAX }}" rows="2" class="field text-small kb-summary-field"
+                placeholder="{{ 'Why it matters and how we will know we got there.' if is_objective else 'The one thing to know, in plain words.' }}"
+                @keydown.enter.prevent>{{ v_summary }}</textarea>
+    </div>
+
+    {% if is_objective %}
+    {% set v_tv = d.target_value if d.target_value is defined else (('%g'|format(e.target_value|float)) if e and e.target_value is not none else '') %}
+    {% set v_tu = d.target_unit if d.target_unit is defined else (e.target_unit if e else 'money') %}
+    {% set v_tp = d.target_period if d.target_period is defined else (e.target_period if e else 'monthly') %}
+    <fieldset class="kb-target-fields">
+      <legend class="kb-label">Target</legend>
+      <div class="flex flex-wrap items-center gap-2">
+        <input name="target_value" inputmode="decimal" value="{{ v_tv }}" placeholder="40000" class="field !w-32 tabular" aria-label="Target value">
+        <div class="seg" role="radiogroup" aria-label="Unit">
+          {% for u, label in [('money', '$'), ('count', 'Count'), ('percent', '%'), ('hours', 'Hours')] %}
+          <label class="seg-opt"><input type="radio" name="target_unit" value="{{ u }}" {% if (v_tu or '') == u %}checked{% endif %}><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+        <select name="target_period" class="field !w-auto text-small" aria-label="Per">
+          <option value="" {% if not v_tp %}selected{% endif %}>No period</option>
+          {% for pv, pl in [('weekly', 'per week'), ('monthly', 'per month'), ('quarterly', 'per quarter'), ('yearly', 'per year')] %}
+          <option value="{{ pv }}" {% if v_tp == pv %}selected{% endif %}>{{ pl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </fieldset>
+    {% endif %}
+
+    <div>
+      <div class="kb-label-row"><label for="kb-body" class="kb-label">Detail</label></div>
+      <div class="kb-editor" data-kb-editor data-upload-url="{{ base }}/knowledge/images">
+        <template data-kb-html>{{ v_body|markdown }}</template>
+        <textarea id="kb-body" name="body" rows="14" class="field text-small font-mono kb-body-fallback"
+                  placeholder="Markdown: ## headings, - lists, | tables |, ```code```">{{ v_body }}</textarea>
+      </div>
+    </div>
+
+    {% if not is_objective %}
+    {% if tags %}
+    <fieldset>
+      <legend class="kb-label">Tags</legend>
+      <input type="hidden" name="tags_present" value="1">
+      <div class="flex flex-wrap gap-1.5">
+        {% for t in tags %}
+        <label class="kb-tag-opt"><input type="checkbox" name="tags" value="{{ t }}" {% if t in v_tags %}checked{% endif %}><span>{{ t }}</span></label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% endif %}
+    <div>
+      <label for="kb-source" class="kb-label">Source <span class="kb-label-hint">optional &mdash; where this came from</span></label>
+      <input id="kb-source" name="source" maxlength="300" value="{{ v_source }}" class="field text-small" placeholder="e.g. docs/design-rules.md, a call with the client">
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="kb-editor-bar">
+    <button type="submit" class="btn-primary">{{ 'Save' if e else ('Add objective' if is_objective else ('Add ' ~ noun if is_shared else 'Add entry')) }}</button>
+    <a href="{{ base }}{{ back }}" class="btn-ghost">Cancel</a>
+  </div>
+</form>
+{% endblock %}

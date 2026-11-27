@@ -1,0 +1,16 @@
+[Unit]
+Description=Morning Claude-session refresh ticks (notice, then every 5 min, idle only, never forced)
+
+[Timer]
+# One run does whatever the clock calls for (sessions/refresh.py): the notice at the window start, idle-only restarts after
+# it, never forced (a busy session is skipped that day; the next morning tries again). Use an explicit zone so DST never
+# moves it, and the same zone as CREWBOSS_REFRESH_TZ.
+OnCalendar=Mon..Sat *-*-* 07:20:00 UTC
+OnCalendar=Mon..Sat *-*-* 07:30/5:00 UTC
+OnCalendar=Mon..Sat *-*-* 08:00/5:00 UTC
+AccuracySec=5s
+Persistent=false
+Unit=crewboss-sessions-refresh.service
+
+[Install]
+WantedBy=timers.target

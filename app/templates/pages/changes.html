@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Changes · {{ current_project.name }}{% endblock %}
+{% block page_title %}Changes{% endblock %}
+{% block content %}
+{# THE CHANGE LOG (task #134): every significant change is recorded BEFORE it's made. Waiting for your decision
+   first and loud; then decided-not-done; then done (rejected ones close there too). One idea per row. On an ACCOUNT
+   (rollup, task #148) it is every project under it, grouped the same way, each row naming its project. #}
+{% set is_rollup = rollup is defined and rollup %}
+
+<p class="text-small text-charcoal/60 mb-4 max-w-2xl">
+  Every significant change is recorded here before it's made: recommended, then your decision, then the work that did it.{% if is_rollup %} Across every project in {{ rollup.name }}.{% endif %}
+</p>
+
+<section aria-labelledby="ch-waiting" class="mb-6" data-changes-waiting data-fold-section>
+  <div class="flex items-baseline gap-2 mb-2">
+    <h2 id="ch-waiting" class="text-lead font-semibold">Waiting for your decision</h2>
+    <span class="text-small tabular text-charcoal/60" data-fold-count>{{ g.waiting|length }}</span>
+  </div>
+  {% for c in g.waiting %}
+  {% include "partials/change_card.html" %}
+  {% endfor %}
+  <div class="card px-4 py-5 text-center text-small text-charcoal/50" data-fold-placeholder{% if g.waiting %} hidden{% endif %}>Nothing waiting for you.</div>
+</section>
+
+<section aria-labelledby="ch-decided" class="mb-6" data-changes-decided data-fold-section>
+  <div class="flex items-baseline gap-2 mb-2">
+    <h2 id="ch-decided" class="text-small font-semibold">Decided, not done yet</h2>
+    <span class="text-micro tabular text-charcoal/50" data-fold-count>{{ g.decided|length }}</span>
+  </div>
+  <div class="card divide-y divide-line" id="changes-decided-list">
+    {% for c in g.decided %}{% include "partials/change_decided_row.html" %}{% endfor %}
+    <div class="px-4 py-3 text-small text-charcoal/50" data-fold-placeholder{% if g.decided %} hidden{% endif %}>None.</div>
+  </div>
+</section>
+
+<details class="card group" data-changes-done data-fold-section>
+  <summary class="press list-none cursor-pointer flex items-center gap-2 px-4 py-3 touch-target">
+    <span class="text-small font-semibold">Done</span>
+    <span class="text-micro tabular text-charcoal/50" data-fold-count>{{ g.done|length }}</span>
+    <svg class="w-3.5 h-3.5 ml-auto opacity-50 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+  </summary>
+  <div class="divide-y divide-line border-t border-line" id="changes-done-list">
+    {% for c in g.done %}{% include "partials/change_done_row.html" %}{% endfor %}
+    <div class="px-4 py-3 text-small text-charcoal/50" data-fold-placeholder{% if g.done %} hidden{% endif %}>None yet.</div>
+  </div>
+</details>
+{% endblock %}

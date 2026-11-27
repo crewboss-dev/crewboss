@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Activity{% endblock %}
+{% block page_title %}Activity{% endblock %}
+{% block content %}
+
+<form method="get" class="flex flex-wrap items-center gap-2 mb-4">
+  <select name="actor" onchange="this.form.submit()" class="field !w-auto text-small py-1">
+    <option value="">Everyone</option>
+    <option value="owner" {% if actor == 'owner' %}selected{% endif %}>Owner</option>
+    <option value="claude:features" {% if actor == 'claude:features' %}selected{% endif %}>claude:features</option>
+    <option value="claude:bugs" {% if actor == 'claude:bugs' %}selected{% endif %}>claude:bugs</option>
+    <option value="claude:tweaks" {% if actor == 'claude:tweaks' %}selected{% endif %}>claude:tweaks</option>
+    <option value="claude:reviewer" {% if actor == 'claude:reviewer' %}selected{% endif %}>claude:reviewer</option>
+    <option value="claude:errors" {% if actor == 'claude:errors' %}selected{% endif %}>claude:errors</option>
+    <option value="system" {% if actor == 'system' %}selected{% endif %}>system</option>
+  </select>
+  <select name="entity" onchange="this.form.submit()" class="field !w-auto text-small py-1">
+    <option value="">All kinds</option>
+    {% for e in ['task', 'knowledge', 'project', 'catalog_scan'] %}
+    <option value="{{ e }}" {% if entity == e %}selected{% endif %}>{{ e }}</option>
+    {% endfor %}
+  </select>
+  {% if actor or entity %}<a href="{{ base }}/activity" class="text-micro underline opacity-60">clear</a>{% endif %}
+</form>
+
+<div class="card p-4">
+  <div class="space-y-3">
+    {% for a in entries %}
+    {% include "partials/activity_row.html" %}
+    {% else %}
+    <div class="text-small text-charcoal/40">Nothing matches yet.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

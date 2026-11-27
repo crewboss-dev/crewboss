@@ -1,0 +1,24 @@
+{# PLANNING DATES (#915), display only (rule k79: the AI fills these in): a date chip (the effective due date: red when late, amber
+   when the start-by has been reached) and a "Waiting on X until Y" badge. Needs `t` = a task row from repo.get_task / list_tasks
+   (planning.decorate adds due_effective, due_state, waiting_overdue, milestone_name). Renders nothing for a task with no dates. #}
+{% if t.status != 'done' %}
+{% set due = t.due_effective %}
+{% if due or t.start_by or t.waiting_on %}
+<div class="mt-1.5 flex items-center gap-1.5 flex-wrap text-micro" data-plan-dates>
+  {% if due %}
+  <span class="chip normal-case tabular {{ 'bg-status-disaster/10 text-status-disaster font-semibold' if t.due_state == 'late' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' if t.due_state == 'start_reached' else 'bg-charcoal/[.07] text-charcoal/70' }}"
+        data-due-chip="{{ t.due_state or 'ok' }}"
+        title="{{ 'Due ' ~ due.isoformat() ~ (' (from milestone ' ~ t.milestone_name ~ ')' if t.due_source == 'milestone' else '') ~ (' · start by ' ~ t.start_by.isoformat() if t.start_by else '') }}">
+    {% if t.due_state == 'late' %}Late · {% elif t.due_state == 'start_reached' %}Start now · {% endif %}Due {{ due.strftime('%-d %b') }}
+  </span>
+  {% elif t.start_by %}
+  <span class="chip normal-case tabular {{ 'bg-status-warn/15 text-charcoal dark:text-status-warn' if t.due_state == 'start_reached' else 'bg-charcoal/[.07] text-charcoal/70' }}" data-due-chip="{{ t.due_state or 'ok' }}">Start by {{ t.start_by.strftime('%-d %b') }}</span>
+  {% endif %}
+  {% if t.milestone_name %}<span class="chip bg-charcoal/[.07] text-charcoal/70 normal-case" data-milestone-chip title="Milestone">{{ t.milestone_name }}</span>{% endif %}
+  {% if t.waiting_on %}
+  <span class="chip normal-case {{ 'bg-status-warn/15 text-charcoal dark:text-status-warn' if t.waiting_overdue else 'bg-indigo/10 text-indigo' }}" data-waiting-badge
+        title="{{ t.waiting_for or '' }}">Waiting on {{ t.waiting_on }}{% if t.waiting_until %} until {{ t.waiting_until.strftime('%-d %b') }}{% endif %}{% if t.waiting_overdue %} · overdue{% endif %}</span>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}

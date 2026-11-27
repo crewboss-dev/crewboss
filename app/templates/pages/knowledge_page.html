@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ e.title }}{% endblock %}
+{% block page_title %}{{ 'Objective' if e.kind == 'objective' else 'Knowledge' }}{% endblock %}
+{% block content %}
+{# A knowledge entry's full page (#816): the card's head and its body (partials/knowledge_body.html, the same as the expanded card) in one centred column. #}
+<div data-swappable data-ca-page data-ca-entity="knowledge:{{ e.id }}" data-ca-title="{{ e.title }}" class="max-w-3xl mx-auto">
+  <nav class="flex items-center gap-2 text-small text-charcoal/60 mb-3" aria-label="Where this entry is">
+    <a href="{{ back }}" class="hover:text-charcoal hover:underline" data-back-link>&larr; {{ 'Objectives' if e.kind == 'objective' else 'Knowledge' }}</a>
+    <span aria-hidden="true">/</span><span>{{ e.kind }}</span>
+  </nav>
+  <h1 class="text-lead font-semibold break-words">{{ e.title }}</h1>
+  {% if e.summary %}<p class="text-small text-charcoal/70 mt-1 break-words">{{ e.summary }}</p>{% endif %}
+  <div class="kb-meta mt-2 mb-3">
+    <span class="kb-kind">{{ e.kind }}</span>
+    {% for sp in e.subprojects %}<span class="kb-tag">{{ sp }}</span>{% endfor %}
+    {% if e.needs_review %}<span class="kb-flag kb-flag-review"><span class="kb-dot" aria-hidden="true"></span>Needs review</span>{% endif %}
+    <span class="kb-when">{{ e.updated_at|timeago }}</span>
+    <a href="{{ base }}/knowledge/{{ e.id }}/edit" class="ml-auto text-small underline">Edit</a>
+  </div>
+  <div class="card p-4">{% include "partials/knowledge_body.html" %}</div>
+</div>
+{% endblock %}

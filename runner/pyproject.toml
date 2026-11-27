@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crewboss-runner"
+version = "0.1.0"
+description = "The Crewboss runner: holds one outbound socket to the dashboard and runs its jobs with Claude Code on this PC."
+requires-python = ">=3.12"
+dependencies = [
+    "websockets>=13",
+    "cryptography>=42",
+    "keyring>=25",
+    "pywinpty>=2; sys_platform == 'win32'",
+    "pywin32>=306; sys_platform == 'win32'",   # the optional Windows service (service install --windows-service); a plain dependency so the flag just works
+    # the tray (#974) is Windows-only (owner: no GUI on Linux or macOS; those are command-line first)
+    "pystray>=0.19.5; sys_platform == 'win32'",
+    "Pillow>=10; sys_platform == 'win32'",
+]
+
+[project.scripts]
+crewboss-runner = "crewboss_runner.cli:main"
+# TODO(#589 compat): the pre-rename command, so a systemd unit with ExecStart=%h/.local/bin/mallen-runner keeps working after a reinstall
+mallen-runner = "crewboss_runner.cli:main"
+
+[project.gui-scripts]
+# GUI-subsystem launcher (no console window): what the Windows hidden logon task and the service run (#972)
+crewboss-runnerw = "crewboss_runner.cli:main"
+crewboss-runner-tray = "crewboss_runner.tray:main"   # the tray with no console window (#974)
+
+[tool.setuptools]
+packages = ["crewboss_runner"]

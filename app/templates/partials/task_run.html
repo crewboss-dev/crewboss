@@ -1,0 +1,107 @@
+{# "Run on a PC" (task #627, change #50, P4b): start a runner job for this task and see where it is. Needs: task, base, run
+   ({job, profiles, can_run, has_remote, live} from pages._run_context). A job is started and cancelled by a signed-in person only. #}
+<section class="mt-6" aria-label="Run on a PC" data-run>
+  <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-2">Run on a PC</div>
+  {% if run.test_line %}<p class="text-small mb-2" data-run-test-mode>{{ run.test_line }}</p>{% endif %}
+  {% set job = run.job %}
+  {% if job %}
+  <div class="card p-2.5 mb-2" data-run-job data-job-state="{{ job.state }}">
+    <p class="text-small">
+      <span class="chip {{ 'bg-status-ok/10 text-status-ok' if job.state in ('running', 'done') else 'bg-status-disaster/10 text-status-disaster' if job.state in ('failed', 'cancelled') else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}" data-run-state>{{ job.state }}</span>
+      <span data-run-text>{% if job.state == 'queued' %}Queued, waiting for a runner{% if job.requires_labels %} labelled {{ job.requires_labels|join(', ') }}{% endif %}{% elif job.state == 'running' %}Running on {{ job.device or 'a runner' }}{% elif job.state == 'done' %}Done{% elif job.state == 'failed' %}Failed{% else %}Cancelled{% endif %}</span>
+      <span class="text-micro text-charcoal/50">· {{ job.profile }} · job {{ job.id }}</span></p>
+    {% if run.server_reads %}
+    <div class="mt-1" data-run-reads><p class="text-micro text-charcoal/60">Server reads by this job</p>
+      <ul class="text-micro text-charcoal/70">{% for l in run.server_reads %}<li class="break-all" data-run-read>{{ l.server_name or '?' }} · {{ l.read_name }} ({{ l.env }}) · {{ l.window }} · {% if l.ok %}{{ l.bytes }} bytes{% else %}refused{% endif %}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if run.model_uses %}
+    <div class="mt-1" data-run-models><p class="text-micro text-charcoal/60">Other models used by this job</p>
+      <ul class="text-micro text-charcoal/70">{% for u in run.model_uses %}<li class="break-all" data-run-model>{{ u.provider|capitalize }} {{ u.label }} ({{ u.model or 'default' }}) · {% if u.ok %}{{ u.bytes_in }} bytes sent, {{ u.bytes_out }} back{% elif u.state == 'refused' %}refused: switched off or the job's call ceiling{% elif u.state == 'pending' %}in progress{% elif u.error == 'Gemini limit reached' %}limit reached{% else %}failed{% endif %}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if job.branch %}<p class="text-micro text-charcoal/60 mt-1">Branch <span class="font-mono break-all" data-run-branch>{{ job.branch }}</span></p>{% endif %}
+    {% if job.summary and not run.live %}<p class="text-micro text-charcoal/60 mt-1 break-words">{{ job.summary }}</p>{% endif %}
+    {% if run.live and run.can_run and run.is_starter %}
+    <form hx-post="{{ base }}/tasks/{{ task.id }}/run/cancel" hx-target="#drawer-content" hx-swap="innerHTML" class="mt-2">
+      <button type="submit" class="btn-ghost text-small border border-line" data-run-cancel>Cancel</button>
+    </form>
+    {% elif run.live %}
+    <p class="text-micro text-charcoal/60 mt-1" data-run-starter>Started by {{ job.user_name or 'another person' }}</p>
+    {% endif %}
+    {% if job.state == 'queued' and job.pin_device %}<p class="text-micro text-charcoal/60 mt-1" data-run-pinned>Waiting for {{ job.pin_device }}</p>{% endif %}
+    {# a job pinned to a runner that has been offline a while: the person is OFFERED a move, and it is their click (never automatic) #}
+    {% if run.stuck %}
+    <div class="mt-2 rounded-lg bg-status-warn/15 px-3 py-2 text-small" data-run-stuck>
+      <p>{% if run.stuck.device.dead %}{{ run.stuck.device.name }} was revoked or has expired, so this job can never start there.{% else %}{{ run.stuck.device.name }} is offline and this job has waited over 10 minutes.{% endif %}</p>
+      <div class="flex flex-wrap gap-2 mt-1">
+        {% for a in run.stuck.alternates %}
+        <form hx-post="{{ base }}/tasks/{{ task.id }}/run/move" hx-target="#drawer-content" hx-swap="innerHTML"><input type="hidden" name="device_id" value="{{ a.id }}">
+          <button type="submit" class="btn-ghost text-small border border-line touch-target" data-run-move>Run on {{ a.name }}</button></form>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if not run.live %}
+  {% if not run.can_run %}
+  <p class="text-micro text-charcoal/45">Sign in to start a job.</p>
+  {% elif not run.has_remote %}
+  <p class="text-micro text-charcoal/55" data-run-needs-remote>Set this project's git remote first (the project's Settings tab, Edit repo and environments); a runner clones it.</p>
+  {% else %}
+  {% if run.client_text %}<p class="mb-2 text-small rounded-lg bg-status-warn/15 px-3 py-2" role="alert" data-client-warning>This task was written by a client: the agent will act on their text with shell access on your PC.</p>{% endif %}
+  {% if run.gap %}
+  {# the pinned runner lacks a label this job needs, so it could never start there: nothing is queued; say which label and who has it #}
+  <div class="rounded-lg bg-status-warn/15 px-3 py-2 text-small mb-2" data-run-gap>
+    <p><strong>{{ run.gap.device.name }}</strong> has no <strong>{{ run.gap.missing|join(', ') }}</strong>, which this job needs, so it would never start there. Nothing was queued.</p>
+    {% if run.gap.have %}
+    <div class="flex flex-wrap gap-2 mt-1">
+      {% for h in run.gap.have %}
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML">
+        <input type="hidden" name="profile" value="{{ run.gap.profile }}"><input type="hidden" name="labels" value="{{ run.gap.labels }}">{% if run.gap.unattended %}<input type="hidden" name="unattended" value="1">{% endif %}
+        <input type="hidden" name="runner" value="{{ h.id }}">
+        <button type="submit" class="btn-ghost text-small border border-line touch-target" data-run-on-has>Run on {{ h.name }}</button></form>
+      {% endfor %}
+    </div>
+    {% else %}<p class="text-micro text-charcoal/65 mt-1" data-run-gap-none>None of your runners has it yet: add the label to one on the Machines page.</p>{% endif %}
+  </div>
+  {% endif %}
+  {% if run.offer %}
+  {# "Runs on" (#810): the runner this project defaults to is offline and another could take the job now. Nothing is queued until you choose. #}
+  <div class="rounded-lg bg-status-warn/15 px-3 py-2 text-small mb-2" data-run-offer>
+    <p><strong>{{ run.offer.device.name }}</strong> is offline.</p>
+    {% for a in run.offer.alternates %}
+    <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML" class="mt-1 flex flex-wrap items-center gap-2">
+      <input type="hidden" name="profile" value="{{ run.offer.profile }}"><input type="hidden" name="labels" value="{{ run.offer.labels }}">{% if run.offer.unattended %}<input type="hidden" name="unattended" value="1">{% endif %}
+      <input type="hidden" name="runner" value="{{ a.id }}">
+      <button type="submit" class="btn-primary text-small touch-target" data-run-on-other>Run on {{ a.name }}</button>
+      <label class="text-micro"><input type="checkbox" name="make_default" value="1" data-make-default> Make {{ a.name }} the default for this project</label>
+    </form>
+    {% endfor %}
+    <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML" class="mt-1">
+      <input type="hidden" name="profile" value="{{ run.offer.profile }}"><input type="hidden" name="labels" value="{{ run.offer.labels }}">{% if run.offer.unattended %}<input type="hidden" name="unattended" value="1">{% endif %}
+      <input type="hidden" name="runner" value="{{ run.offer.device.id }}"><input type="hidden" name="queue_offline" value="1">
+      <button type="submit" class="btn-ghost text-small border border-line touch-target" data-run-queue-offline>Queue for {{ run.offer.device.name }}</button>
+    </form>
+  </div>
+  {% endif %}
+  <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML" class="flex flex-wrap items-end gap-2" data-run-form>
+    {% if run.runs_on and run.runs_on.devices %}
+    <label class="text-micro">Runs on
+      <select name="runner" class="field text-small" data-run-runner>
+        <option value="default">{{ 'Default: ' ~ run.runs_on.current.name if run.runs_on.current else 'Default: any of my runners' }}</option>
+        {% if run.runs_on.current %}<option value="any">Any of my runners</option>{% endif %}
+        {% for d in run.runs_on.devices %}<option value="{{ d.id }}">{{ d.name }} ({{ 'online' if d.connected else 'offline' }})</option>{% endfor %}
+      </select></label>
+    {% endif %}
+    <label class="text-micro">Profile
+      <select name="profile" class="field text-small">
+        {% for p in run.profiles %}<option value="{{ p.name }}">{{ p.name }} ({{ p.model }}){% if p.requires_labels %} · needs {{ p.requires_labels|join(', ') }}{% endif %}</option>{% endfor %}
+      </select></label>
+    <label class="text-micro">Extra labels <span class="text-charcoal/40">optional</span>
+      <input name="labels" class="field text-small" placeholder="e.g. gpu" autocomplete="off"></label>
+    <button type="submit" class="btn-primary text-small">Run on a PC</button>
+  </form>
+  <p class="text-micro text-charcoal/45 mt-1">Your own runner takes it; your click is the approval. Nothing is pushed to main.</p>
+  {% endif %}
+  {% endif %}
+</section>

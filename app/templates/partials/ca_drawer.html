@@ -1,0 +1,94 @@
+{# CA, the Crewboss Assistant (task #702): the right-hand drawer on every page, the ERP PA drawer's shape (owner rule: the same shell
+   everywhere). On a desktop it FLOATS over the page (no push, #769); on a phone it fills the screen above the bar, which stays.
+   Typing only in v1. All text the model or a task wrote is put in with textContent by js/ca.js, never as HTML. The look is
+   css/ca.css (new file: chrome.css is a guarded verbatim copy of the ERP's). #}
+{# The ONE CA mark (owner 11-09: "anywhere the client sees this icon they know its AI"): a terracotta four-point spark with a teal spark and
+   dot, an original shape (the Crewboss logo's three circles, re-cast). Defined once here; every place that shows it is `<use href="#ca-mark">`
+   inside an svg.ca-mk. Colours come from --ca-a / --ca-b set on the button around it (css/ca.css): the accent + a teal by default, white on the phone button, grey while it is open. #}
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><symbol id="ca-mark" viewBox="0 0 24 24">
+  <path style="fill:var(--ca-a,rgb(var(--c-indigo)))" d="M10 5.5C10.7 10.3 13.2 13.3 18.5 14 13.2 14.7 10.7 17.7 10 22.5 9.3 17.7 6.8 14.7 1.5 14 6.8 13.3 9.3 10.3 10 5.5z"/>
+  <path style="fill:var(--ca-b,rgb(var(--ca-teal)))" d="M18.5 1C18.8 3.6 20 4.9 22.5 5.5 20 6.1 18.8 7.4 18.5 10 18.2 7.4 17 6.1 14.5 5.5 17 4.9 18.2 3.6 18.5 1z"/>
+  <circle style="fill:var(--ca-b,rgb(var(--ca-teal)))" cx="4.2" cy="5.2" r="1.9"/>
+</symbol></svg>
+<aside id="ca-drawer" class="ca-drawer" role="complementary" aria-label="Crewboss Assistant" aria-hidden="true" data-ca data-voice-src="{{ asset('js/ca-voice.js') }}">
+ <div id="ca-panel" class="ca-panel">
+  {# The phone grab handle (the ERP's .sheet-grab): drag it down to close (js/chrome.js dragSheet). Hidden on a desktop. #}
+  <div data-sheet-grab class="ca-grab" aria-hidden="true"><i></i></div>
+  {# The header is the ERP assistant's: mark, title, then only open-in-full and close. A new chat starts on its own when the drawer is opened on
+     another page or item (as the PA's thread rule); the history page lists the rest (js/ca.js). #}
+  <header class="ca-head">
+    <svg class="ca-mk ca-hico" width="24" height="24" aria-hidden="true"><use href="#ca-mark"/></svg>
+    <h2 id="ca-title" class="ca-title">Crewboss Assistant</h2>
+    <a id="ca-full" href="/ca/history" class="ca-icon ca-full" aria-label="Open the full page" title="Open the full page">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4l-8 8"/><path stroke-linecap="round" stroke-linejoin="round" d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg></a>
+    <button type="button" id="ca-close" class="ca-icon ca-x" aria-label="Close" title="Close (Esc)">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </header>
+  <div id="ca-status" class="ca-status" role="status" hidden></div>
+  {# THE DISCUSSION STRIP (#830): shown only while a task is in view (the task window or the task's own page). The task's conversations,
+     shared by the people on the task; New starts one linked to it; "Global" asks the whole-estate assistant instead. Filled by js/ca.js. #}
+  <section id="ca-disc" class="ca-disc" aria-label="Discussion on this task" hidden>
+    <div class="ca-disc-bar">
+      <button type="button" id="ca-disc-back" class="ca-disc-btn ca-disc-back" aria-label="Back to the task"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg> Task</button>
+      <strong id="ca-disc-title" class="ca-disc-title">Discussion</strong>
+      <button type="button" id="ca-disc-all" class="ca-disc-btn" aria-expanded="false" aria-controls="ca-disc-list">All</button>
+      <button type="button" id="ca-disc-new" class="ca-disc-btn go">New</button>
+      <button type="button" id="ca-disc-share" class="ca-disc-btn" hidden title="Let everyone who can see this task read this conversation">Share with the task</button>
+      <button type="button" id="ca-disc-global" class="ca-disc-btn" title="Ask the assistant about the whole estate instead">Global</button>
+    </div>
+    <div id="ca-disc-list" class="ca-disc-list" hidden></div>
+    <p id="ca-disc-note" class="ca-disc-note" hidden></p>
+  </section>
+  <div id="ca-scroll" class="ca-scroll">
+    {# The empty state (the ERP PA's shape): the mark, the greeting, THE COMPOSER in the middle (js/ca.js moves #ca-form in here while
+       there are no messages and back to the bottom once there are), then three recent conversations and View all. #}
+    <div id="ca-hero" class="ca-hero" hidden>
+      <svg class="ca-mk ca-hero-mark" width="88" height="88" aria-hidden="true"><use href="#ca-mark"/></svg>
+      <h2 id="ca-greeting" class="ca-greeting">What&rsquo;s on?</h2>
+      <div id="ca-compose-slot" class="ca-compose-slot"></div>
+      <div id="ca-recent" class="ca-recent" hidden>
+        <div class="ca-home-head"><span>Recent conversations</span><a href="/ca/history" class="ca-viewall">View all</a></div>
+        <div id="ca-recent-list" class="ca-recent-list"></div>
+      </div>
+    </div>
+    <div id="ca-msgs" class="ca-msgs" role="log" aria-live="polite"></div>
+  </div>
+  <div id="ca-tool" class="ca-tool" hidden></div>
+  <div id="ca-dock" class="ca-dock">
+  {# a div, not a <form>: read-only pages are tested to carry no form, and Enter / Send are handled in js/ca.js. The frame / box / tools
+     are the ERP assistant's composer (css/ca.css, from pa.css): a bordered frame when empty, a pill when a chat is going. #}
+  <div id="ca-form" class="ca-compose" role="group" aria-label="Write to CA">
+    <div id="ca-entity" class="ca-entity" hidden></div>
+    <div class="ca-frame">
+      <div class="ca-box">
+        <div id="ca-files" class="ca-files" hidden></div>
+        <textarea id="ca-input" rows="2" maxlength="8000" placeholder="How can I help you today?" aria-label="Message"></textarea>
+        <button type="button" id="ca-stop" class="ca-stop" hidden aria-label="Stop the reply" title="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button>
+        <button type="button" id="ca-enter" class="ca-enter" aria-label="Send" title="Send (Enter)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 5v6a3 3 0 0 1-3 3H5M9 10l-4 4 4 4"/></svg></button>
+      </div>
+      <div class="ca-tools">
+        <button type="button" id="ca-attach" class="ca-icon-btn" aria-label="Add a photo or file" title="Add a photo or file (you can also paste or drop them)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <input type="file" id="ca-file" multiple hidden accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.md,.markdown,.txt">
+        <span class="ca-spacer"></span>
+        <span id="ca-mic-group" class="ca-mic-group" hidden>
+          <button type="button" id="ca-mic" class="ca-icon-btn" aria-label="Dictate" aria-pressed="false" title="Dictate (it listens until you press Enter or tap again)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+          <button type="button" id="ca-mic-menu-btn" class="ca-icon-btn ca-chev" aria-label="Input device" aria-haspopup="menu" aria-expanded="false" aria-controls="ca-devmenu">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+          <div id="ca-devmenu" class="ca-pop" role="menu" aria-label="Microphone" hidden>
+            <div class="ca-meter" aria-hidden="true"><div class="ca-track"><div class="ca-fill" id="ca-meter-bar"></div></div></div>
+            <div id="ca-devlist" class="ca-devs"></div>
+          </div>
+        </span>
+        <button type="button" id="ca-send" class="ca-send" aria-label="Send" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+        <a href="/ca/history" class="ca-hist" id="ca-history-pill">Chat history</a>
+      </div>
+    </div>
+  </div>
+  </div>
+ </div>
+</aside>
+<div id="ca-backdrop" class="ca-backdrop" aria-hidden="true"></div>

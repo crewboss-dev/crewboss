@@ -1,0 +1,170 @@
+{
+ "_fixture": "FIXTURE ONLY — the shape the scanner will report as catalog['rules'] (kinds rule | instruction | builtin) (docs/catalog-schema.md). Never shown in production: loaded only when CREWBOSS_RULES_FIXTURE points here (tests, screenshots).",
+ "rules": [
+  {
+   "id": "email.skip-internal-senders",
+   "name": "Skip mail from our own staff",
+   "kind": "rule",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "email.triage.classify",
+    "step": "heuristic-gate"
+   },
+   "conditions": "sender domain is one of the company's own domains",
+   "action": "not triaged — no AI call, no card",
+   "source": {
+    "file": "aios/.claude/skills/email-triage/classify.py"
+   }
+  },
+  {
+   "id": "email.skip-automated-senders",
+   "name": "Skip automated senders",
+   "kind": "rule",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "email.triage.classify",
+    "step": "heuristic-gate"
+   },
+   "conditions": "no-reply / mailer-daemon sender, or a List-Unsubscribe / Auto-Submitted header",
+   "action": "filed as automated; no AI call",
+   "source": {
+    "file": "aios/.claude/skills/email-triage/classify.py"
+   }
+  },
+  {
+   "id": "email.out-of-office",
+   "name": "Out-of-office replies are ignored",
+   "kind": "builtin",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "email.triage.classify",
+    "step": "heuristic-gate"
+   },
+   "conditions": "subject or body reads as an automatic reply",
+   "action": "dropped before classification",
+   "source": {
+    "file": "aios/.claude/skills/email-triage/classify.py"
+   }
+  },
+  {
+   "id": "email.triage-enquiries",
+   "name": "Triage enquiries: web forms + accounts@ / info@",
+   "kind": "instruction",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "email.triage.classify",
+    "step": "ai-classify"
+   },
+   "conditions": "mail to a shared mailbox, or a website form submission",
+   "guidance": "classify as lead, support, billing or noise; a known contact is never a new lead",
+   "source": {
+    "file": "aios/.claude/skills/email-triage/classify.py"
+   },
+   "skill": "classify-email"
+  },
+  {
+   "id": "email.lead-known-contact-guard",
+   "name": "Known contacts aren't new leads",
+   "kind": "instruction",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "email.triage.classify",
+    "step": "ai-classify"
+   },
+   "conditions": "sender matches an existing ERP contact",
+   "guidance": "route to their account's open work instead of raising a lead",
+   "source": {
+    "file": "aios/.claude/skills/email-triage/classify.py"
+   },
+   "skill": "classify-email"
+  },
+  {
+   "id": "monitoring.average-plus-only",
+   "name": "Only Average and above raise a case",
+   "kind": "rule",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "monitoring.casegen-triage.create",
+    "step": "select-eligible"
+   },
+   "conditions": "alert is matched to a device, in scope, severity Average or higher, no case yet",
+   "action": "eligible for AI triage and a case",
+   "source": {
+    "file": "app/workers/casegen.py"
+   }
+  },
+  {
+   "id": "monitoring.alert-triage",
+   "name": "Alert triage guidance",
+   "kind": "instruction",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "monitoring.casegen-triage.create",
+    "step": "ai-triage"
+   },
+   "conditions": "an eligible alert",
+   "guidance": "summarise the fault, pick a priority, suggest first steps",
+   "source": {
+    "file": "app/clients/claude.py"
+   },
+   "skill": "triage-alert"
+  },
+  {
+   "id": "billing.refresh-window",
+   "name": "Refresh only near expiry",
+   "kind": "builtin",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "billing.crayon-token.refresh",
+    "step": "check-expiry"
+   },
+   "conditions": "token expires within 15 minutes",
+   "action": "call Crayon for a new token",
+   "source": {
+    "file": "app/workers/token_refresh.py"
+   }
+  },
+  {
+   "id": "service.business-hours",
+   "name": "SLA clocks run in business hours",
+   "kind": "rule",
+   "enabled": true,
+   "workflow_step": {
+    "workflow": "service.sla.notify",
+    "step": "evaluate-case"
+   },
+   "conditions": "08:00–18:00 Mon–Fri, not a public holiday in the site's state",
+   "action": "SLA timers only count inside those hours",
+   "source": {
+    "file": "app/workers/sla.py"
+   }
+  },
+  {
+   "id": "documents.field-hints",
+   "name": "Signature field hints",
+   "kind": "instruction",
+   "enabled": false,
+   "workflow_step": {
+    "workflow": "documents.field-detect.classify",
+    "step": "ai-classify"
+   },
+   "conditions": "an underline candidate on a contract",
+   "guidance": "long lines after 'Signed' are signatures",
+   "source": {
+    "file": "sign/app/services/claude.py"
+   },
+   "skill": "classify-with-claude"
+  },
+  {
+   "id": "billing.redirect-accounts",
+   "name": "Redirect billing for sub-accounts",
+   "kind": "rule",
+   "enabled": true,
+   "conditions": "account billing mode is 'redirect'",
+   "action": "invoice the parent account instead",
+   "source": {
+    "file": "app/invoicing.py"
+   }
+  }
+ ]
+}

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block content %}
+{# SETTINGS (#733): the project's admin: where it sits, its repo and environments, who works it, and the rename / move / external agent /
+   danger zone forms that lived at the foot of Overview. Owner only (the route is the gate: routers/pages.py SLUG_MANAGE), and the pill is
+   drawn on a TOP-LEVEL project or account only (the project tree rule): a project inside one has its settings reached from here. #}
+{# --- where this project sits (task #132): breadcrumb, repo, environments, who works it ------------------------ #}
+{% if place %}
+<section class="card p-4 mb-6" aria-label="This project" data-project-place>
+  <nav class="flex flex-wrap items-center gap-1 text-small text-charcoal/60 mb-2" aria-label="Breadcrumb" data-breadcrumb>
+    {% for a in place.ancestors %}<a href="/{{ a.slug }}" class="hover:underline">{{ a.name }}</a><span aria-hidden="true">›</span>{% endfor %}
+    <span class="font-semibold text-charcoal">{{ current_project.name }}</span>
+    {% if current_project.kind == 'account' %}<span class="chip bg-charcoal/[.07]">account</span>{% endif %}
+  </nav>
+  {% if current_project.note %}<p class="text-small text-charcoal/70 mb-2">{{ current_project.note }}</p>{% endif %}
+  <div class="flex flex-wrap gap-x-6 gap-y-1 text-small mb-3">
+    <span><span class="text-charcoal/50">Repo</span>
+      <span class="font-mono" data-repo>{{ current_project.repo or 'none yet' }}{% if current_project.repo_path %} @ {{ current_project.repo_path }}{% endif %}</span></span>
+    <span><span class="text-charcoal/50">Worked by</span>
+      {% if current_project.external_agent %}<span>an external agent (off the sessions server)</span>
+      {% elif place.worked_by %}<span class="font-mono">{{ place.worked_by.short_name }}</span>{% if place.worked_by.id != current_project.id %} <span class="text-charcoal/50">(its parent's session)</span>{% endif %}
+      {% else %}<span>no session</span>{% endif %}</span>
+    {% if current_project.dev_prod_sync %}<span class="chip bg-indigo/10 text-indigo" title="Dev and prod are kept in step">dev ↔ prod in sync</span>{% endif %}
+  </div>
+  {% if place.environments %}
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2" data-environments>
+    {% for e in place.environments %}
+    <div class="rounded-lg border border-line p-2.5 text-small">
+      <div class="font-semibold uppercase text-micro tracking-wide mb-1">{{ e.env }}</div>
+      <div><span class="text-charcoal/50">Server</span> {{ e.server or '—' }}</div>
+      {% if e.url %}<div class="truncate"><span class="text-charcoal/50">URL</span> {{ e.url }}</div>{% endif %}
+      {% if e.path %}<div class="truncate font-mono text-micro">{{ e.path }}</div>{% endif %}
+      {% if e.deploy_method %}<div class="text-micro text-charcoal/55">{{ e.deploy_method }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% elif current_project.kind != 'account' %}
+  <p class="text-micro text-charcoal/50 mb-2">No environments recorded.</p>
+  {% endif %}
+  {% if current_project.kind != 'account' %}<p class="text-small mb-2" data-where-link><a class="underline" href="{{ base }}/where">Where it lives</a> <span class="text-charcoal/50">stages, shared services, test mode and what must be backed up</span></p>{% endif %}
+  {% if place.children %}
+  <div class="text-small" data-children><span class="text-charcoal/50">Contains</span>
+    {% for c in place.children %}<a href="/{{ c.slug }}" class="hover:underline">{{ c.name }}</a>{{ ", " if not loop.last }}{% endfor %}</div>
+  {% endif %}
+  {% if current_project.kind != 'account' %}
+  <details class="mt-3 group" data-edit-place>
+    <summary class="press list-none cursor-pointer text-small underline text-charcoal/60">Edit repo and environments</summary>
+    <form method="post" action="{{ base }}/details" class="grid grid-cols-3 gap-2 mt-2 items-end">
+      <label class="col-span-2 text-micro">Repo<input name="repo" value="{{ current_project.repo }}" class="field text-small"></label>
+      <label class="text-micro">Folder<input name="repo_path" value="{{ current_project.repo_path }}" class="field text-small"></label>
+      <label class="col-span-2 flex items-center gap-2 text-small"><input type="checkbox" name="dev_prod_sync" value="1" {% if current_project.dev_prod_sync %}checked{% endif %}> Dev and prod kept in sync</label>
+      {% set remote_hint = ('https://github.com/' ~ current_project.repo ~ '.git') if current_project.repo and current_project.repo.count('/') == 1 else '' %}
+      <label class="col-span-3 text-micro">Git remote <span class="text-charcoal/45">what a runner clones: https://github.com/&lt;owner&gt;/&lt;repo&gt;.git or git@github.com:&lt;owner&gt;/&lt;repo&gt;.git</span>
+        <input name="git_remote" value="{{ current_project.git_remote }}" class="field text-small font-mono" list="git-remote-hint" placeholder="{{ remote_hint }}" autocomplete="off" data-git-remote>
+        {% if remote_hint %}<datalist id="git-remote-hint"><option value="{{ remote_hint }}"></option></datalist>{% endif %}</label>
+      {% if remote_hint and current_project.git_remote != remote_hint %}<p class="col-span-3 text-micro text-charcoal/55" data-git-remote-hint>Suggested from the repo: <span class="font-mono">{{ remote_hint }}</span></p>{% endif %}
+      <button type="submit" class="btn-ghost text-small">Save</button>
+    </form>
+    {% set envs = place.environments|map(attribute='env')|list %}
+    {% for env in ['dev', 'prod'] %}
+    {% set e = (place.environments|selectattr('env', 'equalto', env)|list|first) if env in envs else none %}
+    <form method="post" action="{{ base }}/environments/{{ env }}" class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 items-end">
+      <div class="col-span-2 sm:col-span-4 text-micro font-semibold uppercase tracking-wide">{{ env }}{% if not e %} (none: add it){% endif %}</div>
+      <label class="text-micro">Server
+        <select name="server" class="field text-small"><option value="">—</option>
+          {% for s in known_servers %}<option value="{{ s }}" {% if e and e.server == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+        </select></label>
+      <label class="text-micro">URL<input name="url" value="{{ e.url if e }}" class="field text-small"></label>
+      <label class="text-micro">Path<input name="path" value="{{ e.path if e }}" class="field text-small"></label>
+      <label class="text-micro">Deploy<input name="deploy_method" value="{{ e.deploy_method if e }}" class="field text-small"></label>
+      <div class="col-span-2 sm:col-span-4 flex gap-2">
+        <button type="submit" class="btn-ghost text-small">Save {{ env }}</button>
+        {% if e %}<button type="submit" name="remove" value="1" class="btn-ghost text-small text-status-disaster">Remove {{ env }}</button>{% endif %}
+      </div>
+    </form>
+    {% endfor %}
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+
+
+{% if conn_editor %}
+<section class="card p-4 mb-6" id="connections" aria-label="Connections" data-connections-editor>
+  <h2 class="text-small font-semibold mb-1">Connections</h2>
+  <p class="text-micro text-charcoal/55 mb-3">How {{ current_project.name }} relates to other projects in this account. <b>Part of</b>: it lives in the other project's code (one host only).
+    <b>Depends on</b>: it needs the other. <b>Integrates with</b>: the two talk to each other (shown on both).</p>
+  {% from "partials/connections.html" import conn_list %}
+  <div class="divide-y divide-line mb-3" data-connections-rows>
+    {% for key in ['part_of', 'contains', 'depends_on', 'needed_by', 'integrates_with'] %}{% for c in conns[key] %}
+    <div class="py-2 text-small" data-connection="{{ key }}" data-connection-id="{{ c.id }}">
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <span class="w-32 shrink-0 text-micro uppercase tracking-wide text-charcoal/50">{{ conn_labels[key] }}</span>
+        <a href="/{{ c.slug }}" class="font-semibold hover:underline">{{ c.name }}</a>{% if c.archived %}<span class="chip bg-charcoal/[.07] text-charcoal/60">archived</span>{% endif %}
+      </div>
+      {% if c.editable_from %}
+      <form method="post" action="{{ base }}/connections/note" class="flex flex-wrap gap-2 mt-1.5 items-center">
+        <input type="hidden" name="id" value="{{ c.id }}">
+        <input name="note" value="{{ c.note }}" maxlength="300" placeholder="Note (one line)" class="field text-small flex-1 min-w-[12rem]" aria-label="Note">
+        <button type="submit" class="btn-ghost text-small">Save note</button>
+      </form>
+      <form method="post" action="{{ base }}/connections/remove" class="mt-1">
+        <input type="hidden" name="id" value="{{ c.id }}">
+        <button type="submit" class="text-micro underline text-status-disaster">Remove</button>
+      </form>
+      {% elif c.note %}<p class="text-micro text-charcoal/60 mt-1">{{ c.note }}</p>{% endif %}
+    </div>
+    {% else %}{% endfor %}{% endfor %}
+    {% if not conns_shown %}<p class="py-2 text-small text-charcoal/50">No connections yet.</p>{% endif %}
+  </div>
+  <form method="post" action="{{ base }}/connections/add" class="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end" data-connection-add>
+    <label class="text-micro">Kind
+      <select name="kind" class="field text-small" required>
+        <option value="part_of">Part of</option><option value="depends_on" selected>Depends on</option><option value="integrates_with">Integrates with</option>
+      </select></label>
+    <label class="text-micro">Project
+      <select name="other" class="field text-small" required>{% for p in conn_picker %}<option value="{{ p.slug }}">{{ p.name }}</option>{% endfor %}</select></label>
+    <label class="text-micro sm:col-span-2">Note
+      <input name="note" maxlength="300" class="field text-small" placeholder="Optional, one line"></label>
+    <div class="sm:col-span-4"><button type="submit" class="btn-ghost text-small" {% if not conn_picker %}disabled{% endif %}>Add connection</button></div>
+  </form>
+</section>
+{% endif %}
+
+{% if subs %}
+<section class="card p-4 mb-6" aria-label="Settings of the projects inside" data-sub-settings>
+  <h2 class="text-small font-semibold mb-2">Projects inside {{ current_project.name }}</h2>
+  <div class="divide-y divide-line">
+    {% for s in subs %}<a href="/{{ s.slug }}/settings" class="press flex items-center gap-3 py-2 text-sm"><span class="flex-1 min-w-0 truncate" style="padding-left: {{ s.depth * 1 }}rem">{{ s.name }}</span><span class="text-xs text-charcoal/45">Settings &rsaquo;</span></a>{% endfor %}
+  </div>
+</section>
+{% endif %}
+{% include "partials/rename_project.html" %}
+{% include "partials/move_project.html" %}
+{% include "partials/external_agent.html" %}
+{% include "partials/danger_zone.html" %}
+{% endblock %}

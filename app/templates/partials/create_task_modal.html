@@ -1,0 +1,65 @@
+{# THE HEADER'S + CREATE DIALOG (#778), Jira's Create: a project picker (Recent projects, then All projects, with a search box) that starts on the
+   project you are in, beside a type picker (the task streams, feature by default); a title (required), an optional description, a priority, and
+   "Create another". It posts to the EXISTING create route (/<slug>/tasks/new, answered as JSON), so the access checks are the route's. Only the
+   projects the person may change are listed (routers/pages.py create_targets); on a page with no project (Dashboard, Now, Recent) the picker starts
+   empty. js/create.js is the Alpine component. #}
+<div x-data="crewCreate({{ create_projects|tojson|forceescape }}, {{ create_current|tojson|forceescape }})" @open-create-task.window="show()" @keydown.escape.window="if (open) close()"
+     data-create-dialog data-current="{{ create_current }}" data-projects="{{ create_projects|tojson|forceescape }}" x-cloak>
+  <div x-show="open" class="fixed inset-0 z-[90] flex items-center justify-center p-4"
+       x-transition:enter="transition ease-physics duration-200" x-transition:enter-start="opacity-0"
+       x-transition:leave="transition ease-physics-out duration-150" x-transition:leave-end="opacity-0">
+    <div class="absolute inset-0 bg-charcoal/40" @click="close()"></div>
+    <form @submit.prevent="submit()" role="dialog" aria-modal="true" aria-label="Create a task"
+          class="relative popover p-5 w-full max-w-lg max-h-[90vh] overflow-y-auto" @keydown.ctrl.enter="submit()" @keydown.meta.enter="submit()">
+      <div class="text-lead font-semibold mb-3">Create</div>
+      <div class="flex gap-2 mb-3">
+        <div class="flex-1 min-w-0 relative">
+          <label class="block text-small font-medium mb-1" id="cr-proj-label">Project</label>
+          <button type="button" class="field text-left flex items-center gap-2 w-full" @click="pickerOpen = !pickerOpen; if (pickerOpen) $nextTick(() => $refs.find.focus())"
+                  aria-haspopup="listbox" :aria-expanded="pickerOpen" aria-labelledby="cr-proj-label" data-create-project>
+            <span class="truncate flex-1" :class="!project && 'text-charcoal/45'" x-text="projectName() || 'Pick a project'"></span>
+            <span aria-hidden="true" class="text-charcoal/50">&#9662;</span></button>
+          <div x-show="pickerOpen" @click.outside="pickerOpen = false" @keydown.escape.stop="pickerOpen = false" class="absolute left-0 right-0 mt-1 z-10 popover p-2 max-h-64 overflow-y-auto" data-create-picker>
+            <input x-ref="find" x-model="find" type="text" class="field mb-1.5" placeholder="Find a project" aria-label="Find a project" autocomplete="off" data-create-find
+                   @keydown.enter.prevent="pick((filtered()[0] || {}).slug)">
+            <template x-if="!find && favourites().length">
+              <div><div class="px-2 pt-1 pb-0.5 text-micro uppercase tracking-wide text-charcoal/50">Favourite projects</div>
+                <template x-for="p in favourites()" :key="'f' + p.slug"><button type="button" class="block w-full text-left px-2.5 py-1.5 rounded-lg text-small hover:bg-charcoal/[.06]" @click="pick(p.slug)" data-create-option="favourite" x-text="p.name"></button></template></div>
+            </template>
+            <template x-if="!find && recents().length">
+              <div><div class="px-2 pt-1 pb-0.5 text-micro uppercase tracking-wide text-charcoal/50">Recent projects</div>
+                <template x-for="p in recents()" :key="'r' + p.slug"><button type="button" class="block w-full text-left px-2.5 py-1.5 rounded-lg text-small hover:bg-charcoal/[.06]" @click="pick(p.slug)" data-create-option="recent" x-text="p.name"></button></template></div>
+            </template>
+            <div class="px-2 pt-1 pb-0.5 text-micro uppercase tracking-wide text-charcoal/50">All projects</div>
+            <template x-for="(p, i) in filtered()" :key="p.slug"><div>
+              <div x-show="p.group && (i === 0 || filtered()[i - 1].group !== p.group)" class="px-2 pt-2 pb-0.5 text-small font-semibold text-charcoal/80" data-create-group x-text="p.group"></div>
+              <button type="button" class="block w-full text-left px-2.5 py-1.5 rounded-lg text-small hover:bg-charcoal/[.06]" :class="[p.slug === project && 'bg-charcoal/[.08]', p.group && 'pl-4']" @click="pick(p.slug)" data-create-option="all" x-text="p.name"></button></div></template>
+            <p x-show="!filtered().length" class="px-2.5 py-2 text-small text-charcoal/50" data-create-none>No project to create in.</p>
+          </div>
+        </div>
+        <div class="w-36 shrink-0">
+          <label class="block text-small font-medium mb-1" for="cr-type">Type</label>
+          <select id="cr-type" x-model="type" class="field w-full" data-create-type>
+            {% for s in ['feature', 'bug', 'tweak', 'review', 'error'] %}<option value="{{ s }}">{{ STREAM_META[s].label }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <label class="block text-small font-medium mb-1" for="cr-title">Title <span class="text-flame" aria-hidden="true">*</span></label>
+      <input id="cr-title" x-ref="title" x-model="title" required maxlength="300" class="field mb-3" placeholder="What needs doing?" autocomplete="off" data-create-title>
+      <label class="block text-small font-medium mb-1" for="cr-body">Description</label>
+      <textarea id="cr-body" x-model="body" rows="4" class="field mb-3" placeholder="Optional: the detail, the context" data-create-body></textarea>
+      <div class="flex items-center gap-3 mb-3">
+        <label class="text-small font-medium" for="cr-prio">Priority</label>
+        <select id="cr-prio" x-model="priority" class="field !w-auto" data-create-priority>
+          {% for pr in ['must', 'should', 'could', 'wont'] %}<option value="{{ pr }}">{{ PRIORITY_META[pr].label }}</option>{% endfor %}
+        </select>
+      </div>
+      <p x-show="error" x-text="error" class="text-small text-flame mb-2" role="alert" data-create-error></p>
+      <div class="flex items-center gap-3 pt-2 border-t border-line">
+        <label class="flex items-center gap-2 text-small text-charcoal/70"><input type="checkbox" x-model="another" data-create-another> Create another</label>
+        <button type="button" class="ml-auto btn-ghost text-small" @click="close()">Cancel</button>
+        <button type="submit" class="btn-primary text-small" :disabled="busy || !project || !title.trim()" data-create-submit>Create</button>
+      </div>
+    </form>
+  </div>
+</div>

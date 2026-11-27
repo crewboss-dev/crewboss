@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ t.label }}{% endblock %}
+{% block page_title %}{{ t.label }}{% endblock %}
+{% block content %}
+{# One asset type across the projects this person can see (#778). Read-only: every row links to the project page where it lives. #}
+<div class="max-w-4xl" data-assets-type="{{ t.key }}">
+  <h1 class="text-xl font-semibold mb-1">{{ t.label }}</h1>
+  <p class="text-small text-charcoal/65 mb-4">{{ t.blurb }} Sharing these across projects is coming; for now each one lives on its project's page.</p>
+  {% for g in groups %}
+  <section class="mb-5" data-project="{{ g.project.slug }}">
+    <h2 class="text-small font-semibold mb-1"><a href="/{{ g.project.slug }}/{{ t.key }}" class="hover:underline">{{ g.project.name }}</a></h2>
+    <div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden">
+      {% for it in g.rows %}
+      <a href="{{ it.href }}" class="flex items-center justify-between gap-3 px-4 py-2.5 text-small hover:bg-charcoal/[.04]" data-asset><span class="font-medium truncate">{{ it.name }}</span><span class="text-charcoal/55 truncate">{{ it.detail }}</span></a>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <p class="rounded-xl border border-line bg-surface px-4 py-8 text-center text-small text-charcoal/45" data-assets-empty>No {{ t.label|lower }} in your projects yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

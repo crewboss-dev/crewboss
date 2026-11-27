@@ -1,0 +1,70 @@
+{# The Knowledge page's GRAPH view (task #550, ?view=graph). Read-only. The server builds the graph once
+   (app/knowledge_graph.py: [[wiki links]], supersedes / superseded by, #task references, open tasks' links) and
+   hands it over inline; static/js/knowledge-graph.js lays it out and draws it as SVG (no library, no CDN). Pan by
+   dragging, zoom with the wheel, a pinch or the buttons; press a node to open its entry or task.
+   The housekeeping lens (All / Orphans / Broken links / Stale) dims everything else in the graph and picks the list
+   below it; the lists are server-rendered, so they work without JavaScript.
+   Needs: graph, housekeeping (knowledge_graph.housekeeping_rows). #}
+{% set hk = housekeeping %}
+{% set lenses = [('all', 'All', none), ('orphans', 'Orphans', hk.orphans|length), ('broken', 'Broken links', hk.broken|length),
+                 ('stale', 'Stale', hk.stale|length)] %}
+{% set kind_label = {'decision': 'Decisions', 'responsibility': 'Responsibilities', 'fact': 'Facts', 'note': 'Notes',
+                     'link': 'Links', 'objective': 'Objectives', 'rule': 'Rules', 'skill': 'AI skills'} %}
+<section class="kg" x-data="{ lens: 'all' }" data-knowledge-graph>
+  <div class="kg-bar">
+    <fieldset class="seg kg-lens" role="radiogroup" aria-label="Housekeeping lens">
+      {% for key, label, n in lenses %}
+      <label class="seg-opt"><input type="radio" name="kg-lens" value="{{ key }}" x-model="lens" {% if key == 'all' %}checked{% endif %}><span>{{ label }}{% if n is not none %} <span class="kb-count">{{ n }}</span>{% endif %}</span></label>
+      {% endfor %}
+    </fieldset>
+    <div class="kg-zoom" role="group" aria-label="Zoom">
+      <button type="button" class="btn-ghost kg-zoom-btn" data-kg-zoom="out" aria-label="Zoom out">&minus;</button>
+      <button type="button" class="btn-ghost kg-zoom-btn" data-kg-zoom="in" aria-label="Zoom in">+</button>
+      <button type="button" class="btn-ghost kg-zoom-btn kg-fit" data-kg-zoom="fit">Fit</button>
+    </div>
+  </div>
+
+  <div class="card kg-stage">
+    {% if graph.nodes %}
+    <svg class="kg-svg" data-kg-svg role="group" aria-label="Knowledge link graph: {{ graph.nodes|selectattr('type', 'equalto', 'entry')|list|length }} entries, {{ graph.edges|length }} links"></svg>
+    <noscript><p class="kg-empty">The graph needs JavaScript. The housekeeping lists below work without it.</p></noscript>
+    {% else %}
+    <p class="kg-empty">No entries yet, so nothing to draw.</p>
+    {% endif %}
+  </div>
+
+  <div class="kg-legend" aria-label="Legend">
+    {% for k in graph.kinds %}<span class="kg-key"><span class="kg-swatch kg-k-{{ k }}" aria-hidden="true"></span>{{ kind_label.get(k, k|capitalize) }}</span>{% endfor %}
+    <span class="kg-key"><span class="kg-swatch kg-swatch-task" aria-hidden="true"></span>Task</span>
+    <span class="kg-key"><span class="kg-swatch kg-swatch-old" aria-hidden="true"></span>Archived or superseded</span>
+    <span class="kg-key"><span class="kg-line kg-line-supersedes" aria-hidden="true"></span>Supersedes</span>
+    <span class="kg-key"><span class="kg-line kg-line-task" aria-hidden="true"></span>Task reference</span>
+  </div>
+
+  <div class="card kg-house" data-housekeeping>
+    <div x-show="lens === 'all' || lens === 'orphans'" data-hk="orphans">
+      <h2 class="kg-house-h">Orphans <span class="kb-count">{{ hk.orphans|length }}</span></h2>
+      <p class="kb-hint">Live entries with no links in or out. Link them with [[title]], or archive what is no longer used.</p>
+      {% if hk.orphans %}<ul class="kg-house-list">{% for n in hk.orphans %}<li><a href="{{ n.url }}">{{ n.title }}</a> <span class="kb-backlink-rel">{{ n.kind }}</span></li>{% endfor %}</ul>
+      {% else %}<p class="kg-none">None.</p>{% endif %}
+    </div>
+    <div x-show="lens === 'all' || lens === 'broken'" data-hk="broken">
+      <h2 class="kg-house-h">Broken links <span class="kb-count">{{ hk.broken|length }}</span></h2>
+      <p class="kb-hint">Entries with a [[link]] that names no entry here.</p>
+      {% if hk.broken %}<ul class="kg-house-list">{% for n in hk.broken %}<li><a href="{{ n.url }}">{{ n.title }}</a>
+        <span class="kb-backlink-rel">{% for t in n.targets %}[[{{ t }}]]{% if not loop.last %}, {% endif %}{% endfor %}</span></li>{% endfor %}</ul>
+      {% else %}<p class="kg-none">None.</p>{% endif %}
+    </div>
+    <div x-show="lens === 'all' || lens === 'stale'" data-hk="stale">
+      <h2 class="kg-house-h">Stale <span class="kb-count">{{ hk.stale|length }}</span></h2>
+      <p class="kb-hint">Not updated in {{ graph.stale_days }}+ days, but an open task still references it. Worth a check.</p>
+      {% if hk.stale %}<ul class="kg-house-list">{% for n in hk.stale %}<li><a href="{{ n.url }}">{{ n.title }}</a>
+        <span class="kb-backlink-rel">open task{{ 's' if n.open_tasks|length > 1 }} #{{ n.open_tasks|join(', #') }}</span></li>{% endfor %}</ul>
+      {% else %}<p class="kg-none">None.</p>{% endif %}
+    </div>
+  </div>
+
+  {# json_script (templating.py): raw JSON with <, > and & as unicode escapes, so entry text can never close this. #}
+  <script type="application/json" data-kg-data>{{ graph|json_script }}</script>
+</section>
+<script src="{{ asset('js/knowledge-graph.js') }}" defer></script>

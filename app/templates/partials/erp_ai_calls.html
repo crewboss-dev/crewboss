@@ -1,0 +1,73 @@
+{# The ERP's AI call log (task #196), fetched live from GET /api/health/ai-calls and paged by id (?before=&limit=).
+   Nothing is stored. Rows-per-page sits in the Filters popover (house rule: the Filters button only). #}
+{% set muted = 'text-charcoal/50' %}
+{% macro page_href(before=none, limit=none) -%}
+  {{ base }}/health?view=ai-calls{% if before %}&before={{ before }}{% endif %}{% if (limit or calls.limit) != 50 %}&limit={{ limit or calls.limit }}{% endif %}
+{%- endmacro %}
+<section aria-label="AI calls" data-erp-ai-calls>
+  {% if not calls.configured %}
+  <div class="card p-4" data-erp-state="off">
+    <div class="flex items-center gap-3">
+      <span class="w-2.5 h-2.5 rounded-full bg-charcoal/20" aria-hidden="true"></span>
+      <span class="text-small font-semibold">ERP feed not connected</span>
+    </div>
+    <div class="mt-2 text-small text-charcoal/60">The AI call log comes from the ERP's health feed, which isn't set up on the dashboard yet.</div>
+  </div>
+  {% else %}
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    <div class="text-micro {{ muted }}">{{ 'Older calls, before #' ~ calls.before if calls.before else 'Newest first' }}</div>
+    <div x-data="{ open: false }" class="relative ml-auto" @keydown.escape.window="open = false">
+      <button type="button" @click="open = !open" class="btn-ghost text-small touch-target border border-line"
+              :aria-expanded="open" aria-haspopup="true" data-filters-button>
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+        Filters{% if calls.limit != 50 %} <span class="chip bg-indigodeep text-white normal-case tabular">1</span>{% endif %}
+      </button>
+      <div x-show="open" @click.outside="open = false" x-cloak
+           x-transition:enter="transition ease-physics duration-150" x-transition:enter-start="opacity-0 scale-95"
+           x-transition:leave="transition ease-physics-out duration-100" x-transition:leave-end="opacity-0 scale-95"
+           class="absolute right-0 mt-2 z-30 popover p-3 w-[min(18rem,calc(100vw-2rem))] origin-top-right flex flex-col gap-3">
+        <div>
+          <div class="text-micro uppercase tracking-wide {{ muted }} mb-1.5">Rows per page</div>
+          <div class="flex flex-wrap gap-1.5">
+            {% for n in [25, 50, 100, 200] %}
+            <a href="{{ page_href(calls.before, n) }}" class="{{ 'fchip-on' if calls.limit == n else 'fchip' }}">{{ n }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if calls.error %}
+  <div role="alert" class="card p-4 mb-4 text-small text-status-disaster break-words">Couldn't load the AI call log: {{ calls.error }}</div>
+  {% endif %}
+
+  <div class="card divide-y divide-line">
+    {% for c in calls.calls %}
+    <div class="flex items-start gap-x-3 px-4 py-2.5" data-ai-call="{{ c.id }}">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-small font-medium truncate">{{ c.feature }}</span>
+          {% if not c.ok %}<span class="chip shrink-0 bg-status-disaster/10 text-status-disaster">failed</span>{% endif %}
+        </div>
+        <div class="text-micro text-charcoal/55 tabular">
+          {{ c.model or 'unknown model' }}
+          {%- if c.input_tokens is not none %} · {{ fmt(c.input_tokens) }} in{% endif %}
+          {%- if c.output_tokens is not none %} · {{ fmt(c.output_tokens) }} out{% endif %}
+          {%- if c.cost is not none %} · ${{ fmt(c.cost) }}{% endif %}
+        </div>
+        {% if c.error %}<div class="text-micro text-status-disaster break-words mt-0.5">{{ c.error }}</div>{% endif %}
+      </div>
+      <span class="text-micro tabular {{ muted }} shrink-0" {% if c.at %}title="{{ c.at }}"{% endif %}>{{ c.at|timeago if c.at else '' }}</span>
+    </div>
+    {% else %}
+    {% if not calls.error %}<div class="px-4 py-6 text-center text-small {{ muted }}">No AI calls{{ ' before this one' if calls.before }}.</div>{% endif %}
+    {% endfor %}
+  </div>
+
+  <nav class="flex items-center gap-2 mt-3" aria-label="AI call pages">
+    {% if calls.before %}<a href="{{ page_href() }}" class="btn-ghost touch-target border border-line">&larr; Newest</a>{% endif %}
+    {% if calls.next_before %}<a href="{{ page_href(calls.next_before) }}" class="btn-ghost touch-target border border-line ml-auto" data-older>Older &rarr;</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>

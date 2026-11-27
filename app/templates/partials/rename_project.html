@@ -1,0 +1,33 @@
+{# RENAME PROJECT (#577): change this project's name and, optionally, its slug. Owner only — the browser IS the owner
+   and the same-origin guard refuses anyone else, as with Move just below. tree.rename_project has the final say (slug
+   format, unique against current and old slugs, slug locks); a refusal comes back as a flash. A new slug keeps the
+   old one as an alias, so old links redirect. The slug is locked (slug_locked: the reason) while the server's
+   settings name the project by slug or it runs its own Claude session. The short name is never changed: session
+   tokens are filed under it. Needs: current_project, slug_locked. #}
+{% if slug_locked is defined %}
+{% set rp = current_project %}
+{% set rename_noun = 'account' if rp.kind == 'account' else 'project' %}
+<section class="mt-10 rounded-xl border border-line" data-rename-project x-data="{ slug: {{ rp.slug|tojson|forceescape }} }">
+  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 py-3">
+    <span class="text-small font-semibold">Rename {{ rename_noun }}</span>
+    <span class="text-micro text-charcoal/50">Change what {{ rp.name }} is called and, if you need to, its address</span>
+  </div>
+  <form method="post" action="{{ base }}/rename" class="px-4 pb-4 grid gap-3 sm:grid-cols-3 sm:items-end max-w-3xl" autocomplete="off">
+    <label class="text-micro text-charcoal/60 sm:col-span-2">Name
+      <input name="name" value="{{ rp.name }}" required maxlength="200" class="field text-small w-full" data-rename-name></label>
+    <label class="text-micro text-charcoal/60">Slug
+      <span class="flex items-center gap-1"><span class="text-small text-charcoal/45" aria-hidden="true">/</span>
+        <input name="slug" x-model="slug" value="{{ rp.slug }}" maxlength="50" spellcheck="false" autocapitalize="none"
+               pattern="[a-z0-9]([a-z0-9-]{0,48}[a-z0-9])?" class="field text-small font-mono w-full"
+               {% if slug_locked %}readonly aria-describedby="rename-slug-locked"{% endif %} data-rename-slug></span></label>
+    <button type="submit" class="btn btn-ghost border border-line text-small touch-target sm:justify-self-start">Rename</button>
+    {% if slug_locked %}
+    <p id="rename-slug-locked" class="sm:col-span-3 text-micro text-charcoal/55" data-rename-slug-locked>The slug stays: {{ slug_locked }}.</p>
+    {% else %}
+    <p class="sm:col-span-3 text-micro text-charcoal/55" x-show="slug.trim() && slug.trim() !== {{ rp.slug|tojson|forceescape }}" x-cloak>
+      Old links to <span class="font-mono">/{{ rp.slug }}</span> keep working: they redirect to the new address.</p>
+    {% endif %}
+    <p class="sm:col-span-3 text-micro text-charcoal/55">Its short name, <span class="font-mono">{{ rp.short_name }}</span>, never changes: its Claude sessions and their tokens are filed under it.</p>
+  </form>
+</section>
+{% endif %}

@@ -1,0 +1,39 @@
+<!doctype html>
+{# Local sign-in pages (#706): login, enrolment and the account page share this plain, chrome-less shell (like
+   auth_message.html: shown to someone who may not be signed in, so no menus or data). Same palette as every page. #}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}Sign in{% endblock %} — Crewboss</title>
+  <link rel="icon" type="image/svg+xml" href="{{ asset('brand/crewboss/favicon.svg') }}">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ asset('brand/crewboss/favicon-32.png') }}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ asset('brand/crewboss/favicon-192.png') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ asset('brand/crewboss/favicon-180.png') }}">
+  <link rel="manifest" href="/manifest.webmanifest">
+  {# An installer that isn't signed in lands here, so the app's name and icons must be on this page too (#750). #}
+  <meta name="application-name" content="Crewboss">
+  <meta name="apple-mobile-web-app-title" content="Crewboss">
+  <script>
+    (function () {
+      var pref = null;
+      try { pref = localStorage.getItem('crewboss-theme'); } catch (e) {}
+      var dark = pref === 'dark' || (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', dark);
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ asset('css/theme-tokens.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+</head>
+<body class="bg-cream text-charcoal min-h-screen flex items-center justify-center px-4 py-8">
+  <main class="w-full {% block width %}max-w-sm{% endblock %} rounded-xl border border-line bg-surface p-6">
+    <img src="{{ asset('brand/crewboss/favicon-48.png') }}" alt="" width="40" height="40" class="mx-auto mb-3">
+    <h1 class="text-lg font-semibold mb-3 text-center">{% block heading %}{% endblock %}</h1>
+    {% if error %}<p class="text-sm mb-3 rounded-md border border-line px-3 py-2" role="alert" data-auth-error>{{ error }}</p>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

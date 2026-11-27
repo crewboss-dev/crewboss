@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Assets{% endblock %}
+{% block page_title %}Assets{% endblock %}
+{% block content %}
+{# ASSETS home (#778): the greeting, what exists per type across the projects this person can see, and recent places. Read-only for now. #}
+<div class="max-w-4xl" data-assets-home>
+  <p class="text-small text-charcoal/55" data-today>{{ today }}</p>
+  <h1 class="text-xl font-semibold mb-1" data-greeting>{{ greeting }}, {{ first_name }}!</h1>
+  <p class="text-small text-charcoal/65 mb-5" data-sharing-note>Sharing assets across projects and people is coming. For now this lists what your projects already keep, and each row opens the project page where it lives.</p>
+  <div class="grid gap-3 sm:grid-cols-3 mb-6">
+    {% for t in types %}
+    <a href="/assets/{{ t.key }}" class="card p-4 block hover:bg-charcoal/[.03]" data-asset-card="{{ t.key }}">
+      <p class="text-2xl font-semibold" data-count>{{ counts[t.key] }}</p>
+      <p class="text-sm font-medium">{{ t.label }}</p>
+      <p class="text-micro text-charcoal/55 mt-1">{{ t.blurb }}</p>
+    </a>
+    {% endfor %}
+  </div>
+  <h2 class="text-lead font-semibold mb-2">Recent places</h2>
+  <div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden" data-recent-places>
+    {% for p in places %}
+    <a href="{{ p.href }}" class="flex items-center justify-between gap-3 px-4 py-2.5 text-small hover:bg-charcoal/[.04]"><span class="font-medium truncate">{{ p.name }}</span><span class="text-charcoal/55 truncate">{{ p.detail }}</span></a>
+    {% else %}
+    <p class="px-4 py-6 text-center text-small text-charcoal/45">Nothing yet. Materials you add to a project appear here.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

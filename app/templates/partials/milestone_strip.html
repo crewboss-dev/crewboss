@@ -1,0 +1,18 @@
+{# MILESTONE STRIP (#915): a project's named dates, soonest first: name, date, derived status (done / late / at risk / on track) and
+   done/total. Display only; milestones are made by the AI (add_milestone). `milestones` = planning.list_milestones rows. #}
+{% if milestones %}
+<section aria-label="Milestones" class="mb-4" data-milestone-strip>
+  <div class="flex gap-2 overflow-x-auto pb-1">
+    {% for m in milestones %}
+    <div class="card px-3 py-2 shrink-0 min-w-[10rem] flex flex-col gap-0.5" data-milestone="{{ m.id }}" data-milestone-status="{{ m.status }}">
+      <span class="text-small font-semibold truncate" title="{{ m.note }}">{{ m.name }}</span>
+      <span class="flex items-center gap-1.5 text-micro tabular text-charcoal/60">
+        <span>{{ m.due_on.strftime('%-d %b %Y') }}</span>
+        <span class="chip normal-case {{ {'done': 'bg-status-ok/15 text-status-ok', 'late': 'bg-status-disaster/10 text-status-disaster font-semibold', 'at_risk': 'bg-status-warn/15 text-charcoal dark:text-status-warn'}.get(m.status, 'bg-charcoal/[.07] text-charcoal/70') }}">{{ {'done': 'Done', 'late': 'Late', 'at_risk': 'At risk', 'on_track': 'On track'}.get(m.status, m.status) }}</span>
+        <span>{{ m.counts.done }}/{{ m.counts.total }}</span>
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

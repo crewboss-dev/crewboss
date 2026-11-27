@@ -1,0 +1,25 @@
+{# THE TASK RECORD, drawer and full page (#816): one set of partials so the two never drift. The drawer stacks them (banner, questions, form,
+   checklist, run, thread); the FULL PAGE (full_page, GET /<slug>/tasks/<id>) lays them out for the room: the body and subtasks on the left,
+   questions / comments / history on the right from 1024px, stacked on a phone. Every write answers with THIS fragment into #drawer-content. #}
+<span data-full-url="{{ base }}/tasks/{{ task.id }}" data-full-no="{{ task.id }}" data-full-title="{{ task.title }}" hidden></span>
+{% if full_page %}
+<div class="task-rec grid gap-x-8 gap-y-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start" data-task-record>
+  <div class="min-w-0">
+    {% include "partials/task_banner.html" %}
+    {% include "partials/task_form.html" %}
+    {% include "partials/checklist.html" %}
+    {% include "partials/task_run.html" %}
+  </div>
+  <div class="min-w-0 lg:border-l lg:border-line lg:pl-8">
+    {% include "partials/task_questions.html" %}
+    {% include "partials/task_thread.html" %}
+  </div>
+</div>
+{% else %}
+{% include "partials/task_banner.html" %}
+{% include "partials/task_questions.html" %}
+{% include "partials/task_form.html" %}
+{% include "partials/checklist.html" %}
+{% include "partials/task_run.html" %}
+{% include "partials/task_thread.html" %}
+{% endif %}

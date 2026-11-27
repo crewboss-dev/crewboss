@@ -1,0 +1,23 @@
+{
+ "app/server_access.py": 1,
+ "tests/test_ca_discussion.py": 1,
+ "tests/test_deploys.py": 2,
+ "tests/test_deploys_review.py": 1,
+ "tests/test_devices.py": 1,
+ "tests/test_installer.py": 2,
+ "tests/test_jobs.py": 1,
+ "tests/test_local_auth.py": 2,
+ "tests/test_machines_designer.py": 2,
+ "tests/test_release_governance.py": 2,
+ "tests/test_run_on_pc.py": 1,
+ "tests/test_runner_socket_jobs.py": 1,
+ "tests/test_runner_ws.py": 4,
+ "tests/test_satellite.py": 5,
+ "tests/test_server_access.py": 1,
+ "tests/test_server_probe.py": 2,
+ "tests/test_server_reads.py": 5,
+ "tests/test_servers_deploy_targets.py": 2,
+ "tests/test_skill_import.py": 1,
+ "tests/test_summary.py": 2,
+ "tests/test_where_it_lives.py": 2
+}

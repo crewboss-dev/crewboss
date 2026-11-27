@@ -1,0 +1,57 @@
+/* The first-run how-to tour (#938). Theme tokens only (css/theme-tokens.css), so light and dark follow the page. Above every window (pickers are 90). */
+.tour { position: fixed; inset: 0; z-index: 100; pointer-events: none; }
+.tour[hidden] { display: none; }
+.tour-shield { position: fixed; inset: 0; z-index: 100; background: transparent; pointer-events: auto; }
+.tour.is-plain .tour-shield { background: rgb(0 0 0 / .45); }                       /* no target: the shield itself dims the page */
+/* The outline: the hole in the dim is its own shadow, so the real element shows through at full strength. */
+.tour-ring { position: fixed; z-index: 101; pointer-events: none; border-radius: 10px; outline: 2px solid rgb(var(--c-focus)); outline-offset: 0;
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / .45); animation: tour-fade .18s ease-out both; }
+.tour-ring[hidden] { display: none; }
+.tour-card { position: fixed; z-index: 102; box-sizing: border-box; width: min(22rem, calc(100vw - 1.5rem)); padding: .875rem 1rem 1rem; border-radius: 14px;
+  background: rgb(var(--c-surface)); color: rgb(var(--c-charcoal)); border: 1px solid rgb(var(--c-line)); box-shadow: 0 12px 40px rgb(0 0 0 / .28);
+  animation: tour-fade .18s ease-out both; outline: none; pointer-events: auto; }
+.tour-count { margin: 0 0 .25rem; font-size: .6875rem; line-height: 1.35; letter-spacing: .04em; text-transform: uppercase; color: rgb(var(--c-charcoal) / .6);
+  font-variant-numeric: tabular-nums; }
+.tour-title { margin: 0 0 .25rem; font-size: 1.0625rem; line-height: 1.35; letter-spacing: -.01em; font-weight: 600; }
+.tour-text { margin: 0; font-size: .9375rem; line-height: 1.55; color: rgb(var(--c-charcoal) / .85); }
+.tour-note { margin: .5rem 0 0; padding: .4rem .6rem; border-radius: 8px; font-size: .8125rem; line-height: 1.45; background: rgb(var(--c-creamwarm)); color: rgb(var(--c-charcoal) / .85); }
+.tour-note[hidden] { display: none; }
+.tour-note button { font: inherit; text-decoration: underline; color: rgb(var(--c-indigo)); background: none; border: 0; padding: 0; cursor: pointer; }
+.tour-actions { display: flex; align-items: center; gap: .5rem; margin-top: .875rem; }
+.tour-spacer { flex: 1; }
+.tour-btn, .tour-skip { font: inherit; font-size: .8125rem; font-weight: 500; cursor: pointer; border-radius: 8px; padding: .4rem .8rem; min-height: 2rem;
+  border: 1px solid rgb(var(--c-line)); background: transparent; color: rgb(var(--c-charcoal)); transition: transform 100ms ease-out; }
+.tour-btn:hover { background: rgb(var(--c-charcoal) / .05); }
+.tour-btn:active, .tour-skip:active { transform: scale(.97); }
+.tour-primary { background: rgb(var(--c-indigodeep)); border-color: rgb(var(--c-indigodeep)); color: #fff; }
+.tour-primary:hover { background: rgb(var(--c-indigodeep)); filter: brightness(.95); }
+.tour-skip { border-color: transparent; color: rgb(var(--c-charcoal) / .65); padding-left: .25rem; padding-right: .25rem; }
+.tour-skip:hover { color: rgb(var(--c-charcoal)); text-decoration: underline; }
+.tour-btn[hidden], .tour-skip[hidden] { display: none; }
+.tour-card button:focus-visible, .tour-card:focus-visible { outline: 2px solid rgb(var(--c-focus)); outline-offset: 2px; }
+.tour-grab { display: none; }
+.tour-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+@keyframes tour-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* PHONE: the card is a bottom sheet (draggable: swipe it down to close the tour), or a top one when the thing it points at is down there. */
+@media (max-width: 767px) {
+  .tour-card { left: 0; right: 0; bottom: 0; top: auto; width: auto; border-radius: 16px 16px 0 0; border-bottom: 0;
+    padding: .5rem 1rem calc(1rem + env(safe-area-inset-bottom)); animation: tour-sheet-up .22s cubic-bezier(.25, .1, .25, 1) both; }
+  .tour-card.is-top { top: calc(var(--hdr-h, 40px) + env(safe-area-inset-top)); bottom: auto; border-radius: 0 0 16px 16px; border-bottom: 1px solid rgb(var(--c-line));
+    border-top: 0; padding: 1rem 1rem .5rem; animation-name: tour-sheet-down; }
+  .tour-grab { display: block; width: 2.25rem; height: 4px; border-radius: 2px; margin: 0 auto .5rem; background: rgb(var(--c-charcoal) / .25); touch-action: none; }
+  .tour-card.is-top .tour-grab { display: none; }
+  .tour-card.sheet-dragging { animation: none; }
+}
+@keyframes tour-sheet-up { from { transform: translateY(1.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tour-sheet-down { from { transform: translateY(-1.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* 44px touch targets on a coarse pointer */
+@media (pointer: coarse) { .tour-btn, .tour-skip { min-height: 44px; min-width: 44px; } }
+/* Reduced motion: gentler, not absent: the slide becomes a short cross-fade; the press response stays. */
+@media (prefers-reduced-motion: reduce) {
+  .tour-card, .tour-card.is-top { animation-name: tour-fade; animation-duration: .12s; }
+  .tour-ring { animation-duration: .12s; }
+}
+@media (prefers-reduced-transparency: reduce) { .tour-ring { box-shadow: 0 0 0 100vmax rgb(0 0 0 / .7); } .tour.is-plain .tour-shield { background: rgb(0 0 0 / .7); } }
+@media (prefers-contrast: more) { .tour-card { border-color: rgb(var(--c-charcoal)); } }

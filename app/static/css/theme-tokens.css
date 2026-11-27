@@ -1,0 +1,63 @@
+/* Colour tokens (#384) — ONE copy, linked by base.html and any companion admin site.
+   Moved verbatim out of base.html's inline <style>. Tailwind's palette reads these (tailwind.config.js:
+   rgb(var(--c-…) / <alpha-value>)), so a page without this file renders every themed colour as invalid. */
+/* Theme tokens as RGB channels so Tailwind's /opacity modifiers still work
+   (rgb(var(--c) / <alpha>)). Dark mode just swaps the channel values — no template changes. */
+:root{
+  /* Strong ease-out for UI motion. Built-in ease/ease-out are too weak to read as intentional. */
+  --ease-out:cubic-bezier(.23,1,.32,1);
+  /* THE DEFAULT PALETTE (#459, tuned #589): warm neutrals with a terracotta accent. The owner of a deployment may retune these values.
+     Light:
+       cream      249 243 235  page
+       surface    252 248 244  cards, drawer
+       creamwarm  244 237 228  recessed / muted
+       line       237 228 217  borders
+       charcoal    22  20  15  text   */
+  --c-charcoal:22 20 15;   --c-cream:249 243 235;  --c-creamwarm:244 237 228;
+  --c-line:237 228 217;    --c-surface:252 248 244;
+  /* ENTRY = the talk-to-the-ERP boxes only (header search + PA composer, owner 10-30): lighter than the cards so
+     they stand out; every other field stays flat with the focus border. White in light mode, #30302e in dark. */
+  --c-entry:255 255 255;
+  /* ACCENTS (#459: terracotta + crimson). The token NAMES stay (indigo, indigodeep, flame
+     are in ~1,300 class names); what they MEAN is unchanged — indigo = the accent, indigodeep = the solid fill behind
+     white text, flame = urgent / needs you — only the colours differ:
+       indigo      171  85  42  terracotta #ab552a (light) → 211 124 85 #d37c55 (dark): text, borders, tints
+       indigodeep  171  85  42  terracotta, both modes: solid buttons and chips (white text on it passes AA)
+       flame       177  54  66  crimson #b13642 (light); dark lifts it to 220 85 98 so it stays readable at badge
+                                size on the dark page
+       focus        88 136 225  blue #5888e1: keyboard and field focus (was flame, which said "urgent")   */
+  --c-indigo:171 85 42;   --c-flame:177 54 66;    --c-focus:88 136 225;
+  /* Fixed accents (same in both modes) — mirror the Tailwind palette below so raw CSS never
+     repeats a literal hex (REVIEW P3). flame=urgent, ok/warn/high=status ramp. */
+  --flame:rgb(var(--c-flame)); --focus:rgb(var(--c-focus)); --ok:#287D5A; --warn:#CE9F35; --high:#DF5840;
+  /* flame as raw channels too — the keyboard focus ring needs rgb(… / alpha) and a hex can't
+     carry one. Same colour, second form; never define a flame literal anywhere else. */
+  --flame-rgb:var(--c-flame);
+  /* The brand fill behind solid buttons — FIXED, it does not lighten in dark mode (white text
+     rides on it). Three stylesheets already referenced --c-indigodeep and nothing defined it, so
+     every rule that used it was thrown away as invalid. Channels, to match the --c-* family. */
+  --c-indigodeep:171 85 42;
+  /* Revenue-stream trio (Budget Race + finance charts) — CVD-validated per mode
+     (dataviz six-checks, 2026-07-13). Marks only; text stays on ink tokens. */
+  --stream-labour:#7C3AED; --stream-ai:#2A78D6; --stream-mon:#0D9488;
+}
+/* DARK (#459, replacing #451's earlier ramp):
+     cream      20  20  19   page
+     surface    26  26  24   cards, drawer
+     creamwarm  31  31  29   recessed / muted
+     line       48  48  46   borders
+     charcoal  250 249 245   text
+   A warm charcoal, not pure black, for a softer feel. Accents: coral, a lifted crimson; see :root. */
+html.dark{
+  --c-charcoal:254 248 241; --c-cream:21 20 18;    --c-creamwarm:33 31 27;
+  --c-line:50 48 44;        --c-surface:28 26 22;   --c-indigo:211 124 85;   --c-flame:220 85 98;
+  --c-entry:50 48 44;
+  --stream-labour:#9B7BF0; --stream-ai:#3576C9; --stream-mon:#1BA893;
+  color-scheme:dark;  /* native controls (unchecked checkboxes, scrollbars, date pickers) render dark */
+}
+
+/* In dark mode native inputs default to white — theme them (skip toggles/range; the command bar opts out in base.html). */
+html.dark input:not([type=checkbox]):not([type=radio]):not([type=range]),
+html.dark textarea, html.dark select{ background-color:rgb(var(--c-surface)); color:rgb(var(--c-charcoal)); }
+/* Native <select> option lists follow the theme (otherwise they render white in dark mode). */
+select option{ background-color:rgb(var(--c-surface)); color:rgb(var(--c-charcoal)); }

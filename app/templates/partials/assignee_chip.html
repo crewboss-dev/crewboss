@@ -1,0 +1,13 @@
+{# The assignee "avatar": You (the owner) or AI · <session>. Colour is never alone — icon + words. #}
+{% set is_owner = t.assignee == 'owner' %}
+<span class="inline-flex items-center gap-1 rounded-full pl-0.5 pr-2 py-0.5 text-micro font-medium
+             {{ 'bg-flame/10 text-charcoal' if is_owner else 'bg-indigo/10 text-indigo' }}">
+  <span class="inline-flex items-center justify-center w-4 h-4 rounded-full {{ 'bg-flame text-white' if is_owner else 'bg-indigodeep text-white' }}" aria-hidden>
+    {% if is_owner %}
+    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+    {% else %}
+    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg>
+    {% endif %}
+  </span>
+  {% if is_owner %}You{% else %}AI · {{ t.owner_stream }}{% endif %}
+</span>

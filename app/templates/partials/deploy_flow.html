@@ -1,0 +1,39 @@
+{# How a change reaches a server (#838): the one picture behind the Machines page, so the two jobs (a runner builds, a server runs) are never
+   mistaken for one step. Plain HTML + the theme tokens. Colour is never the only signal: every box and arrow carries words, the runner is a
+   plain box and the server a double-bordered one. One row from 768px up; stacked with down arrows below that, so it never scrolls sideways
+   at 360px. Include it anywhere (the setup guide can): {% include 'partials/deploy_flow.html' %}. Needs nothing. #}
+<style>
+  .df { margin: 0 0 1rem; padding: .85rem 1rem; border-radius: .75rem; border: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface)); }
+  .df-row { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: stretch; gap: .25rem; }
+  .df-node { min-width: 0; padding: .5rem .7rem; border-radius: .6rem; border: 1px solid rgb(var(--c-charcoal) / .35); background: rgb(var(--c-charcoal) / .04); color: rgb(var(--c-charcoal)); }
+  .df-node b { display: block; font-size: .875rem; font-weight: 600; }
+  .df-node span { display: block; font-size: .75rem; color: rgb(var(--c-charcoal) / .7); }
+  .df-server { border-style: double; border-width: 4px; }
+  .df-ok { border-color: rgb(var(--c-flame)); background: rgb(var(--c-flame) / .1); }
+  .df-arrow { display: flex; align-items: center; justify-content: center; gap: .4rem; font-size: .75rem; color: rgb(var(--c-charcoal) / .7); text-align: center; }
+  .df-arrow .df-glyph::before { content: "\2193"; font-size: 1.1rem; line-height: 1; }
+  .df-caps { margin: .6rem 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; font-size: .8125rem; color: rgb(var(--c-charcoal) / .8); }
+  @media (min-width: 768px) {
+    .df-row { flex-direction: row; align-items: center; gap: .4rem; }
+    .df-node { flex: 1 1 0; }
+    .df-arrow { flex: 0 0 auto; flex-direction: column; gap: 0; max-width: 6.5rem; }
+    .df-arrow .df-glyph::before { content: "\2192"; }
+  }
+</style>
+<figure class="df" data-deploy-flow aria-label="How a change reaches a server">
+  <ol class="df-row">
+    <li class="df-node" data-df="runner"><b>Runner (your PC)</b><span>builds + tests</span></li>
+    <li class="df-arrow" data-df-arrow><span>pushes a branch</span><span class="df-glyph" aria-hidden="true"></span></li>
+    <li class="df-node" data-df="repo"><b>GitHub</b><span>holds the branch</span></li>
+    <li class="df-arrow" aria-hidden="true"><span class="df-glyph"></span></li>
+    <li class="df-node df-ok" data-df="ok"><b>Your OK</b><span>you say yes</span></li>
+    <li class="df-arrow" data-df-arrow><span>one-hour pass</span><span class="df-glyph" aria-hidden="true"></span></li>
+    <li class="df-node" data-df="crewboss"><b>Crewboss</b><span>deploys, connecting in</span></li>
+    <li class="df-arrow" aria-hidden="true"><span class="df-glyph"></span></li>
+    <li class="df-node df-server" data-df="server"><b>Server</b><span>pulls the approved release</span></li>
+  </ol>
+  <ul class="df-caps" data-df-captions>
+    <li>Runners never touch servers.</li>
+    <li>Only Crewboss deploys, and only after you say yes.</li>
+  </ul>
+</figure>

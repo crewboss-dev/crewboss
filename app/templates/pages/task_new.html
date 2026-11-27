@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}New request{% endblock %}
+{% block page_title %}
+<a href="{{ base }}/board" class="text-charcoal/40 hover:text-charcoal">Board</a>
+<span class="text-charcoal/30 mx-1">/</span>New request
+{% endblock %}
+{% block content %}
+<div class="max-w-xl">
+  <p class="text-small text-charcoal/60 mb-4">Ask for what you need. The AI session triages it &mdash;
+    whether it's a Rule, an AI Skill, a Workflow change or a fix, and when it's needed &mdash; and you accept or argue.</p>
+
+  <div id="prefill-note" hidden role="status"
+       class="mb-4 rounded-lg border border-indigo/20 bg-indigo/5 px-3 py-2 text-small text-charcoal/80">
+    Filled in from the ERP &mdash; check it, then send.
+  </div>
+
+  <form method="post" action="{{ base }}/tasks/new" class="card p-4 flex flex-col gap-4" id="new-request">
+    {% if task_targets is not none %}
+    {# An ACCOUNT holds no tasks (task #148): the request goes to one of its projects. #}
+    <div data-task-target>
+      <label for="nr-target" class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">Which project?</label>
+      <select id="nr-target" name="target" required class="field">
+        <option value="">Pick one of {{ current_project.name }}'s projects</option>
+        {% for p in task_targets %}<option value="{{ p.slug }}" {% if p.slug == preset_target %}selected{% endif %}>{{ '  ' * (p.depth - 1) }}{{ p.name }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    {% include "partials/new_request_fields.html" %}
+
+    <input type="hidden" name="workflows" value="{{ preset_links|tojson }}" data-prefill="workflows">
+    <input type="hidden" name="conditions" value="" data-prefill="conditions">
+    <input type="hidden" name="rule" value="{{ rule.id if rule else '' }}">
+
+    <div id="linked" {% if not preset_links and not rule %}hidden{% endif %}>
+      <div class="text-micro uppercase tracking-wide text-charcoal/50 mb-1">Linked to</div>
+      <div class="flex flex-wrap gap-1.5" id="linked-chips">
+        {% if rule %}<span class="chip bg-kind-logic/15 text-charcoal normal-case">{{ rule.name }}</span>{% endif %}
+        {% for w in preset_links %}<span class="chip bg-charcoal/[.06] text-charcoal/70 normal-case">{{ w.id }}{% if w.step %} · {{ w.step }}{% endif %}</span>{% endfor %}
+      </div>
+      <div id="conditions-note" hidden class="text-micro text-charcoal/50 mt-1.5">
+        + suggested conditions from the ERP, kept on the task for the AI.
+      </div>
+    </div>
+
+    <div class="flex gap-2">
+      <button type="submit" class="btn-primary">Send request</button>
+      <a href="{{ base }}/board" class="btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+<script src="{{ asset('js/prefill.js') }}" defer></script>
+{% endblock %}

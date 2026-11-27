@@ -1,0 +1,77 @@
+# Handoffs and shared account docs (#908). A session sends a handoff to another project in its account; the other session
+# replies and either side closes it. Shared docs are account-wide, versioned, and can be attached to a handoff.
+workflows:
+  - id: handoff.send-reply-close
+    name: Handoff sent, answered and closed
+    summary: A session sends a handoff (subject, body, optional shared docs) to another project in its account; the receiving session is told, replies in the thread, and either side closes it.
+    trigger:
+      type: manual
+      detail: A session calls the send_handoff tool (MCP) on another project in its own account
+      code_ref: {file: app/handoffs.py, function: send}
+    data: ["table:handoffs", "table:handoff_replies", "table:handoff_docs", "table:account_docs", "table:activity"]
+    steps:
+      - id: reach
+        kind: decision
+        question: Is the target a project this session may reach, inside its account, and not the overseer or a project it works itself?
+        label: Target allowed?
+        detail: A project the caller cannot see answers exactly like one that does not exist, so a session learns nothing about other accounts.
+        code_ref: {file: app/handoffs.py, function: _target}
+      - id: send
+        kind: action
+        label: Store the handoff and attach the shared docs
+        detail: Subject and body are checked for size and secrets; a reply_to links a new handoff to a closed one.
+        code_ref: {file: app/handoffs.py, function: send}
+        data: ["table:handoffs", "table:handoff_docs"]
+        effects: ["create:handoffs", "create:handoff_docs", "log:activity", "notify:receiving session"]
+      - id: reply
+        kind: action
+        label: The other side replies in the thread
+        detail: Only while the handoff is open; a closed one needs a new handoff with reply_to.
+        code_ref: {file: app/handoffs.py, function: reply}
+        data: ["table:handoff_replies"]
+        effects: ["create:handoff_replies", "log:activity", "notify:the other session"]
+      - id: close
+        kind: action
+        label: Either side closes it
+        code_ref: {file: app/handoffs.py, function: close}
+        effects: ["change:handoffs (closed)", "log:activity"]
+    edges:
+      - {from: trigger, to: reach}
+      - {from: reach, to: send, label: allowed}
+      - {from: send, to: reply}
+      - {from: reply, to: close}
+      - {from: send, to: close, label: no reply needed}
+
+  - id: handoff.shared-doc-put
+    name: Shared account doc saved
+    summary: A session writes a doc that every session in the account can read; each save is a new version and a stale base version is refused.
+    trigger:
+      type: manual
+      detail: A session calls the put_doc tool (MCP)
+      code_ref: {file: app/account_docs.py, function: put}
+    data: ["table:account_docs", "table:account_doc_versions", "table:activity"]
+    steps:
+      - id: check
+        kind: action
+        label: Check the text for size and secrets
+        code_ref: {file: app/account_docs.py, function: check_text}
+      - id: conflict
+        kind: decision
+        question: Does base_version match the doc's current version?
+        label: Base version current?
+        detail: A mismatch is a conflict the writer resolves with doc_diff, so two sessions never overwrite each other silently.
+      - id: save
+        kind: action
+        label: Save a new version
+        code_ref: {file: app/account_docs.py, function: put}
+        data: ["table:account_docs", "table:account_doc_versions"]
+        effects: ["create:account_doc_versions", "change:account_docs", "log:activity"]
+      - id: diff
+        kind: action
+        label: Compare two versions
+        code_ref: {file: app/account_docs.py, function: diff}
+    edges:
+      - {from: trigger, to: check}
+      - {from: check, to: conflict}
+      - {from: conflict, to: save, label: current}
+      - {from: conflict, to: diff, label: stale, so compare}

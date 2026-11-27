@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "python \"$HOME/.claude/crewboss/dash_inbox.py\"", "timeout": 10 } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "python \"$HOME/.claude/crewboss/dash_inbox.py\"", "timeout": 10 } ] }
+    ]
+  }
+}

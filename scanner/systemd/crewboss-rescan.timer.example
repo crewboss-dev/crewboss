@@ -1,0 +1,14 @@
+# Every 5 minutes (plus once shortly after boot). A tick that finds nothing changed costs two
+# `git fetch`es and exits. A timer never starts a second copy while one is still running.
+[Unit]
+Description=Rescan the workflow catalog every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnCalendar=*:0/5
+RandomizedDelaySec=20s
+AccuracySec=15s
+Unit=crewboss-rescan.service
+
+[Install]
+WantedBy=timers.target

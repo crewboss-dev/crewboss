@@ -1,0 +1,35 @@
+{# Discussions (task #727): the CA conversations linked to this item, beside its agents. Needs: d (ca.discussions_of), kind, ident,
+   item. Rule: a conversation's content (and so its title) is only its owner's; everyone else who can see the item gets a soft link.
+   A TASK's discussion is shared (#830): everyone who can see the task opens every conversation bound to it (x.open).
+   Titles are put in by Jinja autoescape; the open link is handled by js/ca.js (data-ca-open-conv), the new-discussion button by data-ca-new. #}
+<section class="card p-3 mt-4" aria-label="Discussions" data-ca-discussions>
+  <div class="flex items-center gap-2 mb-2">
+    <h3 class="text-small font-semibold">Discussions</h3>
+    <span class="text-micro tabular text-charcoal/50">{{ d.discussions|length }}</span>
+    <button type="button" class="press ml-auto text-micro px-2.5 py-1 rounded-lg border border-line" data-ca-new="{{ kind }}:{{ ident }}" data-ca-title="{{ item.title }}">New discussion</button>
+  </div>
+  {% for x in d.discussions %}
+    {% if x.open %}
+    <button type="button" class="press w-full flex items-baseline gap-2 py-1.5 text-left text-small border-b border-line last:border-0" data-ca-open-conv="{{ x.id }}">
+      <span class="min-w-0 flex-1 truncate">{{ x.title }}</span>
+      <span class="text-micro text-charcoal/50 shrink-0">{{ 'you' if x.mine else x.by }}{% if x.linked %} · linked{% endif %} · {{ x.updated_at|timeago }}</span>
+    </button>
+    {% else %}
+    <div class="flex items-baseline gap-2 py-1.5 text-small text-charcoal/55 border-b border-line last:border-0">{% if x.linked %}A chat by {{ x.by }} that changed this {{ kind }}{% else %}Discussion by {{ x.by }}{% endif %} · {{ x.updated_at|timeago }}</div>
+    {% endif %}
+  {% else %}
+    <div class="text-small text-charcoal/50 py-1">No discussions yet. Start one and it stays with this {{ kind }}.</div>
+  {% endfor %}
+  {% if kind == 'task' %}
+  <h3 class="text-small font-semibold mt-3 mb-1">Agents</h3>
+  {% for j in d.jobs %}
+    <div class="flex items-baseline gap-2 py-1.5 text-small border-b border-line last:border-0">
+      <span class="chip shrink-0">{{ j.state }}</span>
+      <span class="min-w-0 flex-1 truncate">{{ j.profile }} agent · {{ j.by }}{% if j.from_discussion %} · from <button type="button" class="underline" data-ca-open-conv="{{ j.from_discussion }}">a discussion of yours</button>{% elif j.from_a_discussion %} · from a discussion{% endif %}</span>
+      <span class="text-micro text-charcoal/50 shrink-0">{{ j.created_at|timeago }}</span>
+    </div>
+  {% else %}
+    <div class="text-small text-charcoal/50 py-1">No agents have run on this yet.</div>
+  {% endfor %}
+  {% endif %}
+</section>

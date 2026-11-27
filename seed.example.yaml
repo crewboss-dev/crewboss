@@ -1,0 +1,17 @@
+# Example. Copy to $CREWBOSS_HOME/seed.yaml (default ~/.crewboss) to choose the project created on first start
+# (app/seed.py). Without a seed.yaml one generic "example" project is created. Idempotent; tasks are keyed on seed_key.
+project:
+  slug: acme-app
+  name: Acme App
+  kind: internal
+  owner: system
+  short_name: app
+subprojects: [Backend, Frontend]
+tasks:
+  - seed_key: acme-first-task
+    title: Set up backups
+    stream: bug
+    priority: must
+    subprojects: [Backend]
+    actor: owner
+    body: A real first task for the new install.

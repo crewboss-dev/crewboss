@@ -1,0 +1,26 @@
+# Example. Copy to $CREWBOSS_HOME/health_feeds.yaml (default ~/.crewboss) and edit; keep the real file out of the repo.
+# How each project's app health reaches the dashboard (task #404, owner 2026-10-15: "each server should host its own
+# health checks and push those to dev, with a cache period in case the connection or dev is down"). REVIEWED CONFIG:
+# a new project, or a project switching to push, is an edit here (+ rebuild), never code.
+# Contract for the senders: docs/health-report-contract.md.
+#
+#   mode: push               servers POST batches of reports to /api/health/report with the project's 'reporter' token
+#                            (python -m app.tokens create --kind reporter --project <slug> [--source app01] --quiet)
+#   mode: pull               the dashboard fetches it (only the ERP: GET <ERP_HEALTH_URL>/api/health, app/erp_health.py)
+#                            — kept until the ERP switches to push, then removed
+#   expect_every_seconds     how often each source observes and sends a report; no report OBSERVED for 3x that
+#                            (CREWBOSS_HEALTH_REPORT_DEADMAN_FACTOR) = "<project> stopped reporting (<source>)", an error
+#                            sent once to the errors session
+#   sources                  OPTIONAL: sources that must report even before their first report (else: every source
+#                            that has reported in the history window is watched)
+#   erp: true                the reports are the ERP's /api/health shape: their events, failures, heartbeats etc. are
+#                            tracked and shown as the ERP section of the Health page (app/erp_health.py)
+#   erp_source               OPTIONAL with erp: the one source whose reports feed that section (default: any source)
+#   public_url               OPTIONAL: the project's public https address; its certificate's days left show in the server's
+#                            host signal on the Machines page (#828)
+#
+# A linked admin site's catalog check (drift.yaml) reads whichever report is current for its project.
+projects:
+  acme-app:
+    mode: push
+    expect_every_seconds: 120

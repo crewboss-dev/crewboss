@@ -1,0 +1,30 @@
+{# A change the owner decided in conversation with a session (record_decision, task #581). Needs: c, cbase. Shows who and
+   when with the owner's quoted words (and whether the quote was found in the owner's own prompts); until the owner
+   acknowledges it the row stays on Now, and they can acknowledge or override it, even after the change was made. #}
+{% if c.decided_via == 'session' %}
+<div class="text-micro text-charcoal/55 mt-1" data-decided-in-chat>Decided in chat by {{ c.decided_by|actor_label }} · {{ c.decided_at|timeago }}{% if not c.words_verified %} · <span class="font-semibold text-flame" data-unverified>unverified: not found in your own prompts, so it isn't approved until you confirm</span>{% endif %}</div>
+{% if c.owner_words %}<blockquote class="text-small text-charcoal/70 mt-1 border-l-2 border-line pl-2 whitespace-pre-line break-words">{{ c.owner_words }}</blockquote>{% endif %}
+{% if c.stage == 'done' and not c.acknowledged_at %}<div class="text-micro text-charcoal/55 mt-1">Already made. Rejecting it now records your call but does not undo the work.</div>{% endif %}
+{% if not c.acknowledged_at %}
+{# #582: Acknowledge / Confirm / Override fold away in place. On Focus (fold_whole) the whole card is the item; on the Changes page
+   the buttons are (the row stays, it is a record). Without JS the form posts and comes back as a 303. #}
+<div {% if not (fold_whole is defined and fold_whole) %}data-fold="cd:{{ c.id }}"{% endif %}>
+<form method="post" action="{{ cbase }}/changes/{{ c.id }}/decide" class="flex flex-wrap gap-2 mt-2" x-data="{ edit: false }"
+      hx-post="{{ cbase }}/changes/{{ c.id }}/decide" hx-target="closest [data-fold]" hx-swap="outerHTML" hx-disabled-elt="find fieldset">
+<fieldset class="contents" style="border:0;margin:0;padding:0;min-width:0">
+  <button type="submit" formaction="{{ cbase }}/changes/{{ c.id }}/acknowledge" hx-post="{{ cbase }}/changes/{{ c.id }}/acknowledge" class="btn-primary text-small touch-target" data-acknowledge>{% if c.words_verified %}Acknowledge{% else %}Confirm{% endif %}</button>
+  <span class="text-micro text-charcoal/55 self-center">Override:</span>
+  <button type="submit" name="decision" value="approved" class="btn-ghost text-small touch-target border border-line">Approve</button>
+  <button type="submit" name="decision" value="rejected" class="btn-ghost text-small touch-target border border-line">Reject</button>
+  <button type="button" @click="edit = !edit" class="btn-ghost text-small touch-target">Change…</button>
+  <div x-show="edit" x-cloak class="w-full flex flex-col sm:flex-row gap-2">
+    <textarea name="note" rows="2" class="field text-small flex-1" placeholder="How should it change?"></textarea>
+    <button type="submit" name="decision" value="changed" class="btn-primary text-small self-start">Approve with changes</button>
+  </div>
+</fieldset>
+</form>
+</div>
+{% endif %}
+{% elif c.superseded_owner_words %}
+<div class="text-micro text-charcoal/55 mt-1">Overridden by you. {{ c.superseded_by|actor_label }} had recorded: “{{ c.superseded_owner_words }}”</div>
+{% endif %}

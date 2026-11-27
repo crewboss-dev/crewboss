@@ -1,0 +1,18 @@
+# Written by crewboss frontdoor (the Front door card rewrites this file; edits are lost)
+{
+	admin unix//run/caddy-admin/caddy.sock|0666
+	log default {
+		output file /frontdoor/logs/caddy.log {
+			mode 0644
+		}
+		format json
+	}
+}
+
+crew.example.com {
+	header Strict-Transport-Security "max-age=31536000"
+	request_header -X-Crewboss-Front-Door
+	request_header -X-MDD-Front-Door
+	encode zstd gzip
+	reverse_proxy app:8000
+}

@@ -1,0 +1,31 @@
+{# Pushed app health (task #404): each server pushes its own health reports; one line per project source, newest
+   observed report, and the "stopped reporting" alarms. CREWBOSS_HOME/health_feeds.yaml says which projects push. #}
+{% set muted = 'text-charcoal/50' %}
+{% set rows = 'divide-y divide-line' %}
+<section aria-labelledby="reports-h" class="mt-8" data-app-reports>
+  <h2 id="reports-h" class="text-lead font-semibold mb-3">App reports</h2>
+  <div class="card {{ rows }}">
+    {% for p in reports.open %}
+    <div class="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-1 px-4 py-3" data-report-alarm>
+      <span class="chip shrink-0 bg-status-high/15 text-status-high font-semibold">Error</span>
+      <div class="min-w-0 flex-1 text-small font-medium break-words">{{ p.name }}</div>
+      <span class="text-micro tabular {{ muted }} shrink-0">since {{ p.started_at|timeago }}</span>
+    </div>
+    {% endfor %}
+    {% for r in reports.rows %}
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5" data-report-source="{{ r.project }}{{ ':' ~ r.source if r.source }}" data-mode="{{ r.mode }}">
+      <span class="w-2 h-2 rounded-full shrink-0 {{ 'bg-charcoal/20' if r.mode == 'pull' else ('bg-status-disaster' if r.stale else 'bg-status-ok') }}" aria-hidden="true"></span>
+      <span class="text-small font-medium">{{ r.project }}{% if r.source %} · {{ r.source }}{% endif %}</span>
+      {% if r.mode == 'pull' %}
+      <span class="text-micro {{ muted }}">fetched by the dashboard (not pushing yet)</span>
+      {% elif not r.source %}
+      <span class="text-micro text-status-disaster">no report has arrived</span>
+      {% else %}
+      <span class="ml-auto text-micro tabular {{ 'text-status-disaster font-semibold' if r.stale else muted }}" title="{{ r.observed_at }}">observed {{ r.observed_at|timeago }}{% if r.received_at %} · received {{ r.received_at|timeago }}{% endif %}</span>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="px-4 py-3 text-small {{ muted }}">No project is set up to report (CREWBOSS_HOME/health_feeds.yaml).</div>
+    {% endfor %}
+  </div>
+</section>

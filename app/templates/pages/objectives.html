@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Objectives{% endblock %}
+{% block page_title %}Objectives{% endblock %}
+{% block content %}
+{# Objectives are knowledge entries (kind='objective') with a target: the same collapsed card, plus the
+   target as a chip ("$40k / month") and a progress slot that reads "—" until the business pulse can
+   supply a live figure (repo.objective_progress). #}
+<div class="kb-page">
+  <div class="kb-toolbar">
+    <p class="text-small text-charcoal/60">What the business is aiming for. Sessions weigh every request against these.</p>
+    <div class="kb-toolbar-end">
+      {% if archived_count or show_archived %}
+      <a href="{{ base }}/objectives{% if not show_archived %}?archived=1{% endif %}" class="{{ 'fchip-on' if show_archived else 'fchip' }}">Show archived <span class="tabular">{{ archived_count }}</span></a>
+      {% endif %}
+      <a href="{{ base }}/knowledge/new?kind=objective" class="btn-primary">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Add objective
+      </a>
+    </div>
+  </div>
+
+  <div class="kb-list">
+    {% for e in objectives %}
+    {% include "partials/knowledge_card.html" %}
+    {% else %}
+    <div class="card p-8 text-center text-charcoal/50">
+      No objectives yet. Add what the business is optimising for &mdash; grow monthly invoicing, finish in-flight
+      features before new ones, less time on dev versus billable work.
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

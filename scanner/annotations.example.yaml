@@ -1,0 +1,26 @@
+# Hand-curated workflow annotations: copy to $CREWBOSS_HOME/scanner/annotations.yaml and add your own.
+# See docs/catalog-schema.md for the Workflow and Step shape and scanner/README.md for how this merges with auto discovery.
+# Every entry is read from the code (function names, call order, table names), not guessed; it gets confidence: annotated and
+# REPLACES the auto-discovered entry for the source file(s) it claims (its own source_refs plus every step's code_ref.file).
+# PRIVACY: ai.prompt_text is copied verbatim from a code constant. Nothing here is a runtime value (no real email, customer, key).
+workflows:
+  - id: billing.invoice-reminder.send
+    name: "Billing › Invoice reminder › Send"
+    group: Billing
+    subproject: ERP
+    summary: >
+      Sends one reminder email for each invoice that is 7 days overdue, then stamps the invoice so it is never
+      reminded twice.
+    trigger: {type: timer, detail: "daily at 09:00"}
+    steps:
+      - {id: timer, kind: trigger, label: Timer, detail: "daily", system: internal,
+         code_ref: {file: app/workers/reminders.py, function: main}}
+      - {id: find-overdue, kind: action, label: "Find overdue invoices", system: db,
+         code_ref: {file: app/workers/reminders.py, function: overdue_invoices}}
+      - {id: send, kind: action, label: "Send reminder email", system: email,
+         code_ref: {file: app/workers/reminders.py, function: send_reminder}}
+    edges:
+      - {from: timer, to: find-overdue}
+      - {from: find-overdue, to: send}
+    side_effects: ["db:invoices", email]
+    source_refs: [{file: app/workers/reminders.py, lines: "1-60", function: [main, overdue_invoices, send_reminder]}]

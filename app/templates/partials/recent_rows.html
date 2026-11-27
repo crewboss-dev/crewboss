@@ -1,0 +1,14 @@
+{# A page of the Recent feed (#771): the rows, then (while there is more) a sentinel that loads the next page when it scrolls into view, or on click. #}
+{% for a in entries %}
+<a href="{{ a.href }}" class="press flex items-start gap-3 px-4 py-2.5" data-recent-row data-id="{{ a.id }}">
+  <span class="min-w-0 flex-1">
+    <span class="block text-sm"><span class="font-medium">{{ a.actor }}</span> {{ a.summary }}</span>
+    <span class="block text-2xs text-charcoal/45">{{ a.project_name }} &middot; {{ a.entity }}</span>
+  </span>
+  <span class="text-xs text-charcoal/45 shrink-0 tabular" title="{{ a.at }}">{{ a.at|timeago }}</span>
+</a>
+{% endfor %}
+{% if next_id %}
+<button type="button" class="w-full px-4 py-3 text-sm text-indigo hover:bg-charcoal/[.03]" data-recent-more
+        hx-get="/recent?before={{ next_id }}{{ '&' ~ qs if qs }}" hx-trigger="click, intersect once" hx-swap="outerHTML">Load more</button>
+{% endif %}

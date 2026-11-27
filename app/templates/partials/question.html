@@ -1,0 +1,29 @@
+{# One owner question. Needs: q (a task_questions row), post_url, target, swap. Open = answer UI (a button per
+   choice + your own words); answered = the answer, quietly. The question, its context and the answer also land in
+   the task's comments, so the task reads as the thread either way. #}
+{% if q.answered_at is none %}
+<div class="rounded-xl border border-flame/30 bg-flame/[.05] p-3" data-question="{{ q.id }}">
+  <div class="text-micro text-charcoal/55 mb-1">Question from {{ q.asked_by|actor_label }} · {{ q.asked_at|timeago }}</div>
+  <div class="text-base font-semibold leading-snug break-words">{{ q.question }}</div>
+  {% if q.context %}<div class="text-small text-charcoal/70 mt-1 whitespace-pre-line break-words"><span class="font-medium">Why:</span> {{ q.context }}</div>{% endif %}
+  {% if q.options %}
+  <div class="flex flex-wrap gap-2 mt-3">
+    {% for o in q.options %}
+    <button type="button" class="btn-ghost text-small touch-target border border-line"
+            hx-post="{{ post_url }}" hx-vals='{{ {"answer": o}|tojson }}' hx-target="{{ target }}" hx-swap="{{ swap }}">{{ o }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <form hx-post="{{ post_url }}" hx-target="{{ target }}" hx-swap="{{ swap }}" class="flex flex-col sm:flex-row gap-2 mt-3">
+    <textarea name="answer" required rows="1" class="field text-small flex-1"
+              placeholder="{{ 'Or answer in your own words…' if q.options else 'Your answer…' }}"></textarea>
+    <button type="submit" class="btn-primary text-small self-start">Send answer</button>
+  </form>
+</div>
+{% else %}
+<div class="card p-2.5" data-question="{{ q.id }}">
+  <div class="text-micro text-charcoal/45 mb-0.5">Asked by {{ q.asked_by|actor_label }} · answered {{ 'in the session' if q.answered_via == 'session' else 'here' }} {{ q.answered_at|timeago }}</div>
+  <div class="text-small text-charcoal/70 break-words">{{ q.question }}</div>
+  <div class="text-small font-medium mt-0.5 break-words">→ {{ q.answer }}</div>
+</div>
+{% endif %}

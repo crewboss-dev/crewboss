@@ -1,0 +1,22 @@
+{# Enrol a runner (#810): the three-OS how-to, then the one-time code form. The code is rendered only on the response to making it (never
+   stored in the clear, never re-shown). Used inline in the empty state and inside the "+ Add a machine" sheet. Needs: base, modes,
+   runner_repo(_private), and `devices` (the how-to is open while it is empty). #}
+{% include 'partials/runner_howto.html' %}
+<section class="mb-2" aria-label="New enrolment code" data-section="enrol">
+  <h3 class="font-semibold text-small mb-1">Enrol a runner</h3>
+  <p class="text-small text-charcoal/65 mb-3">Make a code, then give it to the runner on the PC (it is shown once and works for 5 minutes, one time).</p>
+  <form method="post" action="{{ base }}/runners/codes" class="flex flex-wrap items-end gap-3" data-new-code-form>
+    <label class="block"><span class="kb-label">Mode <span class="kb-label-hint">whose Claude the runner uses</span></span>
+      <select name="mode" class="field text-small">
+        {% for m in modes %}<option value="{{ m }}">{{ 'Subscription (the person\'s own Claude login)' if m == 'subscription' else 'API key' }}</option>{% endfor %}
+      </select></label>
+    {% if where_choice %}
+    <label class="block"><span class="kb-label">Where is this computer? <span class="kb-label-hint">which address the runner uses</span></span>
+      <select name="where" class="field text-small">
+        <option value="lan">On this network</option>
+        <option value="public">Anywhere</option>
+      </select></label>
+    {% endif %}
+    <button class="btn-primary text-small touch-target" type="submit">New enrolment code</button>
+  </form>
+</section>

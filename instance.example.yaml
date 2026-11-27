@@ -1,0 +1,108 @@
+# This install's own values (app/instance.py). Copy this file to $CREWBOSS_HOME/instance.yaml (default ~/.crewboss) and
+# edit. An environment variable (CREWBOSS_*) still overrides anything below; with no file the code uses neutral defaults.
+# Keep the real file OUT of the Crewboss repo: it holds your hosts and project names.
+
+name: Crewboss
+
+# The app's public base URL, and an optional link to another system the menu drawer shows.
+public_url: https://crewboss.example.com
+erp_url: https://erp.example.com
+
+# How people sign in to the pages. `local` (the default when unset): Crewboss's own sign-in (password plus an authenticator-app code; recovery codes as the
+# fallback; passkeys are an optional upgrade, see auth_passkeys); create the owner with `./crewboss owner` (prints a one-time temporary password).
+# `oidc`: Microsoft (Entra) sign-in instead; it needs CREWBOSS_OIDC_TENANT_ID / _CLIENT_ID, a client secret file and
+# CREWBOSS_SUPERADMIN_OIDS. An install that already has OIDC configured and no `auth:` key stays on oidc.
+# Passkeys need a signed certificate (your own web address) or localhost; password plus authenticator app works in every mode.
+auth: local
+# Passkeys (passwordless sign-in) as an optional upgrade. Default: on only when the front door has a signed certificate; false keeps
+# password plus authenticator app only. A LAN install (self-signed) never offers passkeys.
+# auth_passkeys: true
+
+# Reverse proxies whose X-Forwarded-For is believed (CIDR list; the sign-in rate limits key on the client address).
+# Default: loopback only. The installer writes your proxy's actual address here; if your proxy reaches the app from another
+# address (a container network gateway, another machine), list that address.
+# trusted_proxies: [127.0.0.1/32]
+
+# The app's own origins (host[:port] as a browser puts it in Origin): the same-origin guard (app/origin_guard.py).
+origin_hosts:
+  - crewboss.example.com
+  - 127.0.0.1:8931
+  - localhost:8931
+
+# Hosts the MCP transport's DNS-rebinding guard accepts (app/mcp_server.py); 127.0.0.1 and localhost are always allowed.
+mcp_allowed_hosts:
+  - crewboss.example.com
+
+# Where a project's dev / prod can live: your machine names.
+servers:
+  - app01.example.com
+  - dev01.example.com
+
+# Zabbix host groups watched, and the claim Web Push services may use to contact the sender.
+# zabbix_url: https://zabbix.example.com/api_jsonrpc.php    # off while unset; the read-only API token is a mounted file
+zabbix_groupids: []
+# Where project repos are checked out on THIS server (the Environment tab's "Suggest from the repo"). Default ~/repos.
+# repos_dir: /srv/repos
+vapid_sub: mailto:admin@example.com
+# The slug of the account the launcher's boot fallback session names (first word of CREWBOSS_FALLBACK_SESSION): kept from a rename.
+# fallback_session_slug: acme
+# A prefix dropped from a project slug when its session short name is derived: with "acme-", acme-erp gets the short name erp.
+# slug_prefix: acme-
+# Zabbix item keys for the server readings that come from your own agent template (the Servers page); unset = not shown.
+# server_health_keys: {reboot: "acme.health[reboot.required]", sec_updates: "acme.health[updates.security]", updates: "acme.health[updates.total]"}
+
+# CA, the Crewboss Assistant (task #702): the Claude model its chat turns run on (passed to `claude --model` on the person's own
+# runner; default sonnet), and the timezone reminders are spoken in (default UTC).
+ca_model: sonnet
+timezone: UTC          # an IANA name, e.g. Europe/Berlin: the Board's "today", the 06:00 re-plan, times shown for servers
+
+# Platform key stores: one per project, each with ONE writer credential (a 0600 file mounted into the container).
+platform_key_stores: {}
+
+# Project ROLES: which project (by slug) plays each part. A role with no slug is unfilled and grants nothing.
+# The overseer role should be filled: with none, the tree's top-level partitions merge (app/tree.py account_root_id).
+roles:
+  overseer: acme-dashboard
+  health: acme-app
+  default: acme-app
+  legacy_token: acme-app
+  export: acme-app
+  dashboard: acme-dashboard
+
+# The project a catalog import / the catalog CLI uses when none is named, and the repo each project's catalog is built from.
+catalog_project: acme-app
+project_repos:
+  acme-app: /srv/acme-app
+
+# Add-ons to load (entry-point group dash.addons). A merely installed package is never loaded; only names listed here.
+addons: []
+
+# Extra links at the bottom of the menu drawer (and the phone's More sheet), e.g. your company site or another system.
+# Each needs a short label (1-40 characters) and an http(s) url; a bad entry is skipped with a warning. None = no section.
+menu_links:
+  - label: Company site
+    url: https://example.com
+
+# CA speech-to-text (task #727): the microphone in the CA drawer. A swappable provider; with none set, the mic and its device
+# menu are hidden. `aws_transcribe` = Amazon Transcribe streaming: the browser streams audio straight to AWS using a short-lived
+# (5 minute) signed address this server hands out, rate-limited per person.
+# Credentials: a 0600 file mounted at /run/secrets/speech-credentials (override with CREWBOSS_SPEECH_CREDENTIALS_FILE) holding
+#   access_key_id=AKIA...
+#   secret_access_key=...
+# for an IAM user allowed ONLY transcribe:StartStreamTranscriptionWebSocket. Never put them in this file.
+# speech:
+#   provider: aws_transcribe
+#   region: ap-southeast-2
+#   language: en-US
+
+# Code-fault filter (#828). Off by default: every event of the ERP health feed is tracked and escalated. true = only events the
+# feed tags kind "code_fault" are (a missing or unknown kind counts as ops). Env CREWBOSS_ERP_HEALTH_CODE_FAULTS_ONLY wins.
+# erp_health_code_faults_only: false
+
+# Extra MCP servers every runner job gets beside crewboss-job (a second entry in the job's --strict-mcp-config; its tools are
+# pre-approved as mcp__<name>). Off when unset. `projects` limits it to those project slugs (omit = all). Reached from the runner
+# PC's own network; no credential is sent to it. Example: a read-only knowledge base on your LAN.
+# job_mcp_servers:
+#   - name: knowledge
+#     url: http://knowledge.example.com:8970/mcp
+#     projects: [my-app]

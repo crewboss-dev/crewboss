@@ -1,0 +1,401 @@
+/* The shared Mallen canvas (docs/canvas-contract.md) — everything scoped under .mallen-canvas, no host classes.
+   Theming: a host sets any of the PUBLIC custom properties below (--mc-*) on .mallen-canvas or an ancestor, for
+   both its light and dark themes; anything unset falls back to the Mallen tokens (mallen-design §2: the Claude
+   palette since #479), light or dark.
+   Dark = html.dark, [data-theme="dark"] on <html> or the mount, or the OS preference unless html.light /
+   [data-theme="light"] says otherwise. Sizes are px so a host's root font-size can't rescale the diagram. */
+
+.mallen-canvas {
+  --_font: var(--mc-font, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif);
+  --_mono: var(--mc-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  --_text: var(--mc-text, #141413);
+  --_muted: var(--mc-muted, rgb(20 20 19 / 0.58));
+  --_bg: var(--mc-bg, #F5F4ED);
+  --_surface: var(--mc-surface, #FAF9F5);
+  --_line: var(--mc-line, #E8E6DC);
+  --_line-strong: var(--mc-line-strong, rgb(20 20 19 / 0.25));
+  --_dot: var(--mc-dot, rgb(20 20 19 / 0.20));
+  --_edge: var(--mc-edge, rgb(20 20 19 / 0.38));
+  --_soft: var(--mc-soft, rgb(20 20 19 / 0.05));
+  --_accent: var(--mc-accent, #C96442);
+  --_focus: var(--mc-focus, #3898EC);
+  --_danger: var(--mc-danger, #C62828);
+  --_ok: var(--mc-ok, #2E7D52);
+  --_kind-trigger: var(--mc-kind-trigger, #C96442);
+  --_kind-precode: var(--mc-kind-precode, #606C80);
+  --_kind-ai: var(--mc-kind-ai, #2A78D6);
+  --_kind-logic: var(--mc-kind-logic, #C9A227);
+  --_kind-action: var(--mc-kind-action, #1F7A8C);
+  --_grade-a: var(--mc-grade-a, #2E7D52);
+  --_grade-b: var(--mc-grade-b, #C9A227);
+  --_grade-c: var(--mc-grade-c, #E8821E);
+  --_grade-d: var(--mc-grade-d, #C62828);
+  --_grade-ink: var(--mc-grade-ink, #FFFFFF);
+  --_grade-ink-b: var(--mc-grade-ink-b, #141413);
+  --_pill-bg: var(--mc-pill-bg, #141413);
+  --_pill-text: var(--mc-pill-text, #FAF9F5);
+  --_pill-line: var(--mc-pill-line, transparent);
+  --_box: var(--mc-box, rgb(20 20 19 / 0.03));
+  --_box-line: var(--mc-box-line, rgb(20 20 19 / 0.12));
+  --_selected: var(--mc-selected, #C96442);
+  --_radius: var(--mc-radius, 12px);
+  --_shadow: var(--mc-shadow, 0 1px 2px 0 rgb(20 20 19 / 0.06), 0 1px 3px 0 rgb(20 20 19 / 0.08));
+  --_shadow-float: var(--mc-shadow-float, 0 8px 24px -4px rgb(20 20 19 / 0.18), 0 2px 8px -2px rgb(20 20 19 / 0.10));
+  --_sticky-top: var(--mc-sticky-top, 16px);
+  --_panel-w: var(--mc-panel-width, 352px);
+
+  display: block;
+  container-type: inline-size;
+  font-family: var(--_font);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--_text);
+  text-align: left;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-theme="light"]) .mallen-canvas:not([data-theme="light"]) {
+    --_text: var(--mc-text, #FAF9F5);
+    --_muted: var(--mc-muted, rgb(250 249 245 / 0.58));
+    --_bg: var(--mc-bg, #141413);
+    --_surface: var(--mc-surface, #1A1A18);
+    --_line: var(--mc-line, #30302E);
+    --_line-strong: var(--mc-line-strong, rgb(250 249 245 / 0.30));
+    --_dot: var(--mc-dot, rgb(250 249 245 / 0.13));
+    --_edge: var(--mc-edge, rgb(250 249 245 / 0.34));
+    --_soft: var(--mc-soft, rgb(250 249 245 / 0.10));
+    --_accent: var(--mc-accent, #D97757);
+    --_pill-bg: var(--mc-pill-bg, #1F1F1D);
+    --_pill-line: var(--mc-pill-line, rgb(250 249 245 / 0.30));
+    --_box: var(--mc-box, rgb(250 249 245 / 0.03));
+    --_box-line: var(--mc-box-line, rgb(250 249 245 / 0.12));
+    --_selected: var(--mc-selected, #D97757);
+    --_shadow: var(--mc-shadow, 0 1px 2px 0 rgb(0 0 0 / 0.30));
+    --_shadow-float: var(--mc-shadow-float, 0 8px 24px -4px rgb(0 0 0 / 0.5));
+  }
+}
+:root.dark .mallen-canvas:not([data-theme="light"]),
+:root[data-theme="dark"] .mallen-canvas:not([data-theme="light"]),
+.mallen-canvas[data-theme="dark"] {
+  --_text: var(--mc-text, #FAF9F5);
+  --_muted: var(--mc-muted, rgb(250 249 245 / 0.58));
+  --_bg: var(--mc-bg, #141413);
+  --_surface: var(--mc-surface, #1A1A18);
+  --_line: var(--mc-line, #30302E);
+  --_line-strong: var(--mc-line-strong, rgb(250 249 245 / 0.30));
+  --_dot: var(--mc-dot, rgb(250 249 245 / 0.13));
+  --_edge: var(--mc-edge, rgb(250 249 245 / 0.34));
+  --_soft: var(--mc-soft, rgb(250 249 245 / 0.10));
+  --_accent: var(--mc-accent, #D97757);
+  --_pill-bg: var(--mc-pill-bg, #1F1F1D);
+  --_pill-line: var(--mc-pill-line, rgb(250 249 245 / 0.30));
+  --_box: var(--mc-box, rgb(250 249 245 / 0.03));
+  --_box-line: var(--mc-box-line, rgb(250 249 245 / 0.12));
+  --_selected: var(--mc-selected, #D97757);
+  --_shadow: var(--mc-shadow, 0 1px 2px 0 rgb(0 0 0 / 0.30));
+  --_shadow-float: var(--mc-shadow-float, 0 8px 24px -4px rgb(0 0 0 / 0.5));
+}
+
+.mallen-canvas *, .mallen-canvas *::before, .mallen-canvas *::after { box-sizing: border-box; }
+.mallen-canvas button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; }
+.mallen-canvas a { color: inherit; }
+.mallen-canvas :focus-visible { outline: 2px solid var(--_focus); outline-offset: 2px; }
+
+/* --- layout: canvas + side panel; stacked when the mount is narrow ------------------------------------ */
+.mallen-canvas .mc-layout { display: flex; gap: 16px; align-items: flex-start; }
+.mallen-canvas .mc-stage {
+  flex: 1 1 auto; min-width: 0; border: 1px solid var(--_line); border-radius: var(--_radius); overflow: hidden;
+  background: var(--_bg); box-shadow: var(--_shadow);
+}
+.mallen-canvas .mc-stage-inner { position: relative; width: 100%; min-height: 260px; }
+.mallen-canvas .mc-fill { width: 100%; height: 100%; }
+.mallen-canvas .mc-panel {
+  flex: 0 0 var(--_panel-w); width: var(--_panel-w); min-width: 0; position: sticky; top: var(--_sticky-top);
+  max-height: calc(100vh - var(--_sticky-top) - 16px); overflow: auto;
+}
+@container (max-width: 760px) {
+  .mallen-canvas .mc-layout { flex-direction: column; align-items: stretch; }
+  .mallen-canvas .mc-panel { flex: none; width: auto; position: static; max-height: none; overflow: visible; }
+}
+@container (max-width: 560px) {
+  .mallen-canvas .mc-minimap { display: none; }
+}
+
+/* --- icons & text helpers ----------------------------------------------------------------------------- */
+.mallen-canvas .mc-ico { width: 14px; height: 14px; flex-shrink: 0; }
+.mallen-canvas .mc-ico-12 { width: 12px; height: 12px; flex-shrink: 0; }
+.mallen-canvas .mc-ico-16 { width: 16px; height: 16px; flex-shrink: 0; }
+.mallen-canvas .mc-tabular { font-variant-numeric: tabular-nums; }
+.mallen-canvas .mc-mono { font-family: var(--_mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.mallen-canvas .mc-muted { color: var(--_muted); }
+.mallen-canvas .mc-micro { font-size: 11px; letter-spacing: .04em; }
+.mallen-canvas .mc-small { font-size: 13px; }
+.mallen-canvas .mc-clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mallen-canvas .mc-link { color: var(--_accent); text-decoration: none; }
+.mallen-canvas .mc-link:hover { text-decoration: underline; }
+.mallen-canvas .mc-chev { transition: transform 160ms cubic-bezier(.25,.1,.25,1); }
+.mallen-canvas .mc-chev-shut { transform: rotate(-90deg); }
+
+/* --- React Flow, themed ------------------------------------------------------------------------------- */
+.mallen-canvas .react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--_edge);
+  --xy-minimap-background-color: var(--_surface);
+  --xy-controls-button-background-color: var(--_surface);
+  --xy-controls-button-color: var(--_text);
+  --xy-controls-button-border-color: var(--_line);
+  background: transparent;
+  font-family: var(--_font);
+}
+.mallen-canvas .react-flow__attribution, .mallen-canvas .react-flow__a11y-description { display: none !important; }
+.mallen-canvas .react-flow__background { background: transparent; }
+.mallen-canvas .react-flow__background circle, .mallen-canvas .react-flow__background path { fill: var(--_dot); }
+.mallen-canvas .react-flow__node { cursor: default; }
+.mallen-canvas .react-flow__node-card, .mallen-canvas .react-flow__node-pill,
+.mallen-canvas .react-flow__node-system { cursor: pointer; }
+.mallen-canvas .react-flow__node-card.dragging, .mallen-canvas .react-flow__node-system.dragging { cursor: grabbing; }
+.mallen-canvas .react-flow__node-box, .mallen-canvas .react-flow__node-join,
+.mallen-canvas .react-flow__node-head { pointer-events: none; }
+.mallen-canvas .mc-handle { opacity: 0; width: 1px !important; height: 1px !important; min-width: 0 !important;
+  min-height: 0 !important; border: 0 !important; }
+.mallen-canvas .react-flow__controls { box-shadow: var(--_shadow); border-radius: 8px; overflow: hidden; }
+.mallen-canvas .react-flow__controls-button {
+  width: 28px; height: 28px; background: var(--_surface); color: var(--_text); border-bottom: 1px solid var(--_line);
+}
+.mallen-canvas .react-flow__controls-button:hover { background: var(--_soft); }
+.mallen-canvas .react-flow__controls-button svg { fill: currentColor; max-width: 12px; max-height: 12px; }
+.mallen-canvas .react-flow__controls-button .mc-ico { fill: none; max-width: 14px; max-height: 14px; }
+.mallen-canvas .mc-minimap { width: 132px; height: 96px; border-radius: 8px; overflow: hidden; box-shadow: var(--_shadow);
+  border: 1px solid var(--_line); color: var(--_edge); opacity: .92; }
+.mallen-canvas .mc-minimap svg { width: 132px; height: 96px; }
+.mallen-canvas .react-flow__minimap { background: var(--_surface); }
+.mallen-canvas .react-flow__minimap-mask { fill: var(--_soft); }
+@media (pointer: coarse) {
+  .mallen-canvas .react-flow__controls-button { width: 40px; height: 40px; }
+}
+
+/* --- workflow: edges ---------------------------------------------------------------------------------- */
+.mallen-canvas .mc-edge { stroke: var(--_edge) !important; stroke-width: 1.5px; }
+.mallen-canvas .react-flow__edge.animated .mc-edge { stroke-dasharray: 5 4; animation: mc-dash 900ms linear infinite; }
+.mallen-canvas .mc-edge-taken { stroke: var(--_selected) !important; stroke-width: 2px; }
+.mallen-canvas .mc-edge-error { stroke: var(--_grade-c) !important; }
+.mallen-canvas .mc-edge-dim { opacity: .3; }
+@keyframes mc-dash { to { stroke-dashoffset: -18; } }
+@media (prefers-reduced-motion: reduce) {
+  .mallen-canvas .react-flow__edge.animated .mc-edge { animation: none; stroke-dasharray: none; }
+}
+.mallen-canvas .react-flow__arrowhead polyline { stroke: var(--_edge); fill: var(--_edge); }
+.mallen-canvas .react-flow__edgelabel-renderer { z-index: 5; }
+.mallen-canvas .mc-edge-label { position: absolute; pointer-events: all; display: flex; align-items: center; gap: 4px; z-index: 5; }
+.mallen-canvas .mc-edge-pill {
+  border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; white-space: nowrap;
+  background: var(--_surface); color: var(--_muted); border: 1px solid var(--_line);
+}
+.mallen-canvas .mc-plus {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+  border-radius: 999px; border: 1px solid var(--_line-strong); background: var(--_surface); color: var(--_muted);
+  box-shadow: var(--_shadow); transition: transform 100ms ease-out, color 150ms, border-color 150ms;
+}
+.mallen-canvas .mc-plus:hover { color: var(--_accent); border-color: var(--_accent); }
+.mallen-canvas .mc-plus:active { transform: scale(.9); }
+
+/* --- workflow: the step card -------------------------------------------------------------------------- */
+.mallen-canvas .mc-wcard {
+  --_kind: var(--_kind-action);
+  position: relative; display: flex; align-items: flex-start; gap: 10px; overflow: hidden; width: 100%; min-height: 44px;
+  height: 100%; border-radius: 8px; border: 1px solid var(--_line); padding: 10px 8px 10px 12px;
+  background: var(--_surface); color: var(--_text); box-shadow: var(--_shadow);
+  transition: transform 100ms ease-out, box-shadow 160ms cubic-bezier(.25,.1,.25,1), border-color 160ms, opacity 160ms;
+}
+.mallen-canvas .mc-wcard:hover { box-shadow: var(--_shadow-float); border-color: var(--_line-strong); }
+.mallen-canvas .mc-wcard:active { transform: scale(.985); }
+.mallen-canvas .mc-wcard.mc-selected, .mallen-canvas .mc-pill.mc-selected, .mallen-canvas .mc-sys.mc-selected {
+  box-shadow: 0 0 0 2px var(--_selected), var(--_shadow-float);
+}
+.mallen-canvas .mc-kind-trigger { --_kind: var(--_kind-trigger); }
+.mallen-canvas .mc-kind-precode { --_kind: var(--_kind-precode); }
+.mallen-canvas .mc-kind-ai { --_kind: var(--_kind-ai); }
+.mallen-canvas .mc-kind-logic, .mallen-canvas .mc-kind-decision { --_kind: var(--_kind-logic); }
+.mallen-canvas .mc-kind-action { --_kind: var(--_kind-action); }
+.mallen-canvas .mc-kind-loop { --_kind: var(--_kind-precode); }
+.mallen-canvas .mc-wcard-bar { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--_kind); }
+.mallen-canvas .mc-wcard-icon {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px;
+  flex-shrink: 0; color: #fff; background: var(--_kind); margin-top: -1px;
+}
+.mallen-canvas .mc-wcard-body { min-width: 0; flex: 1 1 auto; }
+.mallen-canvas .mc-wcard-title { font-size: 13px; font-weight: 600; line-height: 1.25; padding-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mallen-canvas .mc-wcard-meta { display: block; font-size: 11px; color: var(--_muted); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mallen-canvas a.mc-wcard-meta { color: var(--_muted); }
+.mallen-canvas .mc-wcard-ok { flex-shrink: 0; color: var(--_ok); font-size: 13px; font-weight: 700; line-height: 1; padding-top: 4px; }
+.mallen-canvas .mc-wcard-error { display: flex; align-items: flex-start; gap: 4px; margin-top: 6px; font-size: 11px;
+  font-weight: 500; line-height: 1.35; color: var(--_danger); }
+.mallen-canvas .mc-wcard-grade { margin-top: 2px; width: 18px; height: 18px; font-size: 10px; }
+
+/* run / failure view */
+.mallen-canvas .mc-status-failed { box-shadow: 0 0 0 1.5px var(--_danger), 0 0 0 5px rgb(198 40 40 / 0.15); }
+.mallen-canvas .mc-status-failed .mc-wcard-bar { background: var(--_text); width: 5px; }
+.mallen-canvas .mc-status-failed .mc-wcard-icon { background: var(--_danger); }
+.mallen-canvas .mc-dim { opacity: .38; filter: saturate(.15); }
+.mallen-canvas .mc-dim-box { opacity: .45; }
+
+/* conditions + loops: header pills, branch pills, containers, "0 Actions" */
+.mallen-canvas .mc-pill {
+  position: relative; display: flex; align-items: center; gap: 8px; height: 100%; border-radius: 999px;
+  padding: 0 6px 0 12px; font-size: 13px; font-weight: 600; box-shadow: var(--_shadow);
+  transition: transform 100ms ease-out, box-shadow 160ms, opacity 160ms;
+}
+.mallen-canvas .mc-pill:active { transform: scale(.985); }
+.mallen-canvas .mc-pill-decision { background: var(--_pill-bg); color: var(--_pill-text); border: 1px solid var(--_pill-line); }
+.mallen-canvas .mc-pill-loop { background: var(--_soft); color: var(--_text); border: 1px solid var(--_line-strong); }
+.mallen-canvas .mc-pill.mc-status-failed { box-shadow: 0 0 0 2px var(--_danger); }
+.mallen-canvas .mc-pill-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mallen-canvas .mc-pill-count { font-size: 11px; font-weight: 500; opacity: .7; white-space: nowrap; }
+.mallen-canvas .mc-pill-chevron { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 999px; flex-shrink: 0; }
+.mallen-canvas .mc-pill-chevron:hover { background: rgb(128 128 128 / 0.2); }
+.mallen-canvas .mc-branch {
+  display: flex; align-items: center; justify-content: center; height: 100%; border-radius: 999px; padding: 0 10px;
+  font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; box-shadow: var(--_shadow);
+}
+.mallen-canvas .mc-branch-true { background: var(--_ok); }
+.mallen-canvas .mc-branch-false { background: var(--_danger); }
+.mallen-canvas .mc-branch-other { background: var(--_pill-bg); color: var(--_pill-text); border: 1px solid var(--_pill-line); }
+.mallen-canvas .mc-box { width: 100%; height: 100%; border-radius: 12px; border: 1px solid var(--_box-line); background: var(--_box); }
+.mallen-canvas .mc-box-scope { border-style: dashed; background: transparent; }
+.mallen-canvas .mc-box-loop { border-style: dashed; }
+.mallen-canvas .mc-box-branch { border-radius: 8px; }
+.mallen-canvas .mc-empty {
+  display: flex; align-items: center; justify-content: center; height: 100%; border-radius: 6px;
+  border: 1px dashed var(--_line-strong); font-size: 11px; color: var(--_muted);
+}
+.mallen-canvas .mc-join { width: 1px; height: 1px; }
+
+/* tasks on a card (only when the host turns task extras on) */
+.mallen-canvas .mc-task-badge {
+  position: relative; display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; height: 20px; padding: 0 6px;
+  border-radius: 999px; font-size: 11px; font-weight: 600; background: color-mix(in srgb, var(--_accent) 12%, transparent); color: var(--_accent);
+  margin-top: -1px; transition: transform 100ms ease-out, background-color 150ms;
+}
+.mallen-canvas .mc-task-badge:active { transform: scale(.92); }
+.mallen-canvas .mc-task-badge-pill { background: rgb(255 255 255 / 0.2); color: inherit; }
+@media (pointer: coarse) {
+  .mallen-canvas .mc-plus::before, .mallen-canvas .mc-pill-chevron::before, .mallen-canvas .mc-task-badge::before,
+  .mallen-canvas .mc-btn-ghost::before { content: ""; position: absolute; inset: -12px; }
+}
+
+/* --- integrations: systems, hub, zone headings, lines -------------------------------------------------- */
+.mallen-canvas .mc-sys {
+  --_g: var(--_muted);
+  position: relative; display: flex; align-items: center; gap: 8px; width: 100%; height: 100%; overflow: hidden;
+  padding: 0 8px 0 12px; border-radius: 8px; border: 1px solid var(--_line); background: var(--_surface);
+  box-shadow: var(--_shadow); transition: box-shadow 160ms, border-color 160ms, opacity 160ms;
+}
+.mallen-canvas .mc-sys:hover { box-shadow: var(--_shadow-float); border-color: var(--_line-strong); }
+.mallen-canvas .mc-sys-A { --_g: var(--_grade-a); }
+.mallen-canvas .mc-sys-B { --_g: var(--_grade-b); }
+.mallen-canvas .mc-sys-C { --_g: var(--_grade-c); }
+.mallen-canvas .mc-sys-D { --_g: var(--_grade-d); }
+.mallen-canvas .mc-sys-bar { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--_g); }
+.mallen-canvas .mc-sys-leftover { border-style: dashed; }
+.mallen-canvas .mc-sys-body { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.mallen-canvas .mc-sys-name { font-size: 13px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mallen-canvas .mc-sys-sub { font-size: 11px; color: var(--_muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mallen-canvas .mc-hub {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%;
+  padding: 12px; border-radius: 16px; background: var(--_pill-bg); color: var(--_pill-text); border: 1px solid var(--_pill-line);
+  box-shadow: var(--_shadow-float); text-align: center; cursor: grab;
+}
+.mallen-canvas .mc-hub-name { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.mallen-canvas .mc-hub-sub { font-size: 11px; opacity: .75; }
+.mallen-canvas .mc-hub-grades { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; font-size: 11px; }
+.mallen-canvas .mc-hub-grade { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+.mallen-canvas .mc-zone-head { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--_muted); padding: 2px 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mallen-canvas .mc-link-line { color: var(--_edge); transition: opacity 160ms; }
+.mallen-canvas .mc-line-A { color: var(--_grade-a); }
+.mallen-canvas .mc-line-B { color: var(--_grade-b); }
+.mallen-canvas .mc-line-C { color: var(--_grade-c); }
+.mallen-canvas .mc-line-D { color: var(--_grade-d); }
+.mallen-canvas .mc-line { stroke: currentColor; stroke-width: 2px; }
+.mallen-canvas .mc-line-hit { stroke: transparent; stroke-width: 14px; fill: none; pointer-events: stroke; cursor: pointer; }
+.mallen-canvas .mc-arrow { fill: currentColor; stroke: none; }
+.mallen-canvas .mc-link-label {
+  position: absolute; max-width: 190px; padding: 0 4px; border-radius: 4px; font-size: 10.5px; line-height: 1.4;
+  color: var(--_muted); background: var(--_bg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+.mallen-canvas .mc-toolbar { padding: 10px 10px 0; }
+.mallen-canvas .mc-modules { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* --- grade badge -------------------------------------------------------------------------------------- */
+.mallen-canvas .mc-grade {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 20px; height: 20px;
+  border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 1; color: var(--_grade-ink); background: var(--_muted);
+}
+.mallen-canvas .mc-grade-A { background: var(--_grade-a); }
+.mallen-canvas .mc-grade-B { background: var(--_grade-b); color: var(--_grade-ink-b); }
+.mallen-canvas .mc-grade-C { background: var(--_grade-c); }
+.mallen-canvas .mc-grade-D { background: var(--_grade-d); }
+
+/* --- the side panel ----------------------------------------------------------------------------------- */
+.mallen-canvas .mc-card {
+  background: var(--_surface); border: 1px solid var(--_line); border-radius: var(--_radius); padding: 16px;
+  box-shadow: var(--_shadow); color: var(--_text);
+}
+.mallen-canvas .mc-card-failed { border-color: rgb(198 40 40 / 0.5); }
+.mallen-canvas .mc-hint { color: var(--_muted); }
+.mallen-canvas p { margin: 0; }
+.mallen-canvas .mc-hint p { margin: 0 0 6px; }
+.mallen-canvas .mc-hint b { font-weight: 600; }
+.mallen-canvas .mc-empty-state { padding: 24px; text-align: center; }
+.mallen-canvas .mc-panel-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; min-height: 24px; }
+.mallen-canvas .mc-close { margin-left: auto; margin-right: -8px; }
+.mallen-canvas .mc-btn-ghost {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px;
+  border-radius: 8px; color: var(--_muted);
+}
+.mallen-canvas .mc-btn-ghost:hover { background: var(--_soft); color: var(--_text); }
+.mallen-canvas .mc-panel-title { font-size: 14px; font-weight: 600; line-height: 1.3; margin-bottom: 8px; overflow-wrap: anywhere; }
+.mallen-canvas .mc-detail { margin: 0 0 8px; color: var(--_muted); }
+.mallen-canvas .mc-chip {
+  display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 8px; font-size: 11px;
+  font-weight: 500; letter-spacing: .02em; background: var(--_soft); color: var(--_muted); text-decoration: none;
+  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.mallen-canvas a.mc-chip:hover { color: var(--_text); }
+.mallen-canvas .mc-chip-ai { background: color-mix(in srgb, var(--_kind-ai) 12%, transparent); color: var(--_kind-ai); }
+.mallen-canvas .mc-chip-logic { background: rgb(201 162 39 / 0.15); color: var(--_text); }
+.mallen-canvas .mc-chip-btn { padding: 4px 10px; background: var(--_surface); border: 1px solid var(--_line); box-shadow: var(--_shadow); }
+.mallen-canvas .mc-chip-on { border-color: var(--_selected); color: var(--_text); font-weight: 600; }
+.mallen-canvas .mc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.mallen-canvas .mc-code { font-size: 11px; color: var(--_muted); margin-bottom: 8px; overflow-wrap: anywhere; }
+.mallen-canvas .mc-error { border-radius: 8px; background: rgb(198 40 40 / 0.10); border: 1px solid rgb(198 40 40 / 0.3);
+  padding: 10px; margin-bottom: 8px; color: var(--_danger); }
+.mallen-canvas .mc-error .mc-section-k { color: var(--_danger); }
+.mallen-canvas .mc-section { border-top: 1px solid var(--_line); padding-top: 8px; margin-top: 10px; }
+.mallen-canvas .mc-section-k { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--_muted);
+  margin-bottom: 6px; font-weight: 600; }
+.mallen-canvas .mc-row { display: flex; gap: 8px; margin: 3px 0; }
+.mallen-canvas .mc-row-k { flex: 0 0 82px; color: var(--_muted); }
+.mallen-canvas .mc-row-v { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 4px; }
+.mallen-canvas .mc-row-v > .mc-list { width: 100%; }
+.mallen-canvas .mc-list { margin: 0; padding-left: 16px; list-style: disc; }
+.mallen-canvas .mc-details summary { cursor: pointer; color: var(--_accent); }
+.mallen-canvas .mc-pre { margin: 4px 0 0; padding: 8px; border-radius: 8px; background: var(--_soft); font-family: var(--_mono);
+  font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+.mallen-canvas .mc-int { padding: 6px 0; }
+.mallen-canvas .mc-int + .mc-int { border-top: 1px dashed var(--_line); }
+.mallen-canvas .mc-int-head { display: flex; align-items: center; gap: 8px; }
+.mallen-canvas .mc-int-name { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.mallen-canvas .mc-int-toggle { flex-shrink: 0; }
+.mallen-canvas .mc-int-focus { background: var(--_soft); border-radius: 8px; padding: 8px; margin: 0 -8px; }
+.mallen-canvas .mc-facts { margin-top: 6px; }
+.mallen-canvas .mc-purpose { margin: 0 0 6px; }
+.mallen-canvas .mc-why { margin: 6px 0 0; padding-left: 16px; list-style: disc; color: var(--_muted); }
+.mallen-canvas .mc-accepted, .mallen-canvas .mc-note { margin: 6px 0 0; font-size: 12px; color: var(--_muted); }
+.mallen-canvas .mc-extra:empty { display: none; }
+.mallen-canvas .mc-extra-step { border-top: 1px solid var(--_line); padding-top: 10px; margin-top: 12px; }
+.mallen-canvas .mc-extra-integration { margin-top: 8px; }

@@ -1,0 +1,71 @@
+{# One task card, shared by the status Board and the Plan board. Big and plain: the title first, one line of meta,
+   the MoSCoW bucket as the LEFT STRIPE (+ its word, colour is never alone). Click = open (the one primary action);
+   the status menu is how a phone moves a card (no drag on touch). Triage banners live in the drawer. #}
+{# On an account's rolled-up board (task #148) the card links, posts and drags to ITS project (tbase) and shows it. #}
+{% set pr = PRIORITY_META.get(t.priority, UNKNOWN_META) %}
+{% set card_rollup = rollup is defined and rollup and t.project_slug is defined %}
+{% set tbase = '/' ~ t.project_slug if card_rollup else base %}
+<div class="task-card card relative pl-4 pr-3 py-3 press cursor-grab select-none {{ 'opacity-60' if t.status == 'done' }}"
+     draggable="true" data-task-id="{{ t.id }}" data-fold="{{ t.status }}:{{ t.id }}" data-sort="{{ {'must': 0, 'should': 1, 'could': 2, 'wont': 3}.get(t.priority, 3) }}:{{ t.rank }}"
+     {% if card_rollup %}data-task-base="{{ tbase }}"{% endif %}
+     hx-get="{{ tbase }}/tasks/{{ t.id }}/panel" hx-target="#drawer-content" hx-swap="innerHTML"
+     hx-trigger="click[!event.target.closest('a')]" hx-on::after-request="Alpine.store('drawer').open = true">
+  <span class="prio-stripe {{ pr.stripe or '' }}" aria-hidden="true"></span>
+
+  {% if card_rollup %}<a href="/{{ t.project_slug }}" class="project-chip mb-1.5" data-project-chip="{{ t.project_slug }}" draggable="false">{{ t.project_name }}</a>{% endif %}
+  <div class="text-base font-semibold leading-snug text-charcoal">{{ t.title }}</div>
+
+  <div class="mt-2 flex items-center gap-2 flex-wrap text-micro">
+    <span class="task-no" data-task-no>#{{ t.id }}</span>
+    <span class="font-semibold uppercase tracking-wide text-charcoal/55">{{ pr.short or pr.label }}</span>
+    {# assignee picker — "You" / "AI · bugs" #}
+    <div x-data="{ open: false }" @click.stop class="relative">
+      <button type="button" @click="open = !open" class="press hit relative inline-flex items-center"
+              aria-label="Assigned to {{ 'you' if t.assignee == 'owner' else 'the AI' }} — change">
+        {% include "partials/assignee_chip.html" %}
+      </button>
+      <div x-show="open" @click.outside="open = false" x-cloak class="absolute left-0 mt-1 popover p-1 w-40 z-20">
+        {% for a, label in [('ai', 'AI · ' ~ (t.owner_stream)), ('owner', 'You')] %}
+        <button type="button" hx-post="{{ tbase }}/tasks/{{ t.id }}/assignee?{{ query }}" hx-vals='{"assignee": "{{ a }}"}'
+                hx-target="#board" hx-swap="outerHTML" @click="open = false"
+                class="press w-full text-left rounded-md px-2 py-1 text-small hover:bg-charcoal/[.06]
+                       {{ 'font-semibold' if t.assignee == a }}">Assign to {{ label }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    {% if t.progress and t.progress.total %}
+    <span class="inline-flex items-center gap-1 tabular {{ 'text-status-ok' if t.progress.done == t.progress.total else 'text-charcoal/55' }}"
+          title="{{ t.progress.done }} of {{ t.progress.total }} steps done">
+      <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>
+      {{ t.progress.done }}/{{ t.progress.total }}
+    </span>
+    {% endif %}
+    {% if t.progress and t.progress.proposals %}
+    <span class="chip bg-status-ok/15 text-status-ok normal-case" title="The AI proposes checklist changes">{{ t.progress.proposals }} proposed</span>
+    {% endif %}
+    {% if t.triage_state == 'suggested' and not show_triage %}
+    <span class="chip bg-indigo/10 text-indigo normal-case" title="Claude suggested a triage — decide on Plan or in the task">suggestion</span>
+    {% endif %}
+
+    <div x-data="{ open: false }" @click.stop class="relative ml-auto">
+      <button type="button" @click="open = !open" class="press hit relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium {{ STATUS_META.get(t.status, UNKNOWN_META).classes }}"
+              aria-label="Status: {{ STATUS_META.get(t.status, UNKNOWN_META).label }} — move">
+        {{ STATUS_META.get(t.status, UNKNOWN_META).label }}
+        <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div x-show="open" @click.outside="open = false" x-cloak class="absolute right-0 mt-1 popover p-1 w-36 z-20">
+        {% for st in ['backlog', 'ready', 'doing', 'review', 'done'] %}
+        <button type="button"
+                hx-post="{{ tbase }}/tasks/{{ t.id }}/status?{{ query }}" hx-vals='{"status": "{{ st }}"}'
+                hx-target="#board" hx-swap="outerHTML" @click="open = false"
+                class="press w-full text-left rounded-md px-2 py-1.5 text-small hover:bg-charcoal/[.06] {{ 'font-semibold' if t.status == st }}">
+          {{ STATUS_META.get(st, UNKNOWN_META).label }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% include "partials/plan_dates.html" %}
+  {% if show_triage %}{% include "partials/triage_banner.html" %}{% endif %}
+</div>

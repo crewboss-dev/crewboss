@@ -1,0 +1,13 @@
+{# LAN certificate renewal, step one (#976). Needs: ok, problem, pin, ready, total, sent. 'Switch now' only appears here. #}
+{% if ok %}
+<div data-renewal-ready>
+  <p class="text-small" data-ready-count>{{ ready }} of {{ total }} computers that run agents are ready.</p>
+  {% if total and ready < total %}<p class="text-small text-charcoal/65">A computer that is switched off will need to be enrolled again after the switch.</p>{% endif %}
+  <div class="flex gap-2 mt-2">
+    <button type="button" class="btn-ghost text-small border border-line" hx-get="/admin/front-door/lan-cert/ready?pin={{ pin }}" hx-target="#fd-renewal" hx-swap="innerHTML">Check again</button>
+    <button type="button" class="btn-primary text-small" hx-post="/admin/front-door/lan-cert/switch" hx-target="#fd-result">Switch now</button>
+  </div>
+</div>
+{% else %}
+<div class="rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2 text-small" role="alert" data-renewal-failed><p><strong>Nothing was changed.</strong> {{ problem }}</p></div>
+{% endif %}

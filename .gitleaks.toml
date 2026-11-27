@@ -1,0 +1,29 @@
+# gitleaks configuration (https://github.com/gitleaks/gitleaks). Used by scripts/commit_guard.py (pre-commit, staged files)
+# and by .github/workflows/guard.yml (the whole tree). The built-in ruleset stays on; this file adds Crewboss's own token shapes
+# and lists the few files that carry FAKE secrets as test fixtures (grow it only with a reason).
+title = "Crewboss"
+
+[extend]
+useDefault = true
+
+# A Crewboss API token: cb_ (session), cbr_ (runner device), cbj_ (job), or the pre-rename mdd_/mdr_/mdj_ (TODO(#589 compat):
+# drop the old prefixes with app/auth.py LEGACY_*). 32+ url-safe characters after the prefix, so "cb_" in prose never matches.
+[[rules]]
+id = "crewboss-api-token"
+description = "Crewboss API token"
+regex = '''\b(?:cb|cbr|cbj|mdd|mdr|mdj)_[A-Za-z0-9_-]{32,}\b'''
+keywords = ["cb_", "cbr_", "cbj_", "mdd_", "mdr_", "mdj_"]
+
+[allowlist]
+description = "fake secrets used as test fixtures"
+paths = [
+  # fake secrets on purpose (tests/test_commit_guard.py lists the same ones the guard's patterns match)
+  '''(^|/)tests/test_deploys\.py$''',
+  '''(^|/)tests/test_platform_keys\.py$''',
+  '''(^|/)scanner/tests/test_auto_rescan\.py$''',
+  # web-push subscription `auth` test fixture (the public docs sample next to a fake FCM endpoint), not a credential
+  '''(^|/)tests/test_push\.py$''',
+  # SSH public host key blobs: public by design, not secrets
+  '''(^|/)tests/test_server_access\.py$''',
+  '''/package-lock\.json$''',
+]

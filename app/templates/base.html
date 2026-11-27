@@ -1,0 +1,143 @@
+<!doctype html>
+{# THE ERP'S CHROME (#479, owner 2026-10-19: "I want to be able to feel like I'm moving between the admin panel, your
+   dev admin, and the admin panel and everything. And there's no difference."). The same markup and class names as
+   the ERP's base.html and its admin site's admin_base.html (#480): the slim faded header, the left menu drawer (hover
+   the sidebar icon to peek, click to lock at >= 1280px; the lock rides in a cookie so it is rendered already open),
+   you at the bottom of the drawer, and on a phone the Teams-style header + bottom bar + More. The look is
+   css/chrome.css and css/theme-tokens.css, VERBATIM copies of the ERP's files (tests/test_chrome_drift.py guards it); the behaviour is js/chrome.js. #}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>{% block title %}Home{% endblock %} — Crewboss</title>
+  {# Icon set: app/static/brand/crewboss/ (regenerate with tools/brand/build_icons.py; default paths, no instance override). #}
+  <link rel="icon" type="image/svg+xml" href="{{ asset('brand/crewboss/favicon.svg') }}">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ asset('brand/crewboss/favicon-16.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ asset('brand/crewboss/favicon-32.png') }}">
+  <link rel="icon" type="image/png" sizes="48x48" href="{{ asset('brand/crewboss/favicon-48.png') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ asset('brand/crewboss/favicon-180.png') }}">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="application-name" content="Crewboss">
+  <meta name="apple-mobile-web-app-title" content="Crewboss">
+  {# The browser bar is the PAGE colour, as the ERP's (#451/#479): the header is page-coloured chrome. #}
+  <meta name="theme-color" content="#F9F3EB" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151412" media="(prefers-color-scheme: dark)">
+  {# The ERP's colour tokens, verbatim (#479): app.css's palette reads these channels, and they swap under html.dark. #}
+  <link rel="stylesheet" href="{{ asset('css/theme-tokens.css') }}">
+  <script>
+    // Light / Dark / Auto, applied before paint so there's no flash of the wrong theme. 'crewboss-theme' holds 'light',
+    // 'dark' or 'system' (absent = 'system'): Auto follows the OS, as the ERP's 'system' does (js/chrome.js keeps it
+    // in step when the OS flips, and owns the avatar menu's switch).
+    (function () {
+      var pref = null;
+      // Pre-Crewboss key 'mdd-theme': read once, write 'crewboss-theme', delete the old. Remove after the 2027-01 release.
+      try { var old = localStorage.getItem('mdd-theme'); if (old !== null) { if (localStorage.getItem('crewboss-theme') === null) localStorage.setItem('crewboss-theme', old); localStorage.removeItem('mdd-theme'); } } catch (e) {}
+      try { pref = localStorage.getItem('crewboss-theme'); } catch (e) {}
+      var dark = pref === 'dark' || (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', dark);
+      // 'light' too: the shared canvas (static/canvas) follows the OS theme unless the page says light
+      document.documentElement.classList.toggle('light', !dark);
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/chrome.css') }}">
+  {# The ported page-level design layer (record head and pills, list filters, master-detail pane, press states, the avatar popover): css/erp-design.css, generated from the upstream (tools/erp_design.py, tests/test_design_drift.py). Crewboss-only rules: css/shell.css. #}
+  <link rel="stylesheet" href="{{ asset('css/erp-design.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/shell.css') }}">
+  {# #582: the fold-away collapse (an item that an action removes or moves folds out in place). js/fold.js drives it. #}
+  <link rel="stylesheet" href="{{ asset('css/fold.css') }}">
+  {# CA, the Crewboss Assistant drawer (#702): its own stylesheet, because chrome.css is a guarded copy of the ERP's. #}
+  <link rel="stylesheet" href="{{ asset('css/ca.css') }}">
+  {# The first-run how-to tour (#938): its look. js/tour.js draws it; the text is app/tour_steps.yaml. #}
+  <link rel="stylesheet" href="{{ asset('css/tour.css') }}">
+  <script>try { if (localStorage.getItem('crewboss-nav-pinned') === '1') document.documentElement.classList.add('nav-pinned'); } catch (e) {}</script>
+  <script>try { if (localStorage.getItem('crewboss-fav-seen') === '1') document.documentElement.classList.add('fav-seen'); } catch (e) {}</script>
+  <script>try { if (localStorage.getItem('crewboss-ca-open') === '1') document.documentElement.classList.add('ca-open'); } catch (e) {}</script>
+  {# #467: hold the first render (and a page change's new snapshot) until the phone bar is parsed, so a page never shows
+     without it. It sits right after the drawer, so this costs nothing. #}
+  <link rel="expect" href="#tabbar" blocking="render">
+  {# PREFETCH THE MENU'S PAGES ON HOVER (#465): Speculation Rules, moderate = after a short hover or on touch-start, so
+     the click lands on a page already fetched. MENU LINKS ONLY (the drawer rows, the phone bar, More's tiles): plain
+     pages that never act on GET. Browsers without it ignore the block. #}
+  <script type="speculationrules">{"prefetch": [{"where": {"selector_matches": ".nav-row, #tabbar a.tab, .m-tile"}, "eagerness": "moderate"}]}</script>
+  <script>
+    // MUST run before alpine.min.js: by the time a `defer` script executes the document is already
+    // past "loading", so Alpine's CDN bundle self-starts SYNCHRONOUSLY the moment it loads (it only
+    // waits for DOMContentLoaded if the document is still loading) — a listener registered in
+    // app.js, itself `defer`red and after alpine.min.js in document order, would be added too late
+    // to see that first `alpine:init` dispatch. Plain global state (no Alpine.store call yet), read
+    // by app.js once Alpine actually exists.
+    window.__mddStores = { drawer: { open: false }, wf: { active: null, pane: 'detail' } };
+    document.addEventListener("alpine:init", function () {
+      Alpine.store("drawer", window.__mddStores.drawer);
+      Alpine.store("wf", window.__mddStores.wf);
+    });
+  </script>
+  <script src="{{ asset('js/htmx.min.js') }}" defer></script>
+  {# The header's jump box (#771): defined before Alpine, which starts the moment it loads (see above). #}
+  <script src="{{ asset('js/search.js') }}" defer></script>
+  {# The header's + Create dialog (#778): also before Alpine. #}
+  <script src="{{ asset('js/create.js') }}" defer></script>
+  {# The app switcher (#778): also before Alpine. #}
+  <script src="{{ asset('js/switcher.js') }}" defer></script>
+  <script src="{{ asset('js/alpine.min.js') }}" defer></script>
+  <script src="{{ asset('js/app.js') }}" defer></script>
+  {# #582: fold-away + keep-the-scroll (an action that removes an item never reloads or jumps to the top). After htmx. #}
+  <script src="{{ asset('js/fold.js') }}" defer></script>
+  {# Saved filters (#772: the Saved dropdown on List, Board and Recent) and the Board/List switch (shared filters, last view remembered). #}
+  <script src="{{ asset('js/saved-filters.js') }}" defer></script>
+  <script src="{{ asset('js/task-views.js') }}" defer></script>
+  {# The record page tab bar's menu and catalogue (#773): only does anything where the bar has a "+" (people who manage the project). #}
+  <script src="{{ asset('js/tabs.js') }}" defer></script>
+  {# The chrome's behaviour: drawer peek/lock, avatar menu, phone sheets (swipe down to close), theme switch. #}
+  <script src="{{ asset('js/chrome.js') }}" defer></script>
+  {# Step-up (#809): a sensitive action answers "stepup-required"; this asks for a passkey tap and re-sends it. #}
+  <script src="{{ asset('js/stepup.js') }}" data-stepup-passkey-src="{{ asset('js/passkey.js') }}" defer></script>
+  {# "Runs on" pill in the project header (#810): after chrome.js, which owns dragSheet. #}
+  <script src="{{ asset('js/runs-on.js') }}" defer></script>
+  {# Notifications (#487): registers /sw.js and keeps this device subscribed; the browser's own prompt (asked once, on
+     the first click) and its settings are the only controls (owner 11-09). #}
+  <script src="{{ asset('js/push.js') }}" defer></script>
+  {# Live updates (task #177): opens an SSE stream to /all/events and dispatches mdd:board-stale so open
+     tabs auto-refresh when any session changes the board. Degrades to no-op if EventSource is missing. #}
+  <script src="{{ asset('js/live.js') }}" defer></script>
+  {# CA (#702): the assistant drawer: chat over /ca/stream (SSE), cards, toasts and the badge. After Alpine (it reads the task drawer). #}
+  {# Page swap (#816): the assistant's record links open a page in the main area without a document load (the drawer is never touched). Before ca.js. #}
+  <script src="{{ asset('js/pagenav.js') }}" defer></script>
+  <script src="{{ asset('js/ca.js') }}" defer></script>
+  {# The first-run how-to tour (#938): after chrome.js (dragSheet, the menus it opens) and ca.js. #}
+  <script src="{{ asset('js/tour.js') }}" defer></script>
+  {% block head %}{% endblock %}
+  {# page_title: overridden by each page; shown in the header #}{% if false %}{% block page_title %}{% endblock %}{% endif %}
+</head>
+<body class="bg-cream text-charcoal flex flex-col overflow-x-hidden" data-base="{{ base }}">
+{# A block inside an INCLUDED template is never overridden by the page, so the header's title came out empty on
+   every page. Render the page's block here and hand the text to the include. #}
+{% set page_title_text = self.page_title() %}
+{% include "partials/topbar.html" %}
+{% include "partials/sidebar.html" %}
+{# THE PAGE SCROLLS, NOT THE WINDOW (the ERP's shell): #page is the one scroll container and starts at the header's
+   underside, so its scrollbar never runs past the chrome. Sized to the DYNAMIC viewport (task #155: body is
+   100dvh, so a phone's collapsing URL bar leaves no dead space), overscroll-contain so a flick at the end doesn't
+   chain out. Padding = the ERP's: 12px on a phone (#470), 24px sides from tablet, 32px on desktop; the reading
+   column is the ERP's 1920px. #}
+<main id="page" class="nav-push">
+  <div id="page-inner" class="w-full max-w-[1920px] mx-auto px-3 md:px-6 lg:px-8 py-3 md:py-5">
+    {% set tls_problem = tls_banner() %}{% if tls_problem %}<div role="alert" class="mb-4 rounded-lg border border-flame/30 bg-flame/5 px-3.5 py-2 text-small text-flame"><strong>Certificate problem:</strong> {{ tls_problem }}. Browsers will warn people and passkeys may stop working until it is fixed.</div>{% endif %}
+    {% if is_owner %}{% set seen = front_door_seen() %}{% if seen %}<div role="alert" class="mb-4 rounded-lg border border-flame/30 bg-flame/5 px-3.5 py-2 text-small text-flame" data-front-door-banner>
+      <p><strong>Someone reached your sign-in page from the internet ({{ seen.ip }}).</strong> LAN mode is for a local network. Don't expose it to the internet without upgrading to a signed certificate and passkey sign-in.</p>
+      <p class="mt-2 flex gap-2"><a href="/admin/front-door" class="btn-primary text-small">Get a padlock</a>
+        <button type="button" class="btn-ghost text-small border border-line" hx-post="/admin/front-door/dismiss" hx-target="[data-front-door-banner]" hx-swap="outerHTML">Dismiss</button></p></div>{% endif %}{% endif %}
+    {% set proxy_problem = proxy_banner() if proxy_banner is defined else None %}{% if proxy_problem %}<div role="alert" class="mb-4 rounded-lg border border-flame/30 bg-flame/5 px-3.5 py-2 text-small text-flame"><strong>Proxy not trusted:</strong> {{ proxy_problem }}.</div>{% endif %}
+    {% if flash %}<div role="alert" class="mb-4 rounded-lg border border-flame/30 bg-flame/5 px-3.5 py-2 text-small text-flame">{{ flash }}</div>{% endif %}
+    {% if record_tabs %}{% include "partials/record_head.html" %}{% endif %}
+    {% block content %}{% endblock %}
+  </div>
+</main>
+{% include "partials/ca_drawer.html" %}
+{% include "partials/tour.html" %}
+<div id="toast-root" class="fixed right-4 z-50 flex flex-col gap-2 items-end pointer-events-none"
+     style="bottom: calc(var(--tabbar-h, 0px) + 1rem)"></div>
+</body>
+</html>

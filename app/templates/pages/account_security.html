@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{# The normal chrome (owner 11-16: "account security page removes the header, so only way to get back is to go back pages"): a signed-in
+   page like any other, so the header, menu and phone bar stay. Only sign-in and enrolment keep the plain auth_layout shell. #}
+{% block title %}Account security{% endblock %}
+{% block page_title %}Account security{% endblock %}
+{% block head %}{% if passkeys_enabled %}<script src="{{ asset('js/passkey.js') }}" defer></script>{% endif %}{% endblock %}
+{% block content %}
+<div class="max-w-lg" data-account-security>
+<h1 class="text-lg font-semibold mb-1">Account security</h1>
+<p class="text-xs text-charcoal/60 mb-3">Signed in as <strong>{{ user.username }}</strong></p>
+{% if error %}<p class="text-sm mb-3 rounded-md border border-line px-3 py-2" role="alert" data-auth-error>{{ error }}</p>{% endif %}
+{% if notice %}<p class="text-sm mb-3 rounded-md border border-line px-3 py-2" role="status" data-notice>{{ notice }}</p>{% endif %}
+{% if codes %}{% include "partials/recovery_codes.html" %}{% endif %}
+
+{% if not has_mfa and passkeys %}
+<p class="text-sm mb-3 rounded-md border border-line px-3 py-2" data-backup-nudge>You sign in with a passkey only. Add a password and authenticator app below as a backup, so a lost device can't lock you out.</p>
+{% endif %}
+
+{% if not factor_fresh %}
+<section class="rounded-md border border-line p-3 mb-4" data-reauth>
+  <h2 class="text-sm font-semibold mb-1">Confirm it's you</h2>
+  <p class="text-xs text-charcoal/70 mb-2">Changing sign-in settings needs a fresh confirmation from the last 5 minutes.</p>
+  {% if has_totp %}
+  <form method="post" action="/account/security/reauth" class="flex gap-2">
+    <input name="code" class="field flex-1" inputmode="numeric" placeholder="6-digit code from your authenticator app" autocomplete="one-time-code" maxlength="12" required>
+    <button type="submit" class="btn-primary">Confirm</button>
+  </form>
+  {% endif %}
+  {% if passkeys_enabled and passkeys %}
+  <button type="button" class="btn-ghost border border-line mt-2" data-passkey="authenticate" data-options-url="/account/security/passkey/options"
+          data-verify-url="/account/security/passkey/verify" hidden>{% if has_totp %}Use my passkey instead{% else %}Confirm with a passkey{% endif %}</button>
+  <p class="text-xs text-charcoal/55 mt-2" data-passkey-status aria-live="polite"></p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="mb-4" data-password-section>
+  <h2 class="text-sm font-semibold mb-1">Password and authenticator app</h2>
+  <p class="text-xs text-charcoal/70 mb-2" data-mfa-state>Password: {{ 'set' if has_password else 'not set' }}. Authenticator app: {{ 'set up' if has_totp else 'not set up' }}.{% if not has_mfa %} You need both to sign in this way.{% endif %}</p>
+  <h3 class="text-xs font-semibold mb-1">1. {{ 'Change your password' if has_password else 'Choose a password' }}</h3>
+  <form method="post" action="/account/security/password" class="flex flex-col gap-2 mb-3">
+    <input name="password" type="password" class="field" placeholder="{{ 'New password' if has_password else 'Choose a password (12 or more characters)' }}" autocomplete="new-password" minlength="12" required>
+    <input name="confirm" type="password" class="field" placeholder="Type it again" autocomplete="new-password" required>
+    <button type="submit" class="btn-ghost border border-line self-start">{{ 'Change password' if has_password else 'Save password' }}</button>
+  </form>
+  <h3 class="text-xs font-semibold mb-1">2. Set up the authenticator app</h3>
+  {% if totp %}
+  <p class="text-xs text-charcoal/70 mb-2">Open an authenticator app on your phone, add an account and scan this picture.</p>
+  <div class="my-2" data-totp-qr>{{ totp.qr }}</div>
+  <p class="text-xs text-charcoal/60 mb-2">Can't scan it? Type this key instead: <code class="select-all" data-totp-secret>{{ totp.secret }}</code></p>
+  <form method="post" action="/account/security/authenticator/confirm" class="flex gap-2">
+    <input name="code" class="field flex-1" inputmode="numeric" placeholder="6-digit code the app shows" autocomplete="one-time-code" maxlength="12" required>
+    <button type="submit" class="btn-primary">Check the code</button>
+  </form>
+  {% elif not has_password %}
+  <p class="text-xs text-charcoal/60">Choose a password first; then you can set up the authenticator app.</p>
+  {% else %}
+  <form method="post" action="/account/security/authenticator/start"><button type="submit" class="btn-ghost border border-line">{{ 'Set up the authenticator app again' if has_totp else 'Set up an authenticator app' }}</button></form>
+  {% endif %}
+</section>
+
+<section class="mb-4" data-passkey-list>
+  <h2 class="text-sm font-semibold mb-1">Passwordless sign-in with a passkey <span class="text-2xs text-charcoal/50">(optional)</span></h2>
+  {% for p in passkeys %}
+  <form method="post" action="/account/security/passkeys/{{ p.id }}/remove" class="flex items-center justify-between gap-2 text-sm border-b border-line py-1">
+    <span>{{ p.name }} <span class="text-xs text-charcoal/50">added {{ p.created_at.strftime('%Y-%m-%d') }}{% if p.last_used_at %}, used {{ p.last_used_at.strftime('%Y-%m-%d') }}{% endif %}</span></span>
+    <button type="submit" class="text-2xs rounded-md border border-line px-2 py-1" {% if passkeys|length < 2 and not has_mfa %}disabled title="Set up a password and authenticator app, or add another passkey, first"{% endif %}>Remove</button>
+  </form>
+  {% else %}<p class="text-xs text-charcoal/60">None yet.</p>{% endfor %}
+  {% if passkeys_enabled %}
+  <p class="text-xs text-charcoal/60 mt-2">A passkey signs you in with your fingerprint, face or PIN, with no password to type. It can live on this computer, your phone (QR code) or your password manager. {% if not factor_fresh %}It needs the confirmation above.{% endif %}</p>
+  <button type="button" class="btn-ghost border border-line mt-1" data-passkey="register" data-options-url="/auth/enrol/passkey/options"
+          data-verify-url="/auth/enrol/passkey/verify" hidden>Add a passkey</button>
+  <p class="text-xs text-charcoal/55 mt-1" data-passkey-status aria-live="polite"></p>
+  {% else %}
+  <p class="text-xs text-charcoal/60 mt-2" data-passkeys-unavailable>Get a padlock for your own web address: no browser warning, and it unlocks passwordless sign-in with a passkey.</p>
+  {% endif %}
+</section>
+
+<section class="mb-4">
+  <h2 class="text-sm font-semibold mb-1">Recovery codes</h2>
+  <p class="text-xs text-charcoal/70 mb-2" data-recovery-left>{{ recovery_left }} unused.</p>
+  <form method="post" action="/account/security/recovery/regenerate"><button type="submit" class="text-2xs rounded-md border border-line px-2 py-1">Make new codes (replaces the old)</button></form>
+</section>
+
+<section class="mb-4" data-email>
+  <h2 class="text-sm font-semibold mb-1">Sign-in email</h2>
+  <p class="text-xs text-charcoal/70 mb-2">An optional name to sign in with, instead of your username. Crewboss never sends anything to it.</p>
+  <form method="post" action="/account/security/email" class="flex gap-2">
+    <input name="email" type="email" class="field flex-1" value="{{ user.email or '' }}" placeholder="you@example.com" autocomplete="email" maxlength="320">
+    <button type="submit" class="btn-ghost">Save</button>
+  </form>
+  {% if not factor_fresh %}<p class="text-2xs text-charcoal/55 mt-1">Saving needs the confirmation above.</p>{% endif %}
+</section>
+
+<section data-sessions>
+  <h2 class="text-sm font-semibold mb-1">Sessions</h2>
+  {% for x in sessions %}
+  <form method="post" action="/account/security/sessions/{{ x.id }}/end" class="flex items-center justify-between gap-2 text-sm border-b border-line py-1" data-session>
+    <span>{{ x.browser }}{% if x.current %} <strong class="text-xs">(this browser)</strong>{% endif %}
+      <span class="block text-xs text-charcoal/50">{{ x.ip or 'unknown address' }} · signed in {{ x.signed_in.strftime('%Y-%m-%d %H:%M') }} · last seen {{ x.last_seen.strftime('%Y-%m-%d %H:%M') }}</span></span>
+    <button type="submit" class="text-2xs rounded-md border border-line px-2 py-1">Sign out</button>
+  </form>
+  {% endfor %}
+  <form method="post" action="/account/security/signout-everywhere" class="mt-2"><button type="submit" class="text-2xs rounded-md border border-line px-2 py-1">Sign out everywhere</button></form>
+</section>
+</div>
+{% endblock %}

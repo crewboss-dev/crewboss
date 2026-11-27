@@ -1,0 +1,16 @@
+# $CREWBOSS_HOME/scanner/naming.yaml: which catalog group an auto-discovered item lands in when no annotation claims it.
+# Everything unlisted falls into "Platform". Group names are the fixed vocabulary in scanner/lib/naming.py (GROUPS).
+# All five tables are optional. The names below are made up.
+worker_group:            # worker file stem -> group
+  invoice_sender: Billing
+  ticket_poll: Service
+webhook_group:           # webhook path -> group
+  /webhook/payments: Billing
+  /webhook/inbound-call: Service
+decision_group:          # decision type -> group
+  email.triage.case: "Email and AiOS"
+route_file_group:        # route file stem -> group, for the auto "<Entity> > Actions" workflows
+  quotes: Sales
+  tickets: Service
+route_entity_group:      # entity name -> group, where one route file spans two domains
+  "account agreement": Billing

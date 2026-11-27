@@ -1,0 +1,26 @@
+{# MOVE PROJECT (task #166): re-parent this project in the tree. Owner only — the browser IS the owner and the
+   same-origin guard refuses anyone else, as with the Danger zone; Move is NOT destructive, so it sits in its own
+   block just above it. The picker lists every active project except this one and its descendants (move_targets),
+   each indented by depth so the tree is clear; set_place/validate_place has the final say (cycle-safe, account +
+   root + archived-parent guards) and any refusal comes back as a flash. Needs: current_project, move_targets. #}
+{% if move_targets is defined and move_targets is not none %}
+{% set mp = current_project %}
+{% set move_noun = 'account' if mp.kind == 'account' else 'project' %}
+<section class="mt-10 rounded-xl border border-line" data-move-project>
+  <div class="flex items-center gap-2 px-4 py-3">
+    <span class="text-small font-semibold">Move {{ move_noun }}</span>
+    <span class="text-micro text-charcoal/50">Give {{ mp.name }} a new parent in the tree</span>
+  </div>
+  <form method="post" action="{{ base }}/move" class="px-4 pb-4 flex flex-col sm:flex-row gap-2 sm:items-end max-w-lg">
+    <label class="flex-1 text-micro text-charcoal/60">New parent
+      <select name="parent_id" class="field text-small w-full">
+        <option value="" {{ 'selected' if not mp.parent_id }}>Top level (no parent)</option>
+        {% for t in move_targets %}
+        <option value="{{ t.id }}" {{ 'selected' if t.id == mp.parent_id }}>{% for _ in range(t.depth) %}&nbsp;&nbsp;{% endfor %}{{ t.name }}{% if t.kind == 'account' %} · account{% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-ghost border border-line text-small shrink-0">Move</button>
+  </form>
+</section>
+{% endif %}

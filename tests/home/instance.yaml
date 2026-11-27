@@ -1,0 +1,45 @@
+# The instance folder the test suite runs against (tests/conftest.py points CREWBOSS_HOME here). Neutral values only.
+name: Acme Boss
+timezone: Australia/Sydney
+public_url: https://crewboss.example.com
+erp_url: https://erp.example.com
+origin_hosts:
+  - crewboss.example.com
+  - crewboss.example.net
+  - crewboss.internal.example.com
+  - 127.0.0.1:8931
+  - localhost:8931
+mcp_allowed_hosts:
+  - crewboss.example.com
+  - crewboss.example.net
+  - crewboss.internal.example.com
+servers:
+  - app01.example.com
+  - dev01.example.com
+  - web-1.example.com
+zabbix_groupids: ["42"]
+vapid_sub: mailto:admin@example.com
+platform_key_stores:
+  acme-erp:
+    name: Acme App
+    url: https://keys.example.com
+    key_id: dash-keys-1
+    key_file: /run/secrets/dash-keys-1
+    server: app01
+roles:
+  overseer: mallen-dashboard
+  health: acme-erp
+  default: acme-erp
+  legacy_token: acme-erp
+  export: acme-erp
+  dashboard: mallen-dashboard
+catalog_project: acme-erp
+project_repos:
+  acme-erp: /srv/acme-erp
+addons: []
+fallback_session_slug: boot-acct
+slug_prefix: acme-
+server_health_keys:
+  reboot: "acme.health[reboot.required]"
+  sec_updates: "acme.health[updates.security]"
+  updates: "acme.health[updates.total]"

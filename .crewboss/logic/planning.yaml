@@ -1,0 +1,81 @@
+# Planning dates (#915): milestones, start-by and waiting-until dates on tasks, and the reminder push they feed.
+workflows:
+  - id: planning.set-dates
+    name: Milestone or task dates changed
+    summary: A person or session creates a milestone or changes a date; the dates are validated, the tasks of a moved milestone are recomputed and any reminder already sent for an old date is re-armed.
+    trigger:
+      type: route
+      detail: POST /api/milestones, or the add_milestone / update_milestone / update_task tools
+      route: "POST /api/projects/{project}/milestones"
+      code_ref: {file: app/routers/api.py, function: api_create_milestone}
+    data: ["table:milestones", "table:tasks", "table:activity"]
+    steps:
+      - id: create
+        kind: action
+        label: Create the milestone
+        code_ref: {file: app/planning.py, function: create_milestone}
+        data: ["table:milestones"]
+        effects: ["create:milestones", "log:activity"]
+      - id: clean
+        kind: action
+        label: Validate the dates, lead time and text
+        detail: Bad dates and over-long lines are refused before anything is written.
+        code_ref: {file: app/planning.py, function: clean_date}
+      - id: apply
+        kind: action
+        label: Apply the planning fields to a task
+        detail: Changing start_by or waiting_until clears the matching reminded-for date, which re-arms the reminder.
+        code_ref: {file: app/planning.py, function: apply}
+        data: ["table:tasks"]
+        effects: ["change:tasks (start_by, waiting_on, waiting_until)", "log:activity"]
+      - id: moved
+        kind: decision
+        question: Did a milestone's due date move?
+        label: Milestone date moved?
+      - id: recompute
+        kind: action
+        label: Recompute the milestone's tasks
+        code_ref: {file: app/planning.py, function: recompute_milestone_tasks}
+        effects: ["change:tasks (start_by)"]
+    edges:
+      - {from: trigger, to: create}
+      - {from: create, to: clean}
+      - {from: clean, to: apply}
+      - {from: apply, to: moved}
+      - {from: moved, to: recompute, label: yes}
+
+  - id: planning.reminders
+    name: Planning reminder pushed
+    summary: Once a day, after the quiet hours, one push lists the tasks whose start-by day arrived or whose waiting-until date passed; each is marked so it is never sent twice for the same date.
+    trigger:
+      type: timer
+      detail: The planning reminder loop runs every PLANNING_REMINDER_SECONDS (main._planning_reminders)
+      code_ref: {file: app/main.py, function: _planning_reminders}
+    data: ["table:tasks", "table:milestones", "table:push_subscriptions"]
+    steps:
+      - id: hour
+        kind: decision
+        question: Is it past PLANNING_REMINDER_HOUR in the instance time zone?
+        label: Past quiet hours?
+        code_ref: {file: app/planning_reminders.py, function: sweep}
+      - id: due
+        kind: action
+        label: Find tasks to start today and tasks to chase
+        code_ref: {file: app/planning_reminders.py, function: due}
+        data: ["table:tasks", "table:milestones"]
+      - id: devices
+        kind: decision
+        question: Is push configured and is a device subscribed?
+        label: Anyone to tell?
+        detail: If not, nothing is marked, so the first device to subscribe gets what is due.
+      - id: push
+        kind: action
+        label: Send ONE push for everything due and mark each task
+        code_ref: {file: app/planning_reminders.py, function: payload}
+        data: ["table:tasks"]
+        effects: ["send:push", "change:tasks (start_reminded_for, chase_reminded_for)"]
+    edges:
+      - {from: trigger, to: hour}
+      - {from: hour, to: due, label: yes}
+      - {from: due, to: devices}
+      - {from: devices, to: push, label: yes}

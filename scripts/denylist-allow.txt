@@ -1,0 +1,3 @@
+# Paths the commit guard (scripts/commit_guard.py) lets through although they match the instance denylist or a secret pattern.
+# This list is EMPTY in the public release and must stay empty (tests/test_no_mallen_refs.py fails otherwise): fix the file instead.
+# One repo path per line; a trailing / means a folder; # comments.

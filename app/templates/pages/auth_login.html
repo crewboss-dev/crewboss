@@ -1,0 +1,50 @@
+{% extends "pages/auth_layout.html" %}
+{% block title %}Sign in{% endblock %}
+{% block heading %}Sign in to Crewboss{% endblock %}
+{% block content %}
+{% if step == "identified" %}
+<p class="text-sm text-charcoal/70 mb-3 text-center">Signing in as <strong data-identifier>{{ identifier }}</strong> · <a href="/auth/login" class="underline">Not you?</a></p>
+{% if error %}<p class="text-sm mb-3 rounded-md border border-line px-3 py-2" role="alert" data-auth-error>{{ error }}</p>{% endif %}
+<form method="post" action="/auth/login/id/password" class="flex flex-col gap-3" data-password-form>
+  <label class="text-sm">Password
+    <input name="password" type="password" class="field w-full mt-1" autocomplete="current-password" required autofocus>
+  </label>
+  <label class="text-sm">6-digit code from your authenticator app
+    <input name="code" class="field w-full mt-1" inputmode="numeric" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="12">
+  </label>
+  <p class="text-xs text-charcoal/60">First time, or someone reset you? Type the temporary password you were given and leave the code empty.</p>
+  <button type="submit" class="btn-primary">Sign in</button>
+</form>
+<details class="mt-3 text-sm" data-another-way {% if show == "recovery" %}open{% endif %}>
+  <summary class="cursor-pointer text-charcoal/70 underline">Lost your phone? Use a recovery code</summary>
+  <form method="post" action="/auth/login/id/recovery" class="flex flex-col gap-2 mt-3" data-recovery-form>
+    <label class="text-sm">Recovery code
+      <input name="code" class="field w-full mt-1" autocomplete="off" autocapitalize="off" spellcheck="false" {% if show == "recovery" %}autofocus{% endif %}>
+    </label>
+    <p class="text-xs text-charcoal/60">It works once. You'll then set up your authenticator app again.</p>
+    <button type="submit" class="btn-ghost border border-line">Use recovery code</button>
+  </form>
+</details>
+{% if passkeys_enabled %}
+<div class="mt-4 pt-3 border-t border-line">
+  <button type="button" class="btn-ghost border border-line w-full" data-passkey="authenticate"
+          data-options-url="/auth/login/id/passkey/options" data-verify-url="/auth/login/id/passkey/verify" hidden>Sign in with a passkey</button>
+  <p class="text-xs text-charcoal/55 mt-2 text-center" data-passkey-status aria-live="polite"></p>
+  <p class="text-xs text-charcoal/55 mt-2 text-center" data-bluetooth-note>Choose where your passkey is: this computer, your password manager, or "Use a phone or tablet" (a QR code). On a computer, "Use a phone" needs Bluetooth turned on.</p>
+</div>
+{% endif %}
+{% else %}
+{% if no_owner %}
+<p class="text-sm mb-3 rounded-md border border-line px-3 py-2" data-no-owner>No owner account exists yet. On the server, run
+  <code>./crewboss owner</code> (or <code>python -m app.cli owner create</code>); it prints a one-time temporary password to use here, with the code box left empty.</p>
+{% endif %}
+<form method="post" action="/auth/login/identify" class="flex flex-col gap-3">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label class="text-sm">Email or username
+    <input name="identifier" class="field w-full mt-1" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus>
+  </label>
+  <button type="submit" class="btn-primary">Continue</button>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if passkeys_enabled %}<script src="{{ asset('js/passkey.js') }}" defer></script>{% endif %}{% endblock %}

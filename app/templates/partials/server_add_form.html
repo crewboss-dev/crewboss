@@ -1,0 +1,24 @@
+{# Add a server (task #367): name, address, port, login user. The account is the page's own, never chosen here.
+   Owner browser write (same-origin guard). Needs: base, add_form, add_error. #}
+{% if add_error %}<p class="mb-3 text-small rounded-lg bg-status-disaster/10 text-status-disaster px-3 py-2" role="alert" data-add-error>{{ add_error }}</p>{% endif %}
+<form method="post" action="{{ base }}/servers" class="grid gap-3 sm:grid-cols-2" data-add-server>
+  <label class="block"><span class="kb-label">Name</span>
+    <input name="name" required maxlength="63" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,62}" value="{{ add_form.name or '' }}" placeholder="web02" autocomplete="off" class="field text-small"></label>
+  <label class="block"><span class="kb-label">Address <span class="kb-label-hint">IP or host name</span></span>
+    <input name="address" required maxlength="253" value="{{ add_form.address or '' }}" placeholder="203.0.113.10" autocomplete="off" inputmode="url" class="field text-small font-mono"></label>
+  <label class="block"><span class="kb-label">Port</span>
+    <input name="port" type="number" min="1" max="65535" value="{{ add_form.port or 22 }}" class="field text-small tabular"></label>
+  <label class="block"><span class="kb-label">Login user <span class="kb-label-hint">a user with sudo, not root</span></span>
+    <input name="login_user" required maxlength="32" pattern="[a-z_][a-z0-9_\-]{0,31}" value="{{ add_form.login_user or '' }}" placeholder="deploy" autocomplete="off" autocapitalize="none" class="field text-small font-mono"></label>
+  {% if cs.via_options %}
+  <label class="block sm:col-span-2"><span class="kb-label">Connect via <span class="kb-label-hint">optional, a special case: reach this server through another one of yours</span></span>
+    <select name="via_server_id" class="field text-small" data-add-via>
+      <option value="">Directly (the normal case)</option>
+      {% for o in cs.via_options %}<option value="{{ o.id }}"{% if add_form.via_server_id == o.id|string %} selected{% endif %}>{{ o.name }}</option>{% endfor %}
+    </select></label>
+  {% endif %}
+  <div class="sm:col-span-2 flex flex-wrap items-center gap-3">
+    <button class="btn-primary text-small touch-target" type="submit" data-add-submit>Add server</button>
+    <span class="text-micro text-charcoal/55">Next you get one line to paste on the server; then Check access.</span>
+  </div>
+</form>

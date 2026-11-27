@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Platform keys · {{ current_project.name }}{% endblock %}
+{% block page_title %}Platform keys{% endblock %}
+{% block content %}
+{# Platform keys (#562; #577): the keys that run the service for every tenant, set here and written ONE WAY into each
+   key store (config.PLATFORM_KEY_STORES; <store url>/platform/keys…). One page on
+   the Dashboard project, one section per store (id = the store's slug, so /<store>/keys can redirect to #<store>).
+   STATUS ONLY: a store never sends a value and this page never shows, keeps or re-fills one. The Set/Rotate field is a
+   text field masked by CSS that always renders empty. Needs: sections [{store, v (platform_keys.view), live, as_of,
+   error}], note, STAGE_META, anchor(store, name). #}
+{% set muted = 'text-charcoal/55' %}
+<div class="max-w-5xl" data-keys-page>
+
+  <p class="text-small {{ muted }} mb-6">The keys that run the service for every tenant (AI, sending, monitoring, storage,
+    the platform app registrations). Set here, they go one way into each server's key store and are never shown again:
+    this page reads only whether a key is set, when it changed and when it is due.</p>
+
+  {% if not sections %}
+  <div class="card p-6 text-small {{ muted }}" data-keys-no-stores>No key store is configured.</div>
+  {% endif %}
+
+  {% for sec in sections %}
+  {% set store = sec.store %}
+  {% set v = sec.v %}
+  {% set sid = store.slug %}
+  {% set server = v.server or store.server %}
+  {% set kbase = base ~ '/keys/' ~ sid %}
+  <section id="{{ sid }}" class="scroll-mt-20 {{ 'mt-12 pt-6 border-t border-line' if not loop.first }}" aria-labelledby="store-{{ sid }}-h"
+           data-keys-store="{{ sid }}" data-live="{{ 'yes' if sec.live else 'no' }}">
+    <h2 id="store-{{ sid }}-h" class="text-title font-semibold mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <span>{{ store.name }}</span>
+      <span class="text-small font-normal {{ muted }}">· {{ server }}{% if store.host %} · {{ store.host }}{% endif %}</span>
+    </h2>
+
+    {% if note and note.store == sid %}
+    <div role="status" data-keys-note="{{ note.tone }}"
+         class="mb-4 rounded-lg px-3.5 py-2 text-small {{ 'border border-status-ok/30 bg-status-ok/10 text-status-ok' if note.tone == 'ok' else 'border border-flame/30 bg-flame/5 text-flame' }}">
+      {{ note.text }}</div>
+    {% endif %}
+
+    {% if sec.error %}
+    <div role="alert" data-keys-error class="mb-4 rounded-lg border border-flame/30 bg-flame/5 px-3.5 py-2 text-small text-flame">
+      {{ sec.error }}{% if sec.as_of %} <span class="text-charcoal/60">Showing the last read, {{ sec.as_of|timeago }}.</span>{% endif %}</div>
+    {% endif %}
+
+    {% if not v.count %}
+    <div class="card p-6 text-small {{ muted }}" data-keys-empty>
+      {% if sec.error %}No status from the key store yet.{% else %}The key store lists no platform keys.{% endif %}</div>
+    {% else %}
+
+    {# --- what needs doing: the keys due for rotation, worst first -------------------------------------------------- #}
+    <section class="mb-6" aria-labelledby="due-{{ sid }}-h" data-keys-due="{{ v.due|length }}">
+      <h3 id="due-{{ sid }}-h" class="text-lead font-semibold mb-2">Needs rotating <span class="text-small font-normal {{ muted }}">({{ v.due|length }})</span></h3>
+      {% if v.due %}
+      <ul class="card divide-y divide-line">
+        {% for k in v.due %}
+        <li class="px-4 py-2.5 text-small flex flex-wrap items-baseline gap-x-3 gap-y-1" data-due-key="{{ k.name }}" data-stage="{{ k.stage }}">
+          <span class="chip shrink-0 {{ k.stage_meta.classes }}">{{ k.stage_meta.label }}</span>
+          <a href="#{{ anchor(store, k.name) }}" class="font-mono font-semibold break-all hover:underline">{{ k.name }}</a>
+          <span class="{{ muted }}">{{ k.label }}</span>
+          <span class="ml-auto tabular {{ muted }}">{% if k.next_due %}due {{ k.next_due }}{% endif %}{% if k.days_left is not none %} · {{ k.days_left }} day{{ '' if k.days_left in (1, -1) else 's' }}{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="card px-4 py-3 text-small font-medium text-status-ok" data-all-on-schedule>Every key with a schedule is on schedule.</p>
+      {% endif %}
+    </section>
+
+    {# --- every key, by group (registry order) -------------------------------------------------------------------- #}
+    {% for group, rows in v.groups %}
+    <section class="mb-6" aria-label="{{ store.name }}: {{ group }}" data-keys-group="{{ group }}">
+      <h3 class="text-lead font-semibold mb-2">{{ group }}</h3>
+      <div class="card divide-y divide-line">
+        {% for k in rows %}
+        <details id="{{ anchor(store, k.name) }}" class="group/key scroll-mt-20" data-key="{{ k.name }}" data-applies="{{ k.applies }}"{% if note and note.store == sid and note.key == k.name %} open{% endif %}>
+          <summary class="press list-none cursor-pointer px-4 py-3 touch-target">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="font-mono text-small font-semibold break-all">{{ k.name }}</span>
+              <span class="text-small {{ muted }}">{{ k.label }}</span>
+              <span class="chip {{ k.state_classes }}" data-state>{{ k.state_word }}</span>
+              {% if k.stage_meta and k.stage != 'ok' %}<span class="chip {{ k.stage_meta.classes }}" data-stage="{{ k.stage }}">{{ k.stage_meta.label }}</span>{% endif %}
+              {% if k.grace_active %}<span class="chip bg-indigo/10 text-indigo" data-grace>Previous value accepted until {{ k.grace_until_dt.strftime('%-d %b %H:%M') }} UTC</span>{% endif %}
+              {% if k.env_too %}<span class="chip bg-status-warn/15 text-charcoal dark:text-status-warn">Also in .env</span>{% endif %}
+              <span class="ml-auto text-micro tabular {{ muted }}">
+                {% if k.key_version is not none %}v{{ k.key_version }} · {% endif %}{% if k.last_changed_dt %}changed {{ k.last_changed_dt|timeago }}{% elif k.last_rotated %}rotated {{ k.last_rotated }}{% else %}never changed here{% endif %}</span>
+              <svg class="w-3.5 h-3.5 opacity-50 transition-transform group-open/key:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </div>
+            {% if k.note %}<p class="mt-1 text-micro text-status-high break-words">{{ k.note }}</p>{% endif %}
+          </summary>
+
+          <div class="px-4 pb-4 grid gap-4 lg:grid-cols-2 text-small">
+            {# facts — status only #}
+            <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 content-start" data-facts>
+              {% if k.used_by %}<dt class="kb-label">Used by</dt><dd class="break-words">{{ k.used_by }}</dd>{% endif %}
+              <dt class="kb-label">Held</dt>
+              <dd>{{ {'store': 'in the key store', 'env': "only in the server's .env (set it here to take over)", 'unset': 'nowhere yet', 'server': "in one worker's .env on purpose", 'managed': 'renewed by the ERP itself', 'bootstrap': "in the server's .env / admin.env only"}.get(k.source, k.source) }}{% if k.via %} · read through {{ k.via }} while it has none{% endif %}</dd>
+              {% if k.by %}<dt class="kb-label">Last change</dt><dd class="break-words">{{ k.by }}{% if k.last_changed_dt %}, {{ k.last_changed_dt|timeago }}{% endif %}</dd>{% endif %}
+              {% if k.in_use %}<dt class="kb-label">In use</dt><dd class="tabular">{{ k.in_use.current }} of {{ k.in_use.servers }} server{{ '' if k.in_use.servers == 1 else 's' }} fetched it since the change</dd>{% endif %}
+              {% if k.grace %}<dt class="kb-label">Grace</dt><dd>{% if k.grace_active %}the previous value is still accepted until {{ k.grace_until_dt.strftime('%-d %b %Y %H:%M') }} UTC{% else %}another system sends this key: a replaced value stays accepted for {{ v.grace_hours|int if v.grace_hours else 24 }} hours{% endif %}</dd>{% endif %}
+              <dt class="kb-label">Expires</dt>
+              <dd>{% if k.expires_on %}{{ k.expires_on }} <span class="{{ muted }}">({{ 'read from the provider' if k.expires_source == 'provider' else 'typed' }})</span>{% elif k.expires %}yes, date not known yet{% else %}doesn't expire{% endif %}</dd>
+              <dt class="kb-label">Rotate every</dt>
+              <dd>{% if k.rotate_every_months %}{{ k.rotate_every_months }} month{{ '' if k.rotate_every_months == 1 else 's' }}{% else %}never{% endif %}{% if k.overridden %} <span class="{{ muted }}">(not the registry's default)</span>{% endif %}</dd>
+              <dt class="kb-label">Last rotated</dt>
+              <dd>{% if k.last_rotated %}{{ k.last_rotated }} <span class="{{ muted }}">({{ 'when it was last set here' if k.last_rotated_source == 'store' else 'typed' }})</span>{% else %}not known{% endif %}</dd>
+              <dt class="kb-label">Next due</dt>
+              <dd class="tabular">{% if k.next_due %}{{ k.next_due }}{% if k.days_left is not none %} · {{ k.days_left }} day{{ '' if k.days_left in (1, -1) else 's' }}{% endif %}{% if k.stage_meta %} <span class="chip ml-1 {{ k.stage_meta.classes }}">{{ k.stage_meta.label }}</span>{% endif %}{% else %}no date{% endif %}{% if k.needs %} <span class="text-status-high">· needs {{ k.needs }}</span>{% endif %}</dd>
+              {% if k.why %}<dt class="kb-label">Why</dt><dd class="break-words {{ muted }}">{{ k.why }}</dd>{% endif %}
+            </dl>
+
+            <div class="space-y-4">
+              {# set / rotate — the value goes straight to the store; the field always renders empty #}
+              {% if k.writable %}
+              <form method="post" action="{{ kbase }}/{{ k.name }}/set" class="space-y-2" data-set-form autocomplete="off">
+                <label class="block"><span class="kb-label">{{ 'New value (rotate)' if k.set else 'Value' }}</span>
+                  {# text + CSS masking, not type=password: no browser offers to save or fill it into a password manager #}
+                  <input type="text" name="value" required autocomplete="off" spellcheck="false" autocapitalize="none"
+                         autocorrect="off" data-1p-ignore data-lpignore="true" data-bwignore
+                         class="field text-small font-mono w-full [-webkit-text-security:disc]" data-value-input></label>
+                {% if k.grace %}
+                <label class="flex items-start gap-2 text-small">
+                  <input type="checkbox" name="no_grace" class="mt-1 touch-target" data-no-grace>
+                  <span>The old key is compromised: <span class="font-semibold">revoke it at once</span> (no {{ v.grace_hours|int if v.grace_hours else 24 }}-hour grace)</span></label>
+                {% endif %}
+                <div class="flex flex-wrap items-center gap-3">
+                  <button class="btn-primary text-small touch-target" type="submit">{{ 'Rotate' if k.set else 'Set' }} {{ k.name }}</button>
+                  <span class="text-micro {{ muted }}">Sent once to {{ server }}; never kept or shown here.</span>
+                </div>
+              </form>
+              {% endif %}
+
+              {% if k.grace_active %}
+              <form method="post" action="{{ kbase }}/{{ k.name }}/end-grace" data-end-grace>
+                <button class="btn-ghost border border-line text-small touch-target" type="submit">Stop accepting the previous value now</button>
+              </form>
+              {% endif %}
+
+              {# expiry + rotation dates: metadata only, never the value — bootstrap keys too #}
+              <details class="rounded-lg border border-line" data-meta-form-wrap>
+                <summary class="press list-none cursor-pointer px-3 py-2 text-small font-medium touch-target">Change expiry and rotation dates</summary>
+                <form method="post" action="{{ kbase }}/{{ k.name }}/meta" class="px-3 pb-3 grid gap-3 sm:grid-cols-2" data-meta-form
+                      x-data="{ ex: 'keep', rot: 'keep' }">
+                  <label class="block"><span class="kb-label">Expires</span>
+                    <select name="expires_mode" x-model="ex" class="field text-small w-full">
+                      <option value="keep">Keep as it is</option>
+                      <option value="date">On a date…</option>
+                      <option value="none">Doesn't expire</option>
+                      <option value="default">The registry's default</option>
+                    </select></label>
+                  <label class="block" x-show="ex === 'date'"><span class="kb-label">Expires on</span>
+                    <input type="date" name="expires_on" class="field text-small w-full tabular"></label>
+                  <label class="block"><span class="kb-label">Rotate every</span>
+                    <select name="rotate_mode" x-model="rot" class="field text-small w-full">
+                      <option value="keep">Keep as it is</option>
+                      <option value="months">A number of months…</option>
+                      <option value="never">Never</option>
+                      <option value="default">The registry's default</option>
+                    </select></label>
+                  <label class="block" x-show="rot === 'months'"><span class="kb-label">Months</span>
+                    <input type="number" name="rotate_months" min="1" max="120" class="field text-small w-full tabular"></label>
+                  <label class="block sm:col-span-2"><span class="kb-label">Last rotated <span class="kb-label-hint">only for a key whose value the store doesn't hold; blank keeps it</span></span>
+                    <input type="date" name="last_rotated" class="field text-small tabular"></label>
+                  <div class="sm:col-span-2"><button class="btn-ghost border border-line text-small touch-target" type="submit">Save dates</button></div>
+                </form>
+              </details>
+
+              {% if k.can_clear %}
+              <details class="rounded-lg border border-status-disaster/30" data-clear-wrap>
+                <summary class="press list-none cursor-pointer px-3 py-2 text-small font-medium text-status-disaster touch-target">Clear the stored value</summary>
+                <form method="post" action="{{ kbase }}/{{ k.name }}/clear" class="px-3 pb-3 space-y-2" x-data="{ typed: '' }" data-clear-form>
+                  <p class="text-small {{ muted }}">The store forgets it; readers fall back to the server's .env value, if it has one{% if k.env_too %} (it does){% endif %}.</p>
+                  <label class="block text-micro {{ muted }}">Type <span class="font-mono font-semibold text-charcoal">{{ k.name }}</span> to confirm
+                    <input name="confirm" x-model="typed" required autocomplete="off" spellcheck="false" class="field text-small font-mono w-full mt-1"></label>
+                  <button type="submit" class="btn text-small touch-target bg-status-disaster text-white hover:bg-status-disaster/90"
+                          :disabled="typed.trim() !== {{ k.name|tojson|forceescape }}">Clear {{ k.name }}</button>
+                </form>
+              </details>
+              {% endif %}
+            </div>
+          </div>
+        </details>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+
+    {# --- the servers that fetch keys from this store -------------------------------------------------------------- #}
+    {% if v.servers %}
+    <section class="mb-6" aria-labelledby="srv-{{ sid }}-h" data-keys-servers>
+      <h3 id="srv-{{ sid }}-h" class="text-lead font-semibold mb-1">Servers using this store</h3>
+      <p class="text-micro {{ muted }} mb-2">When each last fetched its keys. A server reads its own local copy, so when a key was last <em>used</em> isn't known.</p>
+      <ul class="card divide-y divide-line">
+        {% for sv in v.servers %}
+        <li class="px-4 py-2.5 text-small flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span class="chip shrink-0 {{ 'bg-status-ok/10 text-status-ok' if sv.up_to_date else 'bg-status-warn/15 text-charcoal dark:text-status-warn' if sv.enabled else 'bg-charcoal/[.07] text-charcoal/70' }}">{{ 'Up to date' if sv.up_to_date else 'Behind' if sv.enabled else 'Off' }}</span>
+          <span class="font-semibold">{{ sv.name }}</span><span class="{{ muted }}">{{ sv.host }}</span>
+          <span class="ml-auto tabular {{ muted }}">{% if sv.last_fetch_dt %}fetched {{ sv.last_fetch_dt|timeago }}{% else %}never fetched{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+    {% endif %}
+
+    <p class="text-micro {{ muted }}">{{ store.url }}/platform/keys · {{ v.count }} key{{ '' if v.count == 1 else 's' }}{% if v.store_version is not none %} · store version {{ v.store_version }}{% endif %} · {{ 'read just now' if sec.live else 'not read live' }}.
+      Every change is recorded on the server as “Crewboss: you” and its admins are told.</p>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,13 @@
+{# CONNECTIONS (#784): how this project relates to the others. Needs `conns` (app/connections.for_project: only rows whose other end the
+   person can see). The read-only list is used on Summary and Integrations; Settings adds the editor (conn_editor, conn_picker). #}
+{% macro conn_list(conns, labels) %}
+<div class="divide-y divide-line" data-connections-list>
+  {% for key in ['part_of', 'contains', 'depends_on', 'needed_by', 'integrates_with'] %}{% for c in conns[key] %}
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 text-small" data-connection="{{ key }}">
+    <span class="w-32 shrink-0 text-micro uppercase tracking-wide text-charcoal/50">{{ labels[key] }}</span>
+    <a href="/{{ c.slug }}" class="font-semibold hover:underline">{{ c.name }}</a>{% if c.archived %}<span class="chip bg-charcoal/[.07] text-charcoal/60">archived</span>{% endif %}
+    {% if c.note %}<span class="text-charcoal/60 min-w-0" data-connection-note>{{ c.note }}</span>{% endif %}
+  </div>
+  {% endfor %}{% endfor %}
+</div>
+{% endmacro %}

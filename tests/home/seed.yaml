@@ -1,0 +1,16 @@
+# The first-run seed the suite's app start-up uses (neutral stand-in for an install's own seed.yaml).
+project:
+  slug: acme-erp
+  name: Acme App
+  kind: internal
+  owner: system
+  short_name: erp
+subprojects: [ERP, AiOS, Sign, LinkedIn, Customer Portal, Connector (MCP), Infrastructure]
+tasks:
+  - seed_key: acme-backups
+    title: The dev box has no backups
+    stream: bug
+    priority: must
+    subprojects: [Infrastructure]
+    actor: owner
+    body: A real seeded task, as an install's seed.yaml would carry.

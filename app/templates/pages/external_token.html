@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}External agent token{% endblock %}
+{% block page_title %}External agent token{% endblock %}
+{% block content %}
+{# Shown ONCE (#574): this response is the only place the token appears -- not stored, not logged, no-store. #}
+<section class="card p-4 max-w-3xl" data-external-token-page>
+  <p class="text-small mb-3">Copy this token now for <span class="font-semibold">{{ current_project.name }}</span>. It is shown once; the dashboard keeps only a hash. If you lose it, issue another and revoke the old one from the Overview (each token has its own Revoke).</p>
+  <div x-data="{ copied: false }" class="flex flex-wrap items-center gap-2">
+    <input readonly value="{{ token }}" class="field text-small font-mono flex-1 min-w-0" id="external-token" data-external-token
+           @focus="$el.select()" autocomplete="off" spellcheck="false">
+    <button type="button" class="btn btn-ghost border border-line text-small touch-target"
+            @click="navigator.clipboard.writeText(document.getElementById('external-token').value).then(() => copied = true)"
+            x-text="copied ? 'Copied' : 'Copy'">Copy</button>
+  </div>
+  <p class="text-micro text-charcoal/55 mt-3">On the desktop, set <span class="font-mono">CREWBOSS_DASH_TOKEN</span> to it and <span class="font-mono">CREWBOSS_DASH_URL</span> to <span class="font-mono">{{ dash_url }}</span> (see <span class="font-mono">sessions/external/README.md</span>).</p>
+  <a href="{{ base }}" class="btn btn-ghost border border-line text-small touch-target mt-4 inline-flex">Done</a>
+</section>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Change #{{ c.id }} {{ c.title }}{% endblock %}
+{% block page_title %}Change #{{ c.id }}{% endblock %}
+{% block content %}
+{# A change's full page (#816): one column, centred. A change still waiting for the owner shows its decision card; a decided one its outcome. #}
+<div data-swappable data-ca-page data-ca-entity="change:{{ c.id }}" data-ca-title="{{ c.title }}" class="max-w-3xl mx-auto">
+  <nav class="flex items-center gap-2 text-small text-charcoal/60 mb-3" aria-label="Where this change is">
+    <a href="{{ base }}/changes" class="hover:text-charcoal hover:underline" data-back-link>&larr; Changes</a>
+    <span aria-hidden="true">/</span><span>Change #{{ c.id }}</span>
+  </nav>
+  {% if c.stage == 'recommended' and not c.decision %}
+  {% include "partials/change_card.html" %}
+  {% else %}
+  {% include "partials/change_decided_view.html" %}
+  {% endif %}
+</div>
+{% endblock %}

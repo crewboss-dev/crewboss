@@ -1,0 +1,28 @@
+# Written by crewboss frontdoor (the Front door card rewrites this file; edits are lost)
+{
+	admin unix//run/caddy-admin/caddy.sock|0666
+	default_sni 192.0.2.20
+	log default {
+		output file /frontdoor/logs/caddy.log {
+			mode 0644
+		}
+		format json
+	}
+}
+
+https://192.0.2.20, https://office-pc.local {
+	tls /frontdoor/lan.crt /frontdoor/lan.key
+	request_header -X-Crewboss-Front-Door
+	request_header -X-MDD-Front-Door
+	encode zstd gzip
+	reverse_proxy app:8000
+}
+
+http://192.0.2.20, http://office-pc.local {
+	handle /trust* {
+		reverse_proxy app:8000
+	}
+	handle {
+		redir https://{host}{uri} 308
+	}
+}

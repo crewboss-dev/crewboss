@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Recent{% endblock %}
+{% block page_title %}Recent{% endblock %}
+{% block content %}
+{# RECENT (#771): activity across every project the person can see, newest first. Filter by project and by kind; the feed pages itself
+   (a "Load more" row that also fires when scrolled to). Each row opens its record. #}
+<h1 class="sr-only" data-area-title>Recent</h1>
+<form method="get" action="/recent" class="flex flex-wrap items-center gap-2 mb-4" data-recent-filters>
+  <select name="project" onchange="this.form.submit()" class="field !w-auto text-small py-1" aria-label="Project">
+    <option value="">All projects</option>
+    {% for p in filter_projects %}<option value="{{ p.slug }}" {% if f_project == p.slug %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+  </select>
+  <select name="kind" onchange="this.form.submit()" class="field !w-auto text-small py-1" aria-label="Kind">
+    <option value="">All kinds</option>
+    {% for k, v in kinds.items() %}<option value="{{ k }}" {% if f_kind == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
+  </select>
+  {% set sf_page = 'recent' %}{% set sf_project = '' %}{% include "partials/saved_filters.html" %}
+  {% if f_project or f_kind %}<a href="/recent?all=1" class="text-micro underline opacity-60" data-clear-recent>clear</a>{% endif %}
+</form>
+<div class="rounded-xl border border-line bg-surface divide-y divide-line overflow-hidden" id="recent-feed" data-recent-feed>
+  {% include "partials/recent_rows.html" %}
+  {% if not entries %}<p class="px-4 py-8 text-center text-sm text-charcoal/40" data-recent-empty>Nothing yet.</p>{% endif %}
+</div>
+{% endblock %}
