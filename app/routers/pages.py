@@ -18,16 +18,18 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import (HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response,
                                StreamingResponse)
 
-from app import changes as changes_mod, roles
+from app import agent_pins, changes as changes_mod, job_card, roles, run_plan
 from app import (config, drift, jobs as jobs_mod, erp_health, health, health_reports, platform_keys, repo, rules as rules_mod,
                  skills as skills_mod, tree, web_auth)
 from app import connections as connections_mod
 from app import integrations as integrations_mod
 from app.fold import fold_response, insert_block, is_htmx, remove_block
+from app import task_summary, task_timeline
 from app import access, environment, external_models, lives, server_reads, favourites, runs_on, nav as nav_mod, saved_filters, snapshot, tabs as tabs_mod
 from app import shared as shared_mod
 from app import plan as plan_module
 from app import planning
+from app.db import get_cursor
 from app.repo import BadRequest, Conflict, Forbidden, NotFound
 from app.templating import templates, word_diff
 
@@ -294,7 +296,10 @@ def _me_name(request: Request) -> str:
 
 def _runs_on_pill(request: Request, project: dict | None, nav_active: str) -> dict | None:
     """The header pill "Runs on" (#810): a person with at least one live runner in this project's account picks which one the project's
-    jobs go to. Only on a project's own pages (an account holds no tasks), for a signed-in person."""
+    jobs go to. Only on a project's own pages (an account holds no tasks), for a signed-in person.
+    GONE FROM THE HEADER (change #90): runners belong to the project (Settings, "Runners for this project") and Run chooses one by itself. The
+    /runs-on POSTs stay for old forms."""
+    return None
     if project is None or nav_active == "home" or tree.is_account(project) or not getattr(request.state, "web_user", None):
         return None
     try:
@@ -1200,6 +1205,54 @@ def project_overview(request: Request, project: dict = ProjectDep):
     return RedirectResponse(_base(project), status_code=302)
 
 
+def _runner_alloc(who, project: dict) -> dict | None:
+    """The "Runners for this project" card: the account's runners the person may see (the owner sees all, anyone else their own) and the ticked ones."""
+    if tree.is_account(project):
+        return None
+    account_id = tree.account_root_id(project["id"])
+    if account_id is None:
+        return None
+    from app import devices
+    # The instance owner sees every runner of the account; a project's Owner or Admin every runner of a person who works this project (the allocation
+    # only NARROWS what may claim, it grants nothing); anyone else their own.
+    admin = who.is_owner or access.is_admin(who, project["id"])
+    devs = [d for d in devices.list_for(account_id, user_id=None if admin else who.user_id) if d["status"] == "active"]
+    if admin and not who.is_owner:
+        members: dict[int, bool] = {}
+        devs = [d for d in devs if members.setdefault(d["user_id"], d["user_id"] == who.user_id
+                                                      or access.role_in(access.principal_for_user_id(d["user_id"]), project["id"]) is not None)]
+    from app import runner_ws
+    return {"devices": [{**d, "connected": bool(runner_ws.connected(d["id"]))} for d in devs], "allocated": set(run_plan.allocated(project["id"])),
+            "machines_url": f"/{repo.get_project(account_id)['slug']}/machines?tab=runners"}
+
+
+@project_router.post("/settings/runners")
+def save_project_runners(request: Request, device_id: list[int] = Form(default=[]), project: dict = ProjectDep):
+    """Allocate runners to the project (the Owner or an Admin of it). Only runners of its account that the person may see; ticking none clears it."""
+    who = access.of_request(request)
+    if not access.is_admin(who, project["id"]):
+        raise Forbidden("only the project's Owner or an Admin allocates its runners")
+    ra = _runner_alloc(who, project)
+    allowed = {d["id"] for d in (ra["devices"] if ra else [])}
+    chosen = sorted(set(device_id) & allowed)
+    with get_cursor() as cur:
+        keep_hidden = [r["device_id"] for r in _hidden_alloc(cur, project["id"], allowed)]   # runners this person cannot see keep their allocation
+        cur.execute("DELETE FROM project_runners WHERE project_id = %s AND device_id <> ALL(%s)", (project["id"], [*chosen, *keep_hidden]))
+        for d in chosen:
+            cur.execute("INSERT INTO project_runners (project_id, device_id, added_by) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                        (project["id"], d, f"user:{who.user_id}"))
+        repo.record_activity(cur, project["id"], f"user:{who.user_id}", "set", "project_runners", project["id"],
+                             f"Runners for this project: {len(chosen)} allocated" if chosen else "Runners for this project: none allocated (any runner of the starter)")
+    resp = RedirectResponse(f"{_base(project)}/settings#runners", status_code=303)
+    resp.set_cookie(FLASH_COOKIE, "Runners saved.", max_age=60, samesite="lax", httponly=True)
+    return resp
+
+
+def _hidden_alloc(cur, project_id: int, visible: set):
+    cur.execute("SELECT device_id FROM project_runners WHERE project_id = %s AND device_id <> ALL(%s)", (project_id, list(visible)))
+    return cur.fetchall()
+
+
 @project_router.get("/settings", response_class=HTMLResponse)
 def project_settings(request: Request, project: dict = ProjectDep):
     """SETTINGS (#733): where the project sits, its repo and environments, who works it, and the rename / move / external agent /
@@ -1213,7 +1266,7 @@ def project_settings(request: Request, project: dict = ProjectDep):
             for p in tree.project_tree(include_archived=False, idx=idx) if p["id"] in tree.descendant_ids(project["id"], idx) and p["id"] != project["id"]]
     base_depth = min((s["depth"] for s in subs), default=0)
     subs = [dict(s, depth=s["depth"] - base_depth) for s in subs]
-    return render(request, "pages/settings.html", "settings", place=place, subs=subs,
+    return render(request, "pages/settings.html", "settings", place=place, subs=subs, runner_alloc=_runner_alloc(who, project),
                   move_targets=_move_targets(project, tree.index()) if who.is_owner else None, slug_locked=tree.slug_locked(project),
                   **_external_agent_ctx(project), **_connections_ctx(request, project, editor=True))
 
@@ -1425,8 +1478,25 @@ def _task_ctx(request: Request, task_id: int, run_extra: dict | None = None) -> 
     if task["project_id"] not in {p["id"] for p in projects}:
         projects = [repo.get_project(task["project_id"]), *projects]
     task_project = next((p for p in projects if p["id"] == task["project_id"]), None)
-    return {"task": task, "word_diff": word_diff, "projects": projects, "task_project": task_project,
-            "run": {**_run_context(request, task, task_project), **(run_extra or {})}}
+    run = {**_run_context(request, task, task_project), **(run_extra or {})}
+    timeline = task_timeline.build(task, _viewer_id(request))
+    summary = task_summary.view(task_id, _viewer_id(request))
+    if summary["pending"]:
+        task_summary.schedule(task_id, _viewer_id(request))   # debounced: many views and events make one refresh (a runner turn, else the auto summary)
+    return {"task": task, "word_diff": word_diff, "projects": projects, "task_project": task_project, "run": run,
+            "timeline": timeline, "code": task_timeline.code_line(task, task_project), "summary": summary,
+            "waiting_on_you": bool(timeline["waiting_ids"]),
+            "now_text": task_timeline.now_sentence(task, run, bool(timeline["waiting_ids"]))}
+
+
+def _viewer_id(request: Request) -> int | None:
+    """The signed-in person's user id (the Discussions in the timeline are theirs to open), or None."""
+    if not getattr(request.state, "web_user", None):
+        return None
+    try:
+        return web_auth.signed_in_user_row(request)["id"]
+    except PermissionError:
+        return None
 
 
 def _on_full_page(request: Request, task_id: int) -> bool:
@@ -1453,10 +1523,11 @@ def _run_context(request: Request, task: dict, task_project: dict | None) -> dic
             me = web_auth.signed_in_user_row(request)["id"]
         except PermissionError:
             me = None
-    return {"job": job, "profiles": jobs_mod.list_profiles(), "can_run": signed_in and access.can_edit(access.of_request(request), task["project_id"]),
+    return {"job": job, "card": job_card.view(job, task_project), "outcome": _outcome(task["id"], job, task_project), "profiles": jobs_mod.list_profiles(), "can_run": signed_in and access.can_edit(access.of_request(request), task["project_id"]),
             "is_starter": bool(job and me is not None and job["user_id"] == me),
             "client_text": jobs_mod.client_authored(task),
             "has_remote": bool(task_project and task_project.get("git_remote")),
+            "auth_off": not web_auth.required(),
             "live": bool(job and job["state"] in jobs_mod.LIVE_STATES),
             # "Runs on" (#810): the runner choice in the Run form, and the offer for a job stuck behind an offline runner
             "runs_on": runs_on.options(task["project_id"], me) if me is not None and signed_in else None,
@@ -1464,7 +1535,45 @@ def _run_context(request: Request, task: dict, task_project: dict | None) -> dic
             # an Installed project is tested on the runner the task is pinned to (#839)
             "server_reads": server_reads.for_job(job["id"]) if job else [],
             "model_uses": external_models.for_job(job["id"]) if job else [],
+            "agent_files": _agent_files(request, task, job),
+            "plan": _run_plan_line(task, me, job) if me is not None and signed_in and task_project and task_project.get("git_remote") else None,
+            "can_start": task["status"] != "done" or bool(job and job["state"] == "cancelled"),
             "test_line": lives.run_line(task_project or {}, (job or {}).get("pin_device") or (job or {}).get("device") or "")}
+
+
+def _agent_files(request: Request, task: dict, job: dict | None) -> dict | None:
+    """The unreviewed-agent-files block for NOW (0.1.2): for a job held for them, or one that failed on them before 0.1.1, while the project still has
+    a pending file. Nothing otherwise."""
+    if not job:
+        return None
+    held = job["state"] == "queued" and bool(job.get("hold_reason"))
+    old = job["state"] == "failed" and jobs_mod.is_unreviewed_release(job.get("summary") or "")
+    if not (held or old):
+        return None
+    return agent_pins.trust_block(access.of_request(request), task["project_id"])
+
+
+def _outcome(task_id: int, job: dict | None, project: dict | None) -> dict | None:
+    """The outcome card, anchored on the latest BUILDER job (a review or a test run is a sub-result of it, never "the change"); with no builder job
+    (only reviews so far) on the latest job."""
+    if not job or job["state"] in jobs_mod.LIVE_STATES:
+        return None
+    anchor = jobs_mod.latest_builder_for_task(task_id) or job
+    oc = job_card.outcome(anchor)
+    if oc is not None:
+        oc["followups"] = jobs_mod.followups_since(task_id, anchor["id"])
+        oc["branch_url"] = job_card.branch_url((project or {}).get("git_remote"), oc["branch"]) if anchor["state"] == "done" else ""
+    return oc
+
+
+def _run_plan_line(task: dict, user_id: int, job: dict | None) -> dict | None:
+    """The one line under the Run button ("Will run on <runner>") and the automatic choices behind it, only while there is something to run."""
+    if job and job["state"] in jobs_mod.LIVE_STATES:
+        return None
+    try:
+        return run_plan.plan(task, user_id)
+    except NotFound:
+        return None
 
 
 def _checklist(request: Request, task_id: int):
@@ -1506,6 +1615,58 @@ def update_task_form(request: Request, task_id: int, title: str = Form(None), bo
     return _drawer(request, task_id, changed=True)
 
 
+@project_router.post("/tasks/{task_id}/autosave", response_class=HTMLResponse)
+def autosave_task(request: Request, task_id: int, title: str = Form(None), body: str = Form(None), client_visible: str = Form(None),
+                  project: dict = ProjectDep):
+    """Edit in place (#91): the header's title, the Original request and the client toggle save by themselves. Answers with the small "Saved" tick
+    only, so what you are typing is never replaced. The same rules as the form route (a client-visible title is the owner's alone)."""
+    _task_in(project, task_id)
+    patch: dict = {}
+    if title is not None:
+        title = " ".join(title.split())
+        if not title:
+            raise BadRequest("a task needs a title")
+        patch["title"] = title[:300]
+    if body is not None:
+        patch["body"] = body
+    if client_visible is not None:
+        patch["client_visible"] = client_visible == "1"
+    if patch:
+        repo.update_task(task_id, patch, "owner")
+    return partial(request, "partials/task_saved.html", {"task": {"id": task_id}, "saved": True}, headers=BOARD_STALE)
+
+
+def _summary_block(request: Request, task_id: int):
+    task = repo.get_task(task_id)
+    summary = task_summary.view(task_id, _viewer_id(request))
+    if summary["pending"]:
+        task_summary.schedule(task_id, _viewer_id(request))
+    return partial(request, "partials/task_summary.html", {"task": task, "summary": summary})
+
+
+@project_router.get("/tasks/{task_id}/summary", response_class=HTMLResponse)
+def task_summary_block(request: Request, task_id: int, project: dict = ProjectDep):
+    """The summary block on its own (it re-fetches itself every few seconds while a refresh is pending)."""
+    _task_in(project, task_id)
+    return _summary_block(request, task_id)
+
+
+@project_router.post("/tasks/{task_id}/summary", response_class=HTMLResponse)
+def save_task_summary(request: Request, task_id: int, what: str = Form(""), done: str = Form(""), left: str = Form(""), project: dict = ProjectDep):
+    """The owner's own three lines (shown until something new happens on the task)."""
+    _task_in(project, task_id)
+    task_summary.save_owner(task_id, what, done, left, _viewer_id(request))
+    return _summary_block(request, task_id)
+
+
+@project_router.post("/tasks/{task_id}/summary/restore", response_class=HTMLResponse)
+def restore_task_summary(request: Request, task_id: int, project: dict = ProjectDep):
+    """"Restore your version": the owner's text a newer AI summary replaced comes back."""
+    _task_in(project, task_id)
+    task_summary.restore_owner(task_id, _viewer_id(request))
+    return _summary_block(request, task_id)
+
+
 @project_router.post("/tasks/{task_id}/comments", response_class=HTMLResponse)
 def add_comment_form(request: Request, task_id: int, body: str = Form(...), project: dict = ProjectDep):
     _task_in(project, task_id)
@@ -1534,39 +1695,143 @@ def _run_user(request: Request) -> dict:
         raise HTTPException(403, f"jobs are started by a signed-in person ({exc})") from None
 
 
-@project_router.post("/tasks/{task_id}/run", response_class=HTMLResponse)
-def run_task_form(request: Request, task_id: int, profile: str = Form(...), labels: str = Form(""),
-                  unattended: str = Form(None), runner: str = Form(""), queue_offline: str = Form(""),
-                  make_default: str = Form(""), project: dict = ProjectDep):
-    """"Run on a PC": queue a job of this task for the signed-in person with the chosen profile (plus any extra labels the
-    runner must hold). The starter's own click is their approval, so a subscription runner of theirs can take it; an
-    unattended job (API runners) needs a profile that allows it and never a client-authored task. The project needs a git
-    remote (the runner clones it).
+@project_router.post("/tasks/{task_id}/run/trust-agent-files", response_class=HTMLResponse, dependencies=[Depends(access.require_fresh())])
+def trust_agent_files_and_run(request: Request, task_id: int, snap: str = Form(""), sig: str = Form(""), project: dict = ProjectDep):
+    """"Trust these files and run" (0.1.2): the project Owner pins every pending agent file of THIS project (agent_pins.pin's own rules, and the
+    same fresh-factor step-up as the Machines page), which frees a held job; a job that already failed on them (before 0.1.1) is run afresh."""
+    user = _run_user(request)
+    task = _task_in(project, task_id)
+    who = access.of_request(request)
+    root = tree.account_root_id(task["project_id"]) or task["project_id"]
+    job = jobs_mod.latest_for_task(task_id)
+    old = bool(job and job["state"] == "failed" and jobs_mod.is_unreviewed_release(job.get("summary") or ""))
+    try:
+        agent_pins.trust_project(who, user["id"], task["project_id"], root, snap, sig)
+    except agent_pins.ListChanged as exc:     # something changed since the page was drawn: nothing pinned, the block is drawn again with the new list
+        return _drawer(request, task_id, run_extra={"trust_notice": str(exc)})
+    if old:
+        return run_task_form(request, task_id, profile="", labels="", unattended=None, runner="", queue_offline="", make_default="", details="", project=project)
+    return _drawer(request, task_id, changed=True)
 
-    "Runs on" (#810): `runner` is '' / 'default' (the project's saved runner), 'any', or one of the person's runner ids; the job is PINNED
-    to it. If that runner is offline and another of theirs could take the job now, nothing is queued: the form offers "Run on <other>" or
-    "Queue for <pinned>" (queue_offline=1), with a tick to make the other the default (make_default=1). A job is never moved by itself."""
+
+@project_router.post("/tasks/{task_id}/run", response_class=HTMLResponse)
+def run_task_form(request: Request, task_id: int, profile: str = Form(""), labels: str = Form(""),
+                  unattended: str = Form(None), runner: str = Form(""), queue_offline: str = Form(""),
+                  make_default: str = Form(""), details: str = Form(""), project: dict = ProjectDep):
+    """"Run" (change #90): queue a job of this task for the signed-in person. Nothing needs choosing: the PROFILE comes from the task and the
+    RUNNER from the project's allocation and what is online (app/run_plan.py); both can be overridden under "More options" (`profile`, `runner`).
+    The starter's own click is their approval, so a subscription runner of theirs can take it; an unattended job (API runners) needs a profile that
+    allows it and never a client-authored task. The project needs a git remote (the runner clones it). `details` = words for the AI, added to the
+    task as a comment the agent reads.
+
+    A runner chosen by hand ("Runs on", #810): `runner` is a runner id or 'any'; if it is offline and another of the person's could take the job now,
+    nothing is queued: the form offers "Run on <other>" or "Queue for <pinned>" (queue_offline=1), with a tick to make the other the project's
+    default (make_default=1). A job is never moved by itself."""
     user = _run_user(request)
     task = _task_in(project, task_id)
     if not project.get("git_remote"):
         raise BadRequest("set the project's git remote first (project Overview, Edit repo and environments)")
-    pin = runs_on.resolve(task["project_id"], user["id"], runner)
-    prof = next((p for p in jobs_mod.list_profiles() if p["name"] == profile.strip()), None)
-    requires = [*(prof["requires_labels"] if prof else []), *jobs_mod.parse_labels(labels)]
-    again = {"profile": profile.strip(), "labels": labels, "unattended": unattended == "1"}
-    # A runner that lacks a label the job needs could never claim it: never pin silently. Say which label, and which runners have it.
-    gap = runs_on.label_gap(task["project_id"], user["id"], pin, requires)
-    if gap:
-        return _drawer(request, task_id, run_extra={"gap": {**gap, **again}})
-    if pin is not None and queue_offline != "1":
-        offer = runs_on.offline_offer(task["project_id"], user["id"], pin, requires)
-        if offer:
-            return _drawer(request, task_id, run_extra={"offer": {**offer, **again}})
-    if make_default == "1" and pin is not None:
-        runs_on.set_pref(task["project_id"], user["id"], pin, f"user:{user['id']}")
-    jobs_mod.create_job(task["id"], user["id"], profile.strip(), unattended=unattended == "1", approved=True,
-                        extra_labels=labels, pin_device_id=pin)
+    rp = run_plan.plan(task, user["id"], profile, runner, labels)
+    if not rp["profile"]:
+        raise BadRequest(rp["why"])
+    if rp.get("refuse"):
+        raise BadRequest(rp["message"])      # nobody's allocated runner could ever claim it: say so instead of queueing it for ever
+    pin, requires = rp["pin"], rp["requires"]
+    again = {"profile": rp["profile"], "labels": labels, "unattended": unattended == "1"}
+    manual = runner.strip() not in ("", "auto", "default")
+    if manual:
+        # A runner that lacks a label the job needs could never claim it: never pin silently. Say which label, and which runners have it.
+        gap = runs_on.label_gap(task["project_id"], user["id"], pin, requires)
+        if gap:
+            return _drawer(request, task_id, run_extra={"gap": {**gap, **again}})
+        if pin is not None and queue_offline != "1":
+            offer = runs_on.offline_offer(task["project_id"], user["id"], pin, requires)
+            if offer:
+                return _drawer(request, task_id, run_extra={"offer": {**offer, **again}})
+        if make_default == "1" and pin is not None:
+            runs_on.set_pref(task["project_id"], user["id"], pin, f"user:{user['id']}")
+    if details.strip():
+        repo.comment_task(task_id, "For the AI, on the next run: " + details.strip()[:2000], _web_actor(request))
+    jobs_mod.create_job(task["id"], user["id"], rp["profile"], unattended=unattended == "1", approved=True,
+                        extra_labels=labels, pin_device_id=pin, base_branch=jobs_mod.carry_branch(task_id))   # Run again carries the last build's commits
     return _drawer(request, task_id, changed=True)
+
+
+def _follow_up(request: Request, project: dict, task_id: int, profile: str, comment: str):
+    """A next step that is itself a job (a review, the full tests): a comment saying what to do, then a job with that profile. With no such profile
+    on this instance the comment stands alone as a request on the task."""
+    user = _run_user(request)
+    task = _task_in(project, task_id)
+    repo.comment_task(task_id, comment, _web_actor(request))
+    if not project.get("git_remote") or not any(p["name"] == profile for p in jobs_mod.list_profiles()):
+        return _drawer(request, task_id, changed=True)
+    rp = run_plan.plan(task, user["id"], profile)
+    jobs_mod.create_job(task["id"], user["id"], profile, approved=True, pin_device_id=rp["pin"], base_branch=jobs_mod.carry_branch(task_id))
+    return _drawer(request, task_id, changed=True)
+
+
+@project_router.post("/tasks/{task_id}/run/review", response_class=HTMLResponse)
+def run_review(request: Request, task_id: int, project: dict = ProjectDep):
+    """Next step "Review the change": a code-auditor job on the branch (or, with no reviewer profile, a review request on the task)."""
+    job = jobs_mod.latest_builder_for_task(task_id)
+    return _follow_up(request, project, task_id, "code-auditor",
+                      f"Please review the change on branch {job['branch'] if job else '(see the last job)'}: correctness and security. Report, do not fix.")
+
+
+@project_router.post("/tasks/{task_id}/run/tests", response_class=HTMLResponse)
+def run_tests(request: Request, task_id: int, project: dict = ProjectDep):
+    job = jobs_mod.latest_builder_for_task(task_id)
+    return _follow_up(request, project, task_id, "chores",
+                      f"Please run the full test suite on branch {job['branch'] if job else '(see the last job)'} and report the result. Do not change code.")
+
+
+@project_router.post("/tasks/{task_id}/run/done", response_class=HTMLResponse)
+def run_mark_done(request: Request, task_id: int, project: dict = ProjectDep):
+    _run_user(request)
+    task = _task_in(project, task_id)
+    if not access.can_edit(access.of_request(request), task["project_id"]):
+        raise Forbidden("you can read this task but not change it")
+    job = jobs_mod.latest_builder_for_task(task_id) or jobs_mod.latest_for_task(task_id)
+    repo.update_task(task_id, {"status": "done"}, _web_actor(request))
+    if job:   # the person's own words only: the agent's summary is shown on the card and never stored under a person's name
+        repo.comment_task(task_id, f"Marked done from the last run (job {job['id']}).", _web_actor(request))
+    return _drawer(request, task_id, changed=True)
+
+
+@project_router.post("/tasks/{task_id}/run/needs-work", response_class=HTMLResponse)
+def run_needs_work(request: Request, task_id: int, words: str = Form(""), project: dict = ProjectDep):
+    """The owner says it is not fixed (the card's box): the task is "Needs more work" with their words attached, ready for Run again."""
+    _run_user(request)
+    _task_in(project, task_id)
+    jobs_mod.mark_needs_work(task_id, words, _web_actor(request))
+    return _drawer(request, task_id, changed=True)
+
+
+@project_router.get("/tasks/{task_id}/run/card", response_class=HTMLResponse)
+def run_card(request: Request, task_id: int, was: str = "", project: dict = ProjectDep):
+    """The job card's status on its own (#987): the card polls this while the job is live (every 3 s, every 15 s while held or queued over 2 minutes),
+    with a few small queries (no task context, no runner lists). When the job has just ended (the poll said `was=live`), the whole task record is
+    sent once instead, so the outcome card and the Run form appear without a reload."""
+    _task_in(project, task_id)
+    job = jobs_mod.latest_for_task(task_id)
+    if not job:
+        return HTMLResponse("", status_code=204)
+    live = job["state"] in jobs_mod.LIVE_STATES
+    if was == "live" and not live:
+        return partial(request, "partials/task_drawer.html", {**_task_ctx(request, task_id), "full_page": _on_full_page(request, task_id)},
+                       headers={**BOARD_STALE, "HX-Retarget": "#drawer-content", "HX-Reswap": "innerHTML"})
+    me = None
+    if getattr(request.state, "web_user", None):
+        try:
+            me = web_auth.signed_in_user_row(request)["id"]
+        except PermissionError:
+            me = None
+    run = {"job": job, "card": job_card.view(job, project), "live": live,
+           "can_run": me is not None and access.can_edit(access.of_request(request), project["id"]),
+           "is_starter": me is not None and job["user_id"] == me,
+           "stuck": runs_on.stuck_offer(job) if me is not None and job["user_id"] == me else None,
+           "server_reads": server_reads.for_job(job["id"]), "model_uses": external_models.for_job(job["id"])}
+    return partial(request, "partials/job_card_status.html", {"task": {"id": task_id}, "job": job, "run": run})
 
 
 @project_router.post("/tasks/{task_id}/run/move", response_class=HTMLResponse)

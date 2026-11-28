@@ -237,7 +237,7 @@ def test_payload_is_ids_only_and_revoked_device_claims_nothing(world):
     payload = jobs.claim(dev2["device_id"])
     blob = json.dumps(payload)
     assert "SECRET TASK TEXT" not in blob and "Fix the thing" not in blob
-    assert set(payload) == {"job_id", "task_id", "project_id", "account_id", "fence", "branch", "job_token",
+    assert set(payload) == {"job_id", "task_id", "project_id", "account_id", "fence", "branch", "base_branch", "job_token",
                             "lease_seconds", "max_seconds", "keep_open", "git_remote", "gemini_allowed", "profile", "mcp_servers", "skills", "pins"}
     assert payload["job_token"].startswith("cbj_") and payload["profile"]["model"] == "sonnet"
 

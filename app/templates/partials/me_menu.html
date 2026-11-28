@@ -27,5 +27,6 @@
 <a href="{{ l.url }}" class="block px-3 py-2 text-charcoal/70 hover:bg-creamwarm border-b border-line" data-surface="link" rel="noopener">{{ l.label }}</a>
 {% endfor %}
 <button type="button" class="block w-full text-left px-3 py-2 text-charcoal/70 hover:bg-creamwarm border-b border-line" data-tour-restart>How-to</button>
+{% if me %}<a href="/account/preferences" class="block px-3 py-2 text-charcoal/70 hover:bg-creamwarm border-b border-line" data-account-preferences>Preferences</a>{% endif %}
 {% if me and me.user_id %}<a href="/account/security" class="block px-3 py-2 text-charcoal/70 hover:bg-creamwarm border-b border-line" data-account-security>Account security</a>{% endif %}
 {% if me %}<form method="post" action="/auth/logout"><button type="submit" class="block w-full text-left px-3 py-2 text-charcoal/70 hover:bg-creamwarm" data-sign-out>Sign out</button></form>{% endif %}

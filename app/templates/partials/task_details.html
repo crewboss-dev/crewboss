@@ -1,0 +1,61 @@
+{# What the old form still held that is not part of the story: the client dashboard toggle, the project move, and the task's links. Folded away. #}
+{% set other_links = task.links.items() | rejectattr('0', 'in', ['workflows', 'rules', 'conditions', 'knowledge']) | list %}
+{% set has_client = task_project and (task_project.satellite_enabled or task.requested_by) %}
+{% if has_client or projects|length > 1 or task.subprojects or task.links.workflows or task.links.rules or task.links.knowledge or task.links.conditions is defined or other_links %}
+<details class="tw-more" data-task-details>
+  <summary class="press tw-link-sum">More: links, project{{ ', client view' if has_client else '' }}</summary>
+  <div class="tw-more-body">
+    {% if has_client %}
+    <div>
+      {# Client mini dashboard (task #106): what the client's manager sees is the owner's call alone. #}
+      <label class="flex items-center gap-2 text-small press cursor-pointer">
+        <input type="checkbox" class="rounded border-charcoal/30" {% if task.client_visible %}checked{% endif %}
+               hx-post="{{ base }}/tasks/{{ task.id }}/autosave" hx-trigger="change" hx-vals='js:{client_visible: event.target.checked ? "1" : "0"}' hx-target="#save-tick-{{ task.id }}" hx-swap="outerHTML">
+        <span>Show on the client's mini dashboard</span>
+      </label>
+      <p class="text-micro text-charcoal/45 mt-1">{% if task.requested_by %}Requested by {{ task.requested_by }} from the mini dashboard. {% endif %}They see the title, status and progress only, never the description or comments.</p>
+    </div>
+    {% endif %}
+    {% if projects|length > 1 %}
+    <form hx-post="{{ base }}/tasks/{{ task.id }}" hx-target="#drawer-content" hx-swap="innerHTML">
+      <label for="move-to-{{ task.id }}" class="block text-micro uppercase tracking-wide text-charcoal/50 mb-1">Project</label>
+      <div class="flex gap-2">
+        <select id="move-to-{{ task.id }}" name="move_to" class="field text-small" data-move-to>
+          {% for p in projects %}<option value="{{ p.slug }}" {% if p.id == task.project_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="btn-ghost text-small border border-line">Move</button>
+      </div>
+      <p class="text-micro text-charcoal/45 mt-1">Pick another project and move it there (checklist and comments go with it).</p>
+    </form>
+    {% endif %}
+    {% if task.subprojects %}<div class="flex flex-wrap gap-1">{% for sp in task.subprojects %}<span class="chip bg-charcoal/[.05] text-charcoal/60 normal-case font-normal">{{ sp }}</span>{% endfor %}</div>{% endif %}
+    {% if task.links.workflows %}
+    <div><div class="tw-h2">Workflows</div><ul class="text-small space-y-1">
+      {% for w in task.links.workflows %}<li><a href="{{ base }}/workflows/{{ w.id|urlencode }}{% if w.step %}?step={{ w.step|urlencode }}{% endif %}" class="text-indigo underline">{{ w.id }}</a>{% if w.step %} <span class="text-micro text-charcoal/40">step: {{ w.step }}</span>{% endif %}</li>{% endfor %}
+    </ul></div>
+    {% endif %}
+    {% if task.links.rules %}
+    <div><div class="tw-h2">Rules &amp; AI Instructions</div><ul class="text-small space-y-1">
+      {% for r in task.links.rules %}<li><a href="{{ base }}/rules?disabled=1#rule-{{ r|urlencode }}" class="text-indigo underline">{{ r }}</a></li>{% endfor %}
+    </ul></div>
+    {% endif %}
+    {% if task.links.knowledge %}
+    <div><div class="tw-h2">Knowledge</div><ul class="text-small space-y-1">
+      {% for k in knowledge_links(task.links.knowledge, task.project_id) %}
+      <li><a href="{{ base }}/{{ 'objectives' if k.kind == 'objective' else 'knowledge' }}?open={{ k.id }}{% if k.archived %}&archived=1{% endif %}#k-{{ k.id }}" class="text-indigo underline">{{ k.title }}</a>{% if k.archived %} <span class="text-micro text-charcoal/40">archived</span>{% endif %}</li>
+      {% endfor %}
+    </ul></div>
+    {% endif %}
+    {% if task.links.conditions is defined %}
+    <div><div class="tw-h2">Suggested conditions (from the ERP, for the AI)</div>
+      <pre class="rounded-lg bg-charcoal/[.05] p-2 text-micro whitespace-pre-wrap break-words font-mono">{{ task.links.conditions|pretty_json }}</pre></div>
+    {% endif %}
+    {% if other_links %}
+    <div><div class="tw-h2">Links</div><ul class="text-small space-y-1">
+      {% for key, val in other_links %}<li><span class="text-charcoal/50">{{ key }}:</span>
+        {% if val is string and val.startswith('http') %}<a href="{{ val }}" class="text-indigo underline" target="_blank" rel="noopener">{{ val }}</a>{% else %}{{ val }}{% endif %}</li>{% endfor %}
+    </ul></div>
+    {% endif %}
+  </div>
+</details>
+{% endif %}

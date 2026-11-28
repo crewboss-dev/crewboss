@@ -128,6 +128,14 @@ def _timeago(dt) -> str:
 
 
 templates.env.filters["markdown"] = _render_markdown
+
+
+def _render_text(text):
+    from app import task_timeline        # late: it imports repo
+    return task_timeline.render_text(text)
+
+
+templates.env.filters["render_text"] = _render_text   # the task window's safe Markdown (#91): escaped first, a few tags built here
 templates.env.globals["format_target"] = format_target
 # knowledge_links(ids, project_id): the titles of the knowledge a task links to, resolved ONLY within the task's own
 # account (task #368); without a project id nothing resolves.

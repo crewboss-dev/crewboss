@@ -1,0 +1,51 @@
+{# THE TASK HEADER (#91): "Task #N: title" (edited in place, saved on its own with a small "Saved" tick), the status and type as badges, and one
+   menu (the three dots) for everything you used to change with big dropdowns: status, type, priority, assignee. Needs: task, base. Each menu
+   choice posts the same route the old form did (POST /tasks/<id>), which answers with the refreshed record. #}
+{% macro choice(field, value, label, current) %}
+<button type="button" role="menuitemradio" aria-checked="{{ 'true' if current == value else 'false' }}" tabindex="-1"
+        class="press tw-menu-item" hx-post="{{ base }}/tasks/{{ task.id }}" hx-vals='{"{{ field }}": "{{ value }}"}' hx-target="#drawer-content" hx-swap="innerHTML">
+  <span class="tw-tick" aria-hidden="true">{{ '✓' if current == value else '' }}</span>{{ label }}</button>
+{% endmacro %}
+<header class="tw-head" data-task-header data-ca-entity="task:{{ task.id }}" data-ca-title="{{ task.title }}">
+  <div class="tw-title-row">
+    <label class="tw-title-label" for="task-title-{{ task.id }}"><span class="tw-no" data-task-no>Task #{{ task.id }}:</span><span class="sr-only"> title</span></label>
+    <textarea id="task-title-{{ task.id }}" name="title" rows="1" class="tw-title-input" maxlength="300" autocomplete="off" x-ref="title" title="{{ task.title }}" data-task-title
+           hx-post="{{ base }}/tasks/{{ task.id }}/autosave" hx-trigger="change, keyup changed delay:900ms" hx-target="#save-tick-{{ task.id }}" hx-swap="outerHTML"
+           x-data x-init="$nextTick(() => { $el.style.height = 'auto'; $el.style.height = $el.scrollHeight + 'px'; })"
+           @keydown.enter.prevent="$el.blur()"
+           @input="$el.style.height = 'auto'; $el.style.height = $el.scrollHeight + 'px'; $el.title = $el.value; document.querySelectorAll('[data-task-sheet-title],[data-record-title]').forEach(function (e) { e.textContent = $el.value; }); document.title = '#{{ task.id }} ' + $el.value + ' — Crewboss';">{{ task.title }}</textarea>
+    {% include "partials/task_saved.html" %}
+  </div>
+  <div class="tw-badges">
+    <span class="chip {{ STATUS_META.get(task.status, UNKNOWN_META).classes }}" data-badge-status>{{ STATUS_META.get(task.status, UNKNOWN_META).label }}</span>
+    <span class="chip {{ STREAM_META.get(task.stream, UNKNOWN_META).classes }}" data-badge-type>{{ STREAM_META.get(task.stream, UNKNOWN_META).label }}</span>
+    {% if task.category %}<span class="chip {{ CATEGORY_META.get(task.category, UNKNOWN_META).classes }}">{{ CATEGORY_META.get(task.category, UNKNOWN_META).label }}</span>{% endif %}
+    {% with t = task %}{% include "partials/assignee_chip.html" %}{% endwith %}
+    <div class="tw-menu-wrap" x-data="{ open: false }" @keydown.escape.stop="open = false; $refs.btn.focus()" @click.outside="open = false">
+      <button type="button" class="press tw-more touch-target" x-ref="btn" aria-haspopup="menu" :aria-expanded="open ? 'true' : 'false'" aria-label="Change status, type, priority or assignee"
+              data-task-menu-button
+              @click="open = !open; if (open) $nextTick(() => { var b = $refs.menu.querySelector('[role^=menuitem]'); b && b.focus(); })"
+              @keydown.arrow-down.prevent="open = true; $nextTick(() => $refs.menu.querySelector('[role^=menuitem]').focus())">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+      </button>
+      <div class="tw-menu" role="menu" aria-label="Task actions" x-ref="menu" x-show="open" x-cloak
+           @keydown.arrow-down.prevent="let i = [...$el.querySelectorAll('[role^=menuitem]')]; i[(i.indexOf(document.activeElement) + 1) % i.length].focus()"
+           @keydown.arrow-up.prevent="let i = [...$el.querySelectorAll('[role^=menuitem]')]; i[(i.indexOf(document.activeElement) - 1 + i.length) % i.length].focus()">
+        <button type="button" role="menuitem" tabindex="-1" class="press tw-menu-item" @click="open = false; $nextTick(() => document.getElementById('task-title-{{ task.id }}').focus())"><span class="tw-tick" aria-hidden="true"></span>Edit the title</button>
+        <button type="button" role="menuitem" tabindex="-1" class="press tw-menu-item" @click="open = false; document.dispatchEvent(new CustomEvent('task-edit-request'))"><span class="tw-tick" aria-hidden="true"></span>Edit the original request</button>
+        <div class="tw-menu-h" role="presentation">Status</div>
+        {% for st in ['backlog', 'ready', 'doing', 'review', 'done'] %}{{ choice('status', st, STATUS_META.get(st, UNKNOWN_META).label, task.status) }}{% endfor %}
+        <div class="tw-menu-h" role="presentation">Type</div>
+        {% for s in ['feature', 'bug', 'tweak', 'review', 'error'] %}{{ choice('stream', s, STREAM_META.get(s, UNKNOWN_META).label, task.stream) }}{% endfor %}
+        <div class="tw-menu-h" role="presentation">What it is</div>
+        {{ choice('category', '', 'Not triaged', task.category or '') }}
+        {% for c, meta in CATEGORY_META.items() %}{{ choice('category', c, meta.label, task.category) }}{% endfor %}
+        <div class="tw-menu-h" role="presentation">Priority</div>
+        {% for pr in ['must', 'should', 'could', 'wont'] %}{{ choice('priority', pr, PRIORITY_META.get(pr, UNKNOWN_META).label, task.priority) }}{% endfor %}
+        <div class="tw-menu-h" role="presentation">Assigned to</div>
+        {{ choice('assignee', 'ai', 'AI · ' ~ task.owner_stream, task.assignee) }}
+        {{ choice('assignee', 'owner', 'Me', task.assignee) }}
+      </div>
+    </div>
+  </div>
+</header>

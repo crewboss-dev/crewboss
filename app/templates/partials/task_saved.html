@@ -1,0 +1,2 @@
+{# The small autosave tick: the autosave route answers with this, swapped in place of itself. #}
+<span id="save-tick-{{ task.id }}" class="tw-saved{{ ' is-on' if saved else '' }}" role="status" aria-live="polite" data-save-tick>{% if saved %}<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12l5 5 9-10"/></svg> Saved{% endif %}</span>

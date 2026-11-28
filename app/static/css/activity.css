@@ -1,0 +1,48 @@
+/* The live runner conversation (#89): looks like Claude Code, read-only. Colours are the theme tokens (light and dark follow html.dark). */
+.jact { --jact-line: rgb(var(--c-line)); --jact-ink: rgb(var(--c-charcoal)); --jact-muted: rgb(var(--c-charcoal) / .6); --jact-bg: rgb(var(--c-surface)); --jact-soft: rgb(var(--c-creamwarm));
+  --jact-claude: rgb(var(--c-indigo) / .10); --jact-gemini: rgba(42, 120, 214, .12); --jact-gemini-ink: #2a78d6;
+  position: relative; border: 1px solid var(--jact-line); border-radius: 12px; background: var(--jact-bg); color: var(--jact-ink); font-size: 14px; line-height: 1.45; }
+html.dark .jact { --jact-gemini-ink: #6aa6ec; --jact-gemini: rgba(106, 166, 236, .14); }
+.jact-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-bottom: 1px solid var(--jact-line); font-size: 12px; }
+.jact-watch { font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--jact-muted); }
+.jact-status { color: var(--jact-muted); }
+.jact-status[data-live="1"]::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--ok, #287d5a); }
+.jact-tools { margin-left: auto; display: flex; gap: 8px; }
+.jact-btn { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--jact-line); border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 12px; text-decoration: none; cursor: pointer; transition: transform .12s var(--ease-out, ease-out), background .12s; }
+.jact-btn:hover { background: var(--jact-soft); }
+.jact-btn:active { transform: scale(.97); }
+.jact-btn[hidden], .jact-typing[hidden], .jact-more[hidden] { display: none; }
+.jact-log { max-height: min(60vh, 560px); min-height: 80px; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; overscroll-behavior: contain; }
+.jact-log:focus-visible { outline: 2px solid rgb(var(--c-focus)); outline-offset: -2px; }
+.jact-empty, .jact-note { margin: 0; color: var(--jact-muted); font-size: 12px; }
+.jact-msg { max-width: 92%; padding: 8px 12px; border-radius: 12px; background: var(--jact-claude); overflow-wrap: anywhere; }
+.jact-msg.gemini { background: var(--jact-gemini); border: 1px solid var(--jact-gemini-ink); margin-left: 16px; }
+.jact-msg.to-gemini { background: transparent; border: 1px dashed var(--jact-gemini-ink); margin-left: 16px; }
+.jact-who { display: block; margin-bottom: 2px; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: rgb(var(--c-indigo)); }
+.jact-msg.gemini .jact-who, .jact-msg.to-gemini .jact-who { color: var(--jact-gemini-ink); }
+.jact-md > :first-child { margin-top: 0; } .jact-md > :last-child { margin-bottom: 0; }
+.jact-md p { margin: 0 0 6px; } .jact-h { font-weight: 600; }
+.jact-list { margin: 0 0 6px; padding-left: 20px; list-style: disc; } ol.jact-list { list-style: decimal; }
+.jact-code { padding: 1px 5px; border-radius: 4px; background: var(--jact-soft); font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.jact-pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--jact-soft); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+.jact-link { color: rgb(var(--c-indigo)); text-decoration: underline; }
+.jact-tool, .jact-result { margin-left: 8px; font-size: 12.5px; }
+.jact-tool > summary, .jact-result > summary { display: flex; gap: 8px; align-items: baseline; min-height: 28px; padding: 2px 4px; cursor: pointer; border-radius: 6px; list-style: none; color: var(--jact-muted); }
+.jact-tool > summary::-webkit-details-marker, .jact-result > summary::-webkit-details-marker { display: none; }
+.jact-tool > summary:hover, .jact-result > summary:hover { background: var(--jact-soft); }
+.jact-tool > summary::before, .jact-result > summary::before { content: "\25B8"; flex: none; }
+.jact-tool[open] > summary::before, .jact-result[open] > summary::before { content: "\25BE"; }
+.jact-tool-name { flex: none; font-weight: 600; color: var(--jact-ink); }
+.jact-tool-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.jact-tool[open] .jact-tool-text { white-space: normal; overflow-wrap: anywhere; }
+.jact-result { margin-left: 28px; }
+.jact-result.err > summary { color: rgb(var(--c-flame)); }
+.jact-perm { margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(206, 159, 53, .18); border: 1px solid #ce9f35; font-weight: 600; }
+.jact-typing { display: flex; align-items: center; gap: 8px; padding: 6px 12px 10px; color: var(--jact-muted); font-size: 12px; }
+.jact-dots { display: inline-flex; gap: 3px; }
+.jact-dots i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: jact-dot 1.2s infinite ease-in-out; }
+.jact-dots i:nth-child(2) { animation-delay: .15s; } .jact-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes jact-dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+.jact-more { position: absolute; right: 12px; bottom: 44px; min-height: 36px; padding: 0 12px; border: 0; border-radius: 999px; background: rgb(var(--c-indigodeep)); color: #fff; font: inherit; font-size: 12px; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+@media (prefers-reduced-motion: reduce) { .jact-dots i { animation: none; opacity: .6; } .jact-btn { transition: none; } }
+@media (max-width: 640px) { .jact-msg { max-width: 100%; } .jact-log { max-height: 55vh; padding: 8px; } .jact-msg.gemini, .jact-msg.to-gemini { margin-left: 8px; } }

@@ -387,7 +387,8 @@ def test_runners_page_needs_a_web_session_and_an_account(est, client, signed_in,
     assert client.get("/acme/machines", headers={"cookie": signed_in["cookie"]}).status_code == 200
     assert client.get("/acme-nonexistent/machines", headers={"cookie": signed_in["cookie"]}).status_code == 404
     _project("acme-app", "acmeapp", est["acme"])
-    assert client.get("/acme-app/machines", headers={"cookie": signed_in["cookie"]}).status_code == 404   # not an account
+    page = client.get("/acme-app/machines", headers={"cookie": signed_in["cookie"]})   # not an account (#987): not a dead end, it links the account's page
+    assert page.status_code == 200 and 'href="/acme/machines?tab=runners"' in page.text
     monkeypatch.setattr(config, "WEB_AUTH", "off")   # no sign-in = no person to make a code for
     assert client.get("/acme/runners").status_code == 403
 

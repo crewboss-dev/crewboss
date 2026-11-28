@@ -472,7 +472,8 @@ def pin_findings(files: dict[str, dict], pins, enforce: bool = True) -> tuple[li
     sev = BLOCK if enforce else WARN
     pinned = set(pins or ())
     out: list[dict] = []
-    unreviewed = [{"path": p, **meta} for p, meta in sorted(files.items()) if (p, meta["sha256"]) not in pinned]
+    # a 0-byte file (a .gitkeep, an empty SKILL.md) has no instructions to load, so it is never "unreviewed" (and could never be listed for review)
+    unreviewed = [{"path": p, **meta} for p, meta in sorted(files.items()) if meta.get("size") != 0 and (p, meta["sha256"]) not in pinned]
     if len(files) > MAX_AGENT_FILES:
         out.append(finding(".claude", "config.unreviewed", sev, f"{len(files)} agent, command and skill files: more than {MAX_AGENT_FILES} cannot be reviewed"))
         return out, []

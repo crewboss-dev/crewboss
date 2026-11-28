@@ -1,0 +1,25 @@
+{# 0.1.2: unreviewed agent files, handled IN the task window (no jump to Machines). Needs: task, base, run.agent_files (agent_pins.trust_block). The
+   project Owner gets the one primary button, which pins exactly the signed list shown here; anyone else only the plain sentence. The owner can read every file's full text; ones that look like they can run things are open. #}
+{% set af = run.agent_files %}
+<div class="w-full" data-agent-files-trust>
+  {% if run.trust_notice %}<p class="text-small rounded-lg bg-status-warn/15 px-3 py-2 mb-1" role="alert" data-trust-notice>{{ run.trust_notice }}</p>{% endif %}
+  {% if af.can_trust %}
+  <p class="text-small" data-trust-text>This project's repo has {{ af.n }} agent file{{ 's' if af.n != 1 }} Crewboss hasn't checked yet (skills and commands the agent would load).{% if af.executable %} {{ af.executable }} of them look like they can run things (open by default); you can read every file under "See the files" first.{% endif %}</p>
+  <form hx-post="{{ base }}/tasks/{{ task.id }}/run/trust-agent-files" hx-target="#drawer-content" hx-swap="innerHTML" class="mt-1">
+    <input type="hidden" name="snap" value="{{ af.snap }}"><input type="hidden" name="sig" value="{{ af.sig }}">
+    <button type="submit" class="btn-primary text-small touch-target" data-now-primary data-trust-run>Trust these files and run</button></form>
+  {% else %}
+  <p class="text-small" data-trust-wait>Waiting for the project owner to trust this project's agent files.</p>
+  {% endif %}
+  <details class="mt-1" data-trust-files{% if af.executable and af.can_trust %} open{% endif %}><summary class="press cursor-pointer text-micro underline text-charcoal/60 touch-target">See the files</summary>
+    {% for folder, files in af.groups %}<p class="text-micro font-mono break-all mt-1">{{ folder }}/</p>
+    <ul class="text-micro">{% for f in files %}<li>
+      {% if f.text is not none or f.too_big %}
+      <details class="mt-0.5" data-trust-file{% if f.flag %} open data-trust-flagged{% endif %}><summary class="press cursor-pointer font-mono break-all touch-target">{{ f.name }}{% if f.flag %} <span class="font-sans font-semibold">can run things</span>{% endif %} <span class="font-sans text-charcoal/55">{{ f.size }} bytes</span></summary>
+        {% if f.too_big %}<p class="mt-1 text-charcoal/70" data-trust-too-big>Too large to show here ({{ f.size }} bytes), so it cannot be reviewed or trusted.</p>
+        {% else %}<pre class="mt-1 p-2 bg-line/40 text-micro font-mono whitespace-pre-wrap break-words max-h-72 overflow-auto" tabindex="0" data-trust-file-text>{{ f.text }}</pre>{% endif %}
+      </details>
+      {% else %}<span class="font-mono break-all">{{ f.name }}</span>{% endif %}
+    </li>{% endfor %}</ul>{% endfor %}
+  </details>
+</div>

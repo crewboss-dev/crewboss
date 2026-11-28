@@ -1260,3 +1260,11 @@ def test_time_limit_keeps_the_real_push_failure_reason(tmp_path, monkeypatch):
     monkeypatch.setattr(worker_mod.Worker, "_push", lambda self, wt, job, base, rc, finish=None: (False, "push failed: remote said no"))
     w, dash, remote, out, state = asyncio.run(_run_one(tmp_path, monkeypatch, "commit_hang", max_seconds=2))
     assert "push failed: remote said no" in dash.finishes[0]["summary"]
+
+
+def test_python_dash_m_runs_the_cli():
+    """`python -m crewboss_runner --version` works like `crewboss-runner --version` (the PATH fallback)."""
+    runner_dir = str(Path(__file__).resolve().parent.parent / "runner")
+    r = subprocess.run([sys.executable, "-m", "crewboss_runner", "--version"], capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "PYTHONPATH": runner_dir})
+    assert r.returncode == 0 and r.stdout.strip().split()[-1][0].isdigit(), r.stderr

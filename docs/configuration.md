@@ -1,5 +1,7 @@
 # Configuration
 
+*For advanced users. A normal install never needs to edit anything here: `./crewboss install` writes it for you.*
+
 Each Crewboss install keeps its own settings outside the repository, in the **instance folder**: `CREWBOSS_HOME`
 (default `~/.crewboss`; mounted read-only at `/crewboss-home` in the container). `./crewboss install` creates it.
 
@@ -58,7 +60,7 @@ These are the keys the code reads (`app/instance.py` and `app/config.py`). `inst
 | `slug_prefix` | string | A prefix dropped from a project slug when its session short name is derived (`acme-` makes `acme-erp` get `erp`). Default none. |
 | `job_mcp_servers` | list | Extra MCP servers every runner job gets beside the built-in one. Each has `name`, `url`, optional `projects` (slugs). It is reached from the runner PC's own network and no credential is sent. |
 | `merge_executor` | mapping | `bot_login` (the GitHub account Crewboss merges as) and `deny_logins` (human accounts it must refuse). Turning the merge executor on is refused without a bot login. |
-| `runner_repo` | string | The repository URL shown in the runner install how-to. |
+| `runner_repo` | string | The repository URL shown in the runner install how-to. Default: the public Crewboss repository (`https://github.com/crewboss-dev/crewboss.git`). |
 | `runner_repo_private` | bool | Add a "sign git in to GitHub" step to that how-to. Default `false`. |
 | `connections` | mapping | Named external connections shown on the Connections page (see `app/config.py`). |
 | `chrome_upstream_path` | string | Developer use: a path the UI-drift test compares against. Unset skips it. |
@@ -70,7 +72,25 @@ names with `--lan-host`). Browsers show a one-time warning; nothing is installed
 changes, run `./crewboss lan-address` to reissue the certificate. Administration, then Front door, upgrades the same install to a
 Let's Encrypt certificate for your own domain (HTTP-01: the name must point here and port 80 must reach the machine). The app talks to
 a small sidecar (`frontdoor_agent`) that only accepts typed actions from the holder of `frontdoor-token`; it does not hand out
-Caddy config, files or Docker.
+Caddy config, files or Docker. The proxy runs as the `frontdoor` service; `./crewboss up` also upgrades an install from before the
+sidecar existed (its bundled proxy settings move under it, via `ensure_frontdoor`) and nothing else changes.
+
+### Opening the app from another computer (details)
+
+The app listens on `127.0.0.1` only, and a browser may sign in only from the app's own address (`origin_hosts`): it refuses writes from
+any other address (403 "Origin not a dashboard host"). The ways to reach it:
+
+* **SSH tunnel** (quick, nothing exposed): on the other computer run `ssh -L <port>:localhost:<port> <server>`, leave it open, browse to
+  `http://localhost:<port>`.
+* **Network install with a real host name**: `./crewboss install --mode network --domain crew.example.com --proxy bundled --yes`. The name
+  must already point at the server and ports 80 and 443 must reach it. The installer writes `origin_hosts` and `public_url` for you.
+* **Your own reverse proxy**: `--proxy existing` prints ready-made Caddy and nginx snippets (also saved in `<instance folder>/proxy/`);
+  point them at `127.0.0.1:<port>`.
+* **Non-standard ports**: `--https-port 8443` only changes the port the container binds on this machine; browsers still use
+  `https://crew.example.com` (a router forwards 443 to it), which is what the installer assumes (`--public-port 443`). If browsers really
+  use `https://crew.example.com:8443`, say so with `--public-port 8443`: it goes into `public_url` and `origin_hosts` as
+  `crew.example.com:8443`. The same flag works with your own proxy: `./crewboss install --mode network --domain crew.example.com --proxy existing --public-port 8443`.
+* Passkeys are tied to the name: keep it for good.
 
 `tls_check` for LAN: the installer writes `tls_check: warn`. A LAN host is not checked against the system trust store (a self-signed
 certificate is expected); instead the app does a handshake to the front door and compares the certificate's fingerprint with

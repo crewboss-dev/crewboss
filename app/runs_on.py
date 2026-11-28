@@ -27,12 +27,24 @@ def _connected(device_id: int) -> bool:
     return bool(runner_ws.connected(device_id))
 
 
-def my_devices(account_id: int, user_id: int) -> list[dict]:
-    """The person's live runners in this account (not revoked, not expired), oldest first."""
+def my_devices(account_id: int, user_id: int, project_id: int | None = None) -> list[dict]:
+    """The person's live runners in this account (not revoked, not expired), oldest first. With `project_id`: only those the project may use, that
+    is its allocated runners when it has an allocation (Settings, Runners for this project; the claim enforces the same), else all of them."""
     with get_cursor(commit=False) as cur:
         cur.execute("SELECT id, name, platform, labels FROM device_tokens WHERE account_id = %s AND user_id = %s "
-                    "AND revoked_at IS NULL AND expires_at > now() ORDER BY id", (account_id, user_id))
+                    "AND revoked_at IS NULL AND expires_at > now() "
+                    "AND (%s::int IS NULL OR NOT EXISTS (SELECT 1 FROM project_runners pr WHERE pr.project_id = %s) "
+                    "OR EXISTS (SELECT 1 FROM project_runners pr WHERE pr.project_id = %s AND pr.device_id = device_tokens.id)) ORDER BY id",
+                    (account_id, user_id, project_id, project_id, project_id))
         return [dict(r) for r in cur.fetchall()]
+
+
+def is_allocated(project_id: int, device_id: int) -> bool:
+    """May the project's jobs run on this runner? True when the project has no allocation, or the runner is in it."""
+    with get_cursor(commit=False) as cur:
+        cur.execute("SELECT NOT EXISTS (SELECT 1 FROM project_runners WHERE project_id = %s) OR EXISTS "
+                    "(SELECT 1 FROM project_runners WHERE project_id = %s AND device_id = %s) AS ok", (project_id, project_id, device_id))
+        return cur.fetchone()["ok"]
 
 
 def profile_labels() -> dict[str, list[str]]:
@@ -51,7 +63,17 @@ def get_pref(project_id: int, user_id: int) -> int | None:
                     "WHERE p.project_id = %s AND p.user_id = %s AND d.revoked_at IS NULL AND d.expires_at > now()",
                     (project_id, user_id))
         row = cur.fetchone()
-        return row["device_id"] if row else None
+    # a saved choice the project's allocation no longer allows is ignored (it is shown under More options, never used)
+    return row["device_id"] if row and is_allocated(project_id, row["device_id"]) else None
+
+
+def saved_pref_ignored(project_id: int, user_id: int) -> str:
+    """The name of the person's saved "Runs on" runner when the project's allocation excludes it, else ''."""
+    with get_cursor(commit=False) as cur:
+        cur.execute("SELECT d.id, d.name FROM project_runner_prefs p JOIN device_tokens d ON d.id = p.device_id WHERE p.project_id = %s AND p.user_id = %s "
+                    "AND d.revoked_at IS NULL AND d.expires_at > now()", (project_id, user_id))
+        row = cur.fetchone()
+    return row["name"] if row and not is_allocated(project_id, row["id"]) else ""
 
 
 def set_pref(project_id: int, user_id: int, device_id: int | None, by: str = "") -> None:
@@ -66,6 +88,8 @@ def set_pref(project_id: int, user_id: int, device_id: int | None, by: str = "")
         dev = cur.fetchone()
         if not dev:
             raise NotFound(f"runner {device_id} not found")
+        if not is_allocated(project_id, device_id):
+            raise BadRequest("that runner is not allocated to this project (Settings, Runners for this project)")
         cur.execute("INSERT INTO project_runner_prefs (project_id, user_id, device_id) VALUES (%s, %s, %s) "
                     "ON CONFLICT (project_id, user_id) DO UPDATE SET device_id = EXCLUDED.device_id, updated_at = now()",
                     (project_id, user_id, device_id))
@@ -83,13 +107,13 @@ def options(project_id: int, user_id: int) -> dict:
     from app import environment
     has_env = environment.count(project_id) > 0
     devs = []
-    for d in my_devices(account_id, user_id):
+    for d in my_devices(account_id, user_id, project_id):
         devs.append({**d, "connected": _connected(d["id"]), "selected": d["id"] == pref,
                      "missing": [{"label": l, "profiles": ps} for l, ps in needs.items() if l not in d["labels"]],
                      # the environment badge (#810 step 6): Compliant / Missing N / Not checked, only when the project lists requirements
                      "env": environment.latest(project_id, d["id"]) if has_env else None})
     current = next((d for d in devs if d["selected"]), None)
-    return {"devices": devs, "current": current, "any": current is None, "default_id": pref}
+    return {"devices": devs, "current": current, "any": current is None, "default_id": pref, "ignored_pref": saved_pref_ignored(project_id, user_id)}
 
 
 def resolve(project_id: int, user_id: int, choice: str) -> int | None:
@@ -105,13 +129,15 @@ def resolve(project_id: int, user_id: int, choice: str) -> int | None:
         raise BadRequest("pick one of your runners, or any") from None
     if device_id not in {d["id"] for d in my_devices(_account_id(project_id), user_id)}:
         raise NotFound(f"runner {device_id} not found")
+    if not is_allocated(project_id, device_id):
+        raise BadRequest("that runner is not allocated to this project (Settings, Runners for this project)")
     return device_id
 
 
-def _alternates(account_id: int, user_id: int, not_id: int, requires: list[str]) -> list[dict]:
+def _alternates(account_id: int, user_id: int, not_id: int, requires: list[str], project_id: int | None = None) -> list[dict]:
     """Other live runners of the person that are ONLINE and hold every label the job needs: who could take it now."""
     need = set(requires)
-    return [d for d in my_devices(account_id, user_id) if d["id"] != not_id and need <= set(d["labels"]) and _connected(d["id"])]
+    return [d for d in my_devices(account_id, user_id, project_id) if d["id"] != not_id and need <= set(d["labels"]) and _connected(d["id"])]
 
 
 def offline_offer(project_id: int, user_id: int, pin: int | None, requires: list[str]) -> dict | None:
@@ -120,7 +146,7 @@ def offline_offer(project_id: int, user_id: int, pin: int | None, requires: list
     if pin is None:
         return None
     account_id = _account_id(project_id)
-    dev = next((d for d in my_devices(account_id, user_id) if d["id"] == pin), None)
+    dev = next((d for d in my_devices(account_id, user_id, project_id) if d["id"] == pin), None)
     if dev is not None and _connected(pin):
         return None
     if dev is None:
@@ -129,7 +155,7 @@ def offline_offer(project_id: int, user_id: int, pin: int | None, requires: list
             cur.execute("SELECT name FROM device_tokens WHERE id = %s AND account_id = %s AND user_id = %s", (pin, account_id, user_id))
             row = cur.fetchone()
         dev = {"id": pin, "name": row["name"] if row else "a removed runner", "labels": [], "dead": True}
-    alts = _alternates(account_id, user_id, pin, requires)
+    alts = _alternates(account_id, user_id, pin, requires, project_id)
     return {"device": dev, "alternates": alts} if alts else None
 
 
@@ -162,7 +188,7 @@ def label_gap(project_id: int, user_id: int, pin: int | None, requires: list[str
     if pin is None:
         return None
     account_id = _account_id(project_id)
-    mine = my_devices(account_id, user_id)
+    mine = my_devices(account_id, user_id, project_id)
     dev = next((d for d in mine if d["id"] == pin), None)
     if dev is None:
         return None
@@ -180,7 +206,12 @@ def plan_for_task(task_id: int, user_id: int, profile: str, extra_labels="") -> 
     project_id = _project_of_task(task_id)
     pin = get_pref(project_id, user_id)
     if pin is None:
-        return {"pin": None, "message": ""}
+        from app import run_plan       # no saved runner: the same automatic choice as the Run button; a project nobody's runner is allocated to is said plainly
+        prof = next((p for p in jobs.list_profiles() if p["name"] == profile), None)
+        pick = run_plan.choose_runner(project_id, user_id, [*(prof["requires_labels"] if prof else []), *jobs.parse_labels(extra_labels or [])])
+        if pick["device"]:
+            return {"pin": pick["device"]["id"], "message": ""}
+        return {"pin": None, "message": pick["message"] if pick["starved"] else ""}
     prof = next((p for p in jobs.list_profiles() if p["name"] == profile), None)
     requires = [*(prof["requires_labels"] if prof else []), *jobs.parse_labels(extra_labels or [])]
     gap = label_gap(project_id, user_id, pin, requires)
@@ -202,7 +233,7 @@ def installed_pin(cur, task_id: int, project_id: int, user_id: int, account_id: 
     then, so a task is never wedged). Naming another runner while the lock holds is refused. With no prior runner: the one asked for, else the
     saved "Runs on" runner, else the only runner that holds the labels. Several runners and no choice: BadRequest."""
     need = set(requires or [])
-    mine = my_devices(account_id, user_id)
+    mine = my_devices(account_id, user_id, project_id)
     fit = {d["id"] for d in mine if need <= set(d["labels"])}
     cur.execute("SELECT t.status, (SELECT j.pin_device_id FROM jobs j JOIN device_tokens d ON d.id = j.pin_device_id WHERE j.task_id = t.id "
                 "AND j.user_id = %s AND d.revoked_at IS NULL AND d.expires_at > now() ORDER BY j.id DESC LIMIT 1) AS prior "
@@ -215,6 +246,8 @@ def installed_pin(cur, task_id: int, project_id: int, user_id: int, account_id: 
                              "queue the next job on that runner, or finish the task first")
         return prior
     if requested is not None:
+        if not is_allocated(project_id, requested):
+            raise BadRequest("that runner is not allocated to this project (Settings, Runners for this project)")
         return requested
     pref = get_pref(project_id, user_id)
     if pref is not None and pref in fit:
@@ -242,6 +275,9 @@ def repin(job_id: int, user_id: int, device_id: int) -> dict:
             raise NotFound(f"runner {device_id} not found")
         if not set(job["requires_labels"]) <= set(dev["labels"]):
             raise BadRequest("that runner lacks a label the job needs")
+        cur.execute("SELECT t.project_id FROM tasks t WHERE t.id = %s", (job["task_id"],))
+        if not is_allocated(cur.fetchone()["project_id"], device_id):
+            raise BadRequest("that runner is not allocated to this project (Settings, Runners for this project)")
         cur.execute("UPDATE jobs SET pin_device_id = %s WHERE id = %s RETURNING *", (device_id, job_id))
         job = cur.fetchone()
         repo.record_activity(cur, job["account_id"], f"user:{user_id}", "moved", "job", job_id, f"Moved queued job {job_id} to runner {device_id}")

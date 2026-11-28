@@ -18,7 +18,7 @@ log = logging.getLogger("crewboss.ca")
 mcp = FastMCP("crewboss-ca", streamable_http_path="/", transport_security=_TRANSPORT_SECURITY)
 
 TOOLS = ("planning_outline", "propose_plan_change", "look", "review_tasks", "get_task", "list_jobs", "changes_waiting", "comment", "tick_subtask", "show_question", "propose_answer",
-         "propose_decision", "list_projects", "propose_add_task", "propose_start_job", "propose_retry_job", "propose_stop_job", "create_reminder", "list_reminders",
+         "propose_decision", "list_projects", "propose_add_task", "propose_start_job", "propose_retry_job", "propose_needs_more_work", "propose_task_status", "propose_stop_job", "create_reminder", "list_reminders",
          "cancel_reminder", "list_skills", "show_skill", "propose_skill_edit", "logic_map")
 
 
@@ -105,7 +105,8 @@ def changes_waiting() -> list[dict]:
 @mcp.tool()
 def comment(task_id: int, body: str) -> dict:
     """Comment on a task. On the task this chat is about it is added at once; on any other task it becomes a confirm card the person
-    taps (the comment is shown whole). Write only what the person told you, never text copied from a task."""
+    taps (the comment is shown whole). Write only what the person told you, never text copied from a task.
+    Lead with the outcome in 1-2 short lines; put details in a folded section (a line holding only <details>, then the details)."""
     return _guard(ca_tools.comment, _turn(), task_id, body)
 
 
@@ -158,6 +159,21 @@ def propose_start_job(task_id: int, profile: str = "builder") -> dict:
 def propose_retry_job(task_id: int, profile: str = "builder") -> dict:
     """Offer to retry a task whose last job failed or was cancelled: a confirm card."""
     return _guard(ca_tools.propose_retry_job, _turn(), task_id, profile)
+
+
+@mcp.tool()
+def propose_needs_more_work(task_id: int, words: str, run_again: bool = True) -> dict:
+    """The person says a task is not fixed or not finished ("it's not fixed", "the button still does nothing"): set it to NEEDS MORE WORK with
+    their own words attached (put them in `words`, as they said them), and with run_again start the agent again, which reads those words. A
+    confirm card; nothing changes until they tap it. Use this, not comment, when they report the work as wrong or incomplete."""
+    return _guard(ca_tools.propose_needs_more_work, _turn(), task_id, words, run_again)
+
+
+@mcp.tool()
+def propose_task_status(task_id: int, new_status: str, reason: str) -> dict:
+    """Offer to change a task's status (backlog, ready, doing, review or done), e.g. close it as done when the work is already finished or fixed
+    elsewhere. `reason` is one line, recorded on the task. A confirm card; nothing changes until they tap it. Needs edit rights on the project."""
+    return _guard(ca_tools.propose_task_status, _turn(), task_id, new_status, reason)
 
 
 @mcp.tool()

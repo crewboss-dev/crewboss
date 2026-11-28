@@ -78,6 +78,29 @@
   </details>
   {% endif %}
 </section>
+{% if runner_alloc is defined and runner_alloc %}
+{# Runners for this project (change #90, settles #79): Run picks among these by itself (online, right labels, least busy). None ticked = any runner of the
+   person who presses Run. A runner not ticked here never takes this project's jobs once any is ticked. #}
+<section class="card p-4 mb-6" aria-label="Runners for this project" id="runners" data-project-runners>
+  <h3 class="font-semibold text-small mb-1">Runners for this project</h3>
+  <p class="text-micro text-charcoal/60 mb-2">Run picks one of these by itself: online, with the labels the job needs, the least busy first. {% if not runner_alloc.allocated %}None is ticked, so any runner of the person who presses Run may take it.{% else %}Only the ticked runners take this project's jobs.{% endif %}</p>
+  {% if runner_alloc.devices %}
+  <form method="post" action="{{ base }}/settings/runners">
+    <ul class="divide-y divide-line">
+      {% for d in runner_alloc.devices %}
+      <li class="py-1.5"><label class="flex flex-wrap items-center gap-x-2 text-small touch-target"><input type="checkbox" name="device_id" value="{{ d.id }}" {% if d.id in runner_alloc.allocated %}checked{% endif %} data-runner-alloc="{{ d.id }}">
+        <span class="font-semibold">{{ d.name }}</span><span class="text-micro text-charcoal/55">{{ d.user_name }}{% if d.labels %} &middot; {{ d.labels|join(', ') }}{% endif %}</span>
+        <span class="chip {{ 'bg-status-ok/10 text-status-ok' if d.connected else 'bg-charcoal/[.06] text-charcoal/60' }}">{{ 'online' if d.connected else 'offline' }}</span></label></li>
+      {% endfor %}
+    </ul>
+    <button type="submit" class="btn-ghost text-small border border-line touch-target mt-2" data-runner-alloc-save>Save runners</button>
+  </form>
+  {% else %}
+  <p class="text-small text-charcoal/65">No runner is enrolled in this account yet. <a class="underline" href="{{ runner_alloc.machines_url }}">Add one on the Machines page.</a></p>
+  {% endif %}
+</section>
+{% endif %}
+
 {% endif %}
 
 

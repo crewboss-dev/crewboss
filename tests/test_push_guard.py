@@ -3,7 +3,9 @@ Each test builds a scratch git repo in tmp_path with a bare repo as its remote; 
 (run with `python -m pytest --noconftest tests/test_push_guard.py` to skip the suite's Postgres container).
 Addresses and keys are assembled from pieces so this file itself carries none."""
 import importlib.util
+import fnmatch
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -453,12 +455,55 @@ def test_item11_the_ai_job_warns_when_skipped_and_the_jobs_have_timeouts():
     assert "::warning" in wf and wf.count("timeout-minutes:") == 2
 
 
+_GUARDED = (".github/workflows/", ".github/CODEOWNERS", "scripts/commit_guard.py", "scripts/push_guard.py", "scripts/ai_diff_read.py",
+            "scripts/ci_guard.sh", "scripts/hooks/", "scripts/binary-allow.txt", "scripts/denylist-allow.txt", ".gitleaks.toml",
+            "scripts/internal-ip-baseline.json")
+_OWNER_TOKEN = r"@(OWNER|[A-Za-z0-9][A-Za-z0-9-]*(/[A-Za-z0-9_.-]+)?)"      # the template placeholder, a real @handle or @org/team
+
+
+def _co_matches(pattern: str, probe: str) -> bool:
+    """CODEOWNERS pattern vs a repo path: exact, or a directory prefix (never a bare string prefix: commit_guard.py.bak is not
+    commit_guard.py). Globs go through fnmatch."""
+    anchored = pattern.startswith("/")
+    pat = pattern.lstrip("/")
+    if "*" in pat or "?" in pat:
+        return fnmatch.fnmatch(probe, pat) or (not anchored and "/" not in pat and fnmatch.fnmatch(probe.rsplit("/", 1)[-1], pat))
+    if pat.endswith("/"):
+        return probe.startswith(pat)
+    return probe == pat or probe.startswith(pat + "/")
+
+
+def _unowned(text: str) -> list[str]:
+    """Guarded paths whose LAST matching CODEOWNERS rule (GitHub's semantics) has no valid owner, or that no rule matches."""
+    rules = []
+    for ln in text.splitlines():
+        ln = ln.split("#", 1)[0].strip()
+        if ln:
+            rules.append((ln.split()[0], ln.split()[1:]))
+    out = []
+    for path in _GUARDED:
+        probe = path + "x" if path.endswith("/") else path                          # a file inside a guarded folder
+        last = next((owners for pat, owners in reversed(rules) if _co_matches(pat, probe)), None)
+        if not last or not all(re.fullmatch(_OWNER_TOKEN, t) for t in last):
+            out.append(path)
+    return out
+
+
 def test_item11_codeowners_cover_the_guards():
-    text = (ROOT / ".github" / "CODEOWNERS").read_text()
-    for path in (".github/workflows/", "scripts/commit_guard.py", "scripts/push_guard.py", "scripts/ai_diff_read.py", ".gitleaks.toml",
-                 "scripts/internal-ip-baseline.json"):
-        assert any(ln.startswith("/" + path) and "@OWNER" in ln for ln in text.splitlines()), path
-    assert "@OWNER" in (ROOT / "CONTRIBUTING.md").read_text()
+    # private template carries @OWNER; public main carries the real handle: either passes
+    assert _unowned((ROOT / ".github" / "CODEOWNERS").read_text()) == []
+    assert re.search(rf"(?<![\w.]){_OWNER_TOKEN}", (ROOT / "CONTRIBUTING.md").read_text())
+
+
+def test_item11_codeowners_check_uses_last_match_and_exact_paths():
+    ok = [f"/{p} @someone" if i % 2 else f"/{p} @org/guards" for i, p in enumerate(_GUARDED)]
+    assert _unowned("\n".join(ok)) == []
+    assert _unowned("\n".join(ok[1:])) == [_GUARDED[0]]                              # no rule for a path
+    assert _unowned("\n".join(ok + ["/scripts/commit_guard.py"])) == ["scripts/commit_guard.py"]   # the LAST rule un-owns it
+    assert _unowned("\n".join(ok + ["/scripts/commit_guard.py.bak @x"])) == []      # a lookalike does not matter
+    assert _unowned("\n".join([ln for ln in ok if "commit_guard" not in ln] + ["/scripts/commit_guard.py.bak @x"])) \
+        == ["scripts/commit_guard.py"]                                                # ...and does not cover it either
+    assert _unowned("\n".join([ln for ln in ok if "hooks" not in ln] + ["/scripts/ @x"])) == []   # a directory rule covers files in it
 
 
 # --- second review: stale tracking refs, tags on pushed commits, version strings, magic bytes, the owner placeholder -------------------------
@@ -936,3 +981,215 @@ def test_review5_ci_a_new_branch_whose_commits_are_all_on_the_default_branch_is_
     rc, err, out = ci.run(ci.tip, "refs/heads/release-1")
     assert rc == 0, err
     assert out["meta_only"] == "1" and out["range"] == ""
+
+
+def test_release_pr_touching_a_baselined_address_line_passes_but_a_new_address_does_not(repo):
+    """A point release is ONE commit on public main. Editing a line that already carries a baselined fixture address is fine (the
+    ratchet holds); a genuinely new address, or a second commit that adds then drops one, still blocks."""
+    repo.commit({"scripts/internal-ip-baseline.json": '{"t.py": 1}\n', "t.py": f"host = '{LAN}'  # a\n"}, msg="baselined fixture")
+    _git(repo.work, "push", "-q", "origin", "main")
+    _git(repo.work, "checkout", "-q", "-b", "release/x")
+    touched = repo.commit({"t.py": f"host = '{LAN}'  # b\n"}, msg="touch the fixture line")
+    r = repo.guard(touched, remote="new", local_ref="refs/heads/release/x", remote_ref="refs/heads/release/x")
+    assert r.returncode == 0, r.stderr
+    _git(repo.work, "checkout", "-q", "-B", "release/y", "origin/main")
+    new = repo.commit({"t.py": f"host = '{LAN}'  # a\nother = '{TEN}'\n"}, msg="a new address")
+    r = repo.guard(new, remote="new", local_ref="refs/heads/release/y", remote_ref="refs/heads/release/y")
+    assert r.returncode == 1 and "t.py" in r.stderr
+    _git(repo.work, "checkout", "-q", "-B", "release/z", "origin/main")
+    repo.commit({"u.py": f"x = '{TEN}'\n"}, msg="add")
+    two = repo.commit({"u.py": "x = 'h'\n"}, msg="drop")
+    r = repo.guard(two, remote="new", local_ref="refs/heads/release/z", remote_ref="refs/heads/release/z")
+    assert r.returncode == 1 and "u.py" in r.stderr
+
+
+# --- #988 review: the single-commit exemption is judged by address VALUE, not by line count -------------------------------------------
+def _poc_setup(repo, files, baseline):
+    repo.commit({"scripts/internal-ip-baseline.json": baseline, **files}, msg="baselined fixture")
+    _git(repo.work, "push", "-q", "origin", "main")
+    _git(repo.work, "checkout", "-q", "-b", "release/x")
+
+
+def _poc_push(repo, sha):
+    return repo.guard(sha, remote="new", local_ref="refs/heads/release/x", remote_ref="refs/heads/release/x")
+
+
+def test_poc988_swap_value_same_count_is_blocked(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": f"host = '{LAN}'\n"}, '{"t.py": 1}\n')
+    r = _poc_push(repo, repo.commit({"t.py": f"host = '{TEN}'\n"}, msg="swap"))
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_second_address_on_a_counted_line_is_blocked(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": f"host = '{LAN}'\n"}, '{"t.py": 1}\n')
+    r = _poc_push(repo, repo.commit({"t.py": f"host = '{LAN}'; core = '{CGNAT}'\n"}, msg="append"))
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_replacing_the_line_elsewhere_in_the_file_is_blocked(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": f"a = '{LAN}'\nb = 1\n"}, '{"t.py": 1}\n')
+    r = _poc_push(repo, repo.commit({"t.py": f"a = 'x'\nb = 1\nREAL_CORE = '{TEN}'\n"}, msg="move"))
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_an_ordinary_single_commit_push_to_main_cannot_swap_a_value(tmp_path):
+    repo = Scratch(tmp_path)
+    repo.commit({"scripts/internal-ip-baseline.json": '{"t.py": 1}\n', "t.py": f"host = '{LAN}'\n"}, msg="fixture")
+    _git(repo.work, "push", "-q", "origin", "main")
+    r = repo.guard(repo.commit({"t.py": f"host = '{TEN}'\n"}, msg="swap"))
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_a_value_the_file_already_had_may_move_to_another_line(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": f"a = '{LAN}'\nb = 1\n"}, '{"t.py": 1}\n')
+    r = _poc_push(repo, repo.commit({"t.py": f"a = 'x'\nb = '{LAN}'\n"}, msg="move a known value"))
+    assert r.returncode == 0, r.stderr
+
+
+def test_poc988_a_symlink_target_with_an_address_is_blocked(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": "x = 1\n"}, '{}\n')
+    os.symlink(f"/mnt/{TEN}/share", repo.work / "share")
+    _git(repo.work, "add", "-A"); _git(repo.work, "commit", "-qm", "link")
+    r = _poc_push(repo, _git(repo.work, "rev-parse", "HEAD").stdout.strip())
+    assert r.returncode == 1 and "share" in r.stderr
+
+
+def test_poc988_the_pre_commit_check_reads_a_symlink_target_not_the_file_it_points_at(tmp_path):
+    repo = Scratch(tmp_path)
+    repo.commit({"t.py": "x = 1\n"}, msg="base")
+    os.symlink(f"/mnt/{TEN}/share", repo.work / "share")
+    _git(repo.work, "add", "-A")
+    assert "share" in guard.ip_counts(guard.tracked(repo.work), repo.work)
+
+
+def test_poc988_a_base_from_an_old_tag_cannot_let_a_lowered_baseline_come_back(tmp_path):
+    repo = Scratch(tmp_path)
+    old = repo.commit({"scripts/internal-ip-baseline.json": '{"t.py": 2}\n', "t.py": f"a = '{LAN}'\nb = '{LAN}'\n"}, msg="v1")
+    _git(repo.work, "tag", "v1", old)
+    for i in range(64):                    # re-roll until the tag's sha sorts before main's tip (the old pick was first in hex order)
+        _git(repo.work, "reset", "-q", "--hard", old)
+        tip = repo.commit({"scripts/internal-ip-baseline.json": '{"t.py": 1}\n', "t.py": f"a = '{LAN}'\nb = 'x{i}'\n"}, msg=f"cleanup {i}")
+        if old < tip:
+            break
+    assert old < tip
+    _git(repo.work, "push", "-q", "-f", "origin", "main", "v1")
+    _git(repo.work, "checkout", "-q", "-b", "release/x")
+    sha = repo.commit({"scripts/internal-ip-baseline.json": '{"t.py": 2}\n', "t.py": f"a = '{LAN}'\nb = '{TEN}'\n"}, msg="re-add")
+    r = _poc_push(repo, sha)
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_ci_push_single_commit_swap_is_blocked(tmp_path):
+    ci = CI(tmp_path)
+    (ci.src / "app" / "config.py").write_text(f"TRUSTED = '{TEN}'\n")
+    _git(ci.src, "commit", "-qam", "swap"); _git(ci.src, "push", "-q", "origin", "main")
+    before = ci.tip; ci.reclone(); after = ci.tip
+    rc, err, out = ci.run(after, "refs/heads/main", before=before)
+    assert rc == 1 and "config.py" in err
+
+
+def test_poc988_ci_pr_single_commit_new_value_is_blocked(tmp_path):
+    ci = CI(tmp_path)
+    base = ci.tip
+    _git(ci.src, "checkout", "-q", "-b", "feat")
+    (ci.src / "app" / "config.py").write_text(f"TRUSTED = '{LAN}'; REAL = '{TEN}'\n")
+    _git(ci.src, "commit", "-qam", "pr"); _git(ci.src, "push", "-q", "origin", "feat")
+    ci.reclone(); head = _git(ci.ci, "rev-parse", "origin/feat").stdout.strip()
+    _git(ci.ci, "checkout", "-q", "--detach", head)
+    env = ci.env(EVENT="pull_request", PR_BASE=base, PR_HEAD=head, REF="refs/pull/1/merge")
+    rng = subprocess.run(["bash", "scripts/ci_guard.sh", "range"], cwd=ci.ci, capture_output=True, text=True, env=env)
+    out = dict(ln.split("=", 1) for ln in rng.stdout.splitlines())
+    env = ci.env(RANGE=out["range"], BASE=out["base"], EXCLUDE=out["exclude"], TIP_ONLY=out["tip_only"], REF_NAME="feat")
+    res = subprocess.run(["bash", "scripts/ci_guard.sh", "run"], cwd=ci.ci, capture_output=True, text=True, env=env)
+    assert res.returncode == 1 and "config.py" in res.stderr
+
+
+# --- #988 round 2: prefixes, forms, laundering between files, symlink retarget, base selection -----------------------------------------
+_PFX = "10." + "240.0."
+_NEWFULL = "10." + "240.0.5"
+
+
+@pytest.mark.parametrize("line", [f"h = '{_PFX}' + '5'", f"h = '{_PFX}' '5'", f"h = f'{_PFX}{{n}}'", f"h = '{_PFX}x'  # .5"])
+def test_poc988_a_prefix_in_the_base_does_not_admit_a_completed_address(tmp_path, line):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": f"ok = ip.startswith('{_PFX}')\n"}, '{"t.py": 1}\n')
+    r = _poc_push(repo, repo.commit({"t.py": f"{line}\n"}))
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_a_line_that_is_already_there_verbatim_may_carry_a_prefix(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": f"ok = ip.startswith('{_PFX}')\n"}, '{"t.py": 1}\n')
+    r = _poc_push(repo, repo.commit({"t.py": f"ok = ip.startswith('{_PFX}')\n# new comment\n"}))
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.parametrize("val", ["010." + "240.000.005", "::ffff:" + _NEWFULL, _NEWFULL + "/24", "http://" + _NEWFULL + ":8080/x"])
+def test_poc988_new_value_in_other_forms_is_blocked(tmp_path, val):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": f"a = '{LAN}'\n"}, '{"t.py": 1}\n')
+    r = _poc_push(repo, repo.commit({"t.py": f"a = '{LAN}'  # {val}\n"}))
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_removing_a_value_in_one_file_does_not_admit_it_in_another(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"a.py": f"x = '{TEN}'\n", "b.py": "y = 1\n"}, '{"a.py": 1}\n')
+    r = _poc_push(repo, repo.commit({"scripts/internal-ip-baseline.json": '{"b.py": 1}\n', "a.py": "x = 1\n", "b.py": f"y = '{TEN}'\n"}))
+    assert r.returncode == 1 and "b.py" in r.stderr
+
+
+def test_poc988_a_rename_that_brings_a_new_value_is_blocked(tmp_path):
+    body = "".join(f"line {i}\n" for i in range(30))
+    repo = Scratch(tmp_path); _poc_setup(repo, {"a.py": body + f"x = '{TEN}'\n"}, '{"a.py": 1}\n')
+    _git(repo.work, "mv", "a.py", "b.py")
+    r = _poc_push(repo, repo.commit({"scripts/internal-ip-baseline.json": '{"b.py": 1}\n', "b.py": body + f"x = '{CGNAT}'\n"}))
+    assert r.returncode == 1 and "b.py" in r.stderr
+
+
+def test_poc988_two_unpushed_commits_are_strict_even_if_the_second_moves_the_value(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": "x = 1\n"}, '{}\n')
+    repo.commit({"scripts/internal-ip-baseline.json": '{"t.py": 1}\n', "t.py": f"x = '{TEN}'\n"}, msg="private")
+    r = _poc_push(repo, repo.commit({"t.py": f"y = '{TEN}'\n"}, msg="move"))
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_retargeting_a_symlink_to_a_new_address_is_blocked(tmp_path):
+    repo = Scratch(tmp_path)
+    os.symlink(f"/mnt/{LAN}/a", repo.work / "share")
+    repo.commit({"scripts/internal-ip-baseline.json": '{"share": 1}\n'}, msg="link")
+    _git(repo.work, "push", "-q", "origin", "main"); _git(repo.work, "checkout", "-q", "-b", "release/x")
+    os.unlink(repo.work / "share"); os.symlink(f"/mnt/{TEN}/a", repo.work / "share")
+    r = _poc_push(repo, repo.commit({}, msg="retarget"))
+    assert r.returncode == 1 and "share" in r.stderr
+
+
+def test_poc988_a_remote_with_no_known_default_branch_is_strict(tmp_path):
+    repo = Scratch(tmp_path); _poc_setup(repo, {"t.py": f"a = '{LAN}'\n"}, '{"t.py": 1}\n')
+    _git(repo.work, "push", "-q", "origin", "main:refs/heads/trunk")
+    subprocess.run(["git", "--git-dir", str(repo.remote), "symbolic-ref", "HEAD", "refs/heads/nope"], check=True)
+    _git(repo.work, "push", "-q", "origin", ":main")
+    r = _poc_push(repo, repo.commit({"t.py": f"a = '{LAN}'  # touched\n"}))
+    assert r.returncode == 1 and "t.py" in r.stderr
+
+
+def test_poc988_ci_symlink_with_an_address_is_blocked_by_the_range_and_the_tree(tmp_path):
+    ci = CI(tmp_path)
+    os.symlink(f"/mnt/{TEN}/share", ci.src / "share"); _git(ci.src, "add", "-A"); _git(ci.src, "commit", "-qm", "l")
+    _git(ci.src, "push", "-q", "origin", "main"); before = ci.tip; ci.reclone()
+    rc, err, out = ci.run(ci.tip, "refs/heads/main", before=before)
+    tree = subprocess.run(["python3", "scripts/commit_guard.py", "--strict", "--no-gitleaks"], cwd=ci.ci, capture_output=True, text=True, env=ci.env())
+    assert rc == 1 and tree.returncode == 1
+
+
+def test_poc988_ci_orphan_single_commit_with_a_new_value_is_blocked(tmp_path):
+    ci = CI(tmp_path)
+    _git(ci.src, "checkout", "-q", "--orphan", "o")
+    (ci.src / "app" / "config.py").write_text(f"TRUSTED = '{TEN}'\n")
+    _git(ci.src, "add", "-A"); _git(ci.src, "commit", "-qm", "orphan"); _git(ci.src, "push", "-q", "origin", "o")
+    ci.reclone(); head = _git(ci.ci, "rev-parse", "origin/o").stdout.strip()
+    rc, err, out = ci.run(head, "refs/heads/o")
+    assert out["exclude"] and rc == 1 and "config.py" in err
+
+
+def test_poc988_a_single_commit_still_trips_secrets_and_message_checks(tmp_path):
+    repo = Scratch(tmp_path)
+    repo.commit({"scripts/internal-ip-baseline.json": '{"t.py": 1}\n', "t.py": f"h = '{LAN}'\n"}); _git(repo.work, "push", "-q", "origin", "main")
+    r = repo.guard(repo.commit({"k.txt": PRIVATE_KEY + "\n", "t.py": f"h = '{LAN}' # t\n"}, msg=f"at {TEN}"))
+    assert r.returncode == 1 and "k.txt" in r.stderr and "message" in r.stderr

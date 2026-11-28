@@ -1,0 +1,29 @@
+{# THE NOW LINE (changes #90 and #91): one sentence about the run, the one primary button and Stop. Included at the top of the task window by the
+   layout (#91); the full cards (partials/job_card.html while it runs, partials/job_outcome.html after) sit wherever the layout puts them.
+   Needs: task, base, run (pages._run_context: job, card, outcome, plan, live, can_run, is_starter, has_remote, can_start). Prints nothing when there is
+   nothing to say (signed out, no repo). Its buttons are `data-now-*` so they never clash with the Run form's own. #}
+{% if run.can_run and run.has_remote %}
+{% set oc = run.outcome %}
+<div class="flex flex-wrap items-center gap-x-3 gap-y-1" data-task-now>
+  {% if run.live %}
+    <span class="text-small" data-now-text>{{ run.card.title }} <span class="text-charcoal/60 tabular">{{ run.card.detail }}</span></span>
+    {% if run.agent_files %}{% include "partials/agent_files_trust.html" %}{% endif %}
+    {% if run.is_starter %}<form hx-post="{{ base }}/tasks/{{ task.id }}/run/cancel" hx-target="#drawer-content" hx-swap="innerHTML"><button type="submit" class="btn-ghost text-small border border-line touch-target" data-now-stop>Stop</button></form>{% endif %}
+  {% elif oc %}
+    <span class="text-small" data-now-text><strong>{{ oc.label }}</strong>{% if oc.summary %} <span class="text-charcoal/70">{{ oc.summary|truncate(110, true, '\u2026', 0) }}</span>{% endif %}</span>
+    {% if oc.key == 'done' and not oc.task_done %}
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run/done" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-primary text-small touch-target" data-now-primary data-now-mark-done>Mark done</button></form>
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run/review" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-ghost text-small border border-line touch-target" data-now-review>Review the change</button></form>
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-ghost text-small border border-line touch-target" data-now-run-again>Run again</button></form>
+    {% elif oc.key == 'done' %}
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run/review" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-primary text-small touch-target" data-now-primary>Review the change</button></form>
+    {% elif oc.unreviewed and run.agent_files %}
+      {% include "partials/agent_files_trust.html" %}
+    {% else %}
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-primary text-small touch-target" data-now-primary>Run again</button></form>
+    {% endif %}
+  {% elif run.plan and run.plan.profile and run.can_start %}
+    {# nothing more to say: "Will run on ..." is printed once, by the form below. The one primary here is the Run button of the form right below (partials/run_form.html, with its settings popover) #}
+  {% endif %}
+</div>
+{% endif %}

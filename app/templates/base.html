@@ -51,6 +51,7 @@
   <link rel="stylesheet" href="{{ asset('css/ca.css') }}">
   {# The first-run how-to tour (#938): its look. js/tour.js draws it; the text is app/tour_steps.yaml. #}
   <link rel="stylesheet" href="{{ asset('css/tour.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/activity.css') }}">
   <script>try { if (localStorage.getItem('crewboss-nav-pinned') === '1') document.documentElement.classList.add('nav-pinned'); } catch (e) {}</script>
   <script>try { if (localStorage.getItem('crewboss-fav-seen') === '1') document.documentElement.classList.add('fav-seen'); } catch (e) {}</script>
   <script>try { if (localStorage.getItem('crewboss-ca-open') === '1') document.documentElement.classList.add('ca-open'); } catch (e) {}</script>
@@ -96,6 +97,8 @@
   <script src="{{ asset('js/stepup.js') }}" data-stepup-passkey-src="{{ asset('js/passkey.js') }}" defer></script>
   {# "Runs on" pill in the project header (#810): after chrome.js, which owns dragSheet. #}
   <script src="{{ asset('js/runs-on.js') }}" defer></script>
+  {# The live runner conversation (#89): fills the job card's Activity slot, read-only. #}
+  <script src="{{ asset('js/activity.js') }}" defer></script>
   {# Notifications (#487): registers /sw.js and keeps this device subscribed; the browser's own prompt (asked once, on
      the first click) and its settings are the only controls (owner 11-09). #}
   <script src="{{ asset('js/push.js') }}" defer></script>

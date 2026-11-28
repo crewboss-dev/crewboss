@@ -215,3 +215,7 @@ By making a contribution to this project, I certify that:
 ```
 
 Questions about the DCO or the licence: open a GitHub issue or discussion.
+
+## The how-to tour
+
+The tour's text lives in `app/tour_steps.yaml`, and `tests/test_tour.py` keeps its steps in step with the numbered headings of `docs/getting-started.md`. If you renumber or rename a section there, update the steps file's `doc:` titles (and any link to the section's anchor).

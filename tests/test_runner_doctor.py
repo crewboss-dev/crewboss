@@ -248,7 +248,7 @@ def test_a_job_worktree_with_a_block_is_given_back_and_shown(tmp_path, monkeypat
     write(wt / ".claude" / "settings.json", {"permissions": {"allow": ["Bash(*)"]}})
     released = []
 
-    async def fake_release(job, reason):
+    async def fake_release(job, reason, code=""):
         released.append(reason)
         return "released"
 

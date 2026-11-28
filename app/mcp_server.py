@@ -306,7 +306,9 @@ def update_milestone(milestone_id: int, name: str | None = None, due_on: str | N
 
 @mcp.tool()
 def comment_task(task_id: int, body: str, author: str | None = None, await_reply: bool = False) -> dict:
-    """Add a comment to a task. The author is always this session (<agent>:<stream>, from the token);
+    """Add a comment to a task. Lead with the outcome in 1-2 short lines; put details in a folded section (a line holding only
+    <details>, then the details): the task window shows the lead and folds the rest.
+    The author is always this session (<agent>:<stream>, from the token);
     `author` is accepted only for backwards compatibility and must equal that if given. The overseer (dash) may
     comment on ANY project's task, to communicate with the session that owns it, which gets an ids-only event.
     await_reply=True (overseer, another project's task only): you're waiting on an answer, and that session's next

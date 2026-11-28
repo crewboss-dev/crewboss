@@ -12,8 +12,7 @@
     <a href="{{ base }}/board" class="inline-flex items-center gap-1 hover:text-charcoal hover:underline" data-back-link>&larr; {{ current_project.name }}</a>
     <span aria-hidden="true">/</span><span>Task #{{ task.id }}</span>
   </nav>
-  {% include "partials/task_tabs.html" %}
-  <h1 class="text-lead font-semibold mb-3 break-words" data-record-title>{{ task.title }}</h1>
+  <h1 class="sr-only" data-record-title>{{ task.title }}</h1>
   <div id="drawer-content">
     {% include "partials/task_drawer.html" %}
   </div>

@@ -17,16 +17,20 @@ def _task(project, title="Full page task"):
     return t
 
 
-def test_task_full_page_has_the_record_in_two_columns(client, project):
+def test_task_full_page_is_one_column_header_to_timeline(client, project):
+    """#91: one column, in order: header, (code line), NOW, summary, checklist, then the ONE timeline (no right column, no Task/Discussion toggle)."""
     t = _task(project)
     r = client.get(f"/{project['slug']}/tasks/{t['id']}")
     assert r.status_code == 200
     h = r.text
     assert "Full page task" in h and "data-task-record" in h and "data-swappable" in h
     assert 'id="drawer-content"' in h and 'id="page-inner"' in h
-    assert "lg:grid-cols-" in h                                    # body left, thread right on a desktop
-    left, right = h.split("data-task-record", 1)[1].split('lg:border-l', 1)
-    assert "name=\"title\"" in left and "Comments" in right and "History" in right
+    assert "lg:grid-cols-" not in h.split("data-task-record", 1)[1] and "lg:border-l" not in h.split("data-task-record", 1)[1]
+    rec = h.split("data-task-record", 1)[1]
+    order = [rec.index(m) for m in ("data-task-header", "data-now-line", "data-summary", 'id="task-checklist"', "data-timeline")]
+    assert order == sorted(order), order
+    assert "data-task-tab" not in h and "Save changes" not in h and "New discussion" not in h
+    assert 'data-start-discussion' in rec and 'name="title"' in rec
     assert 'data-ca-entity="task:%d"' % t["id"] in h
 
 

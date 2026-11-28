@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app import access, agent_pins, config, deploys, devices, gemini_keys, health_reports, host_signal, jobs, runner_ws, saved_filters, server_access
+from app import access, agent_pins, config, deploys, devices, gemini_keys, health_reports, host_signal, jobs, runner_ws, saved_filters, server_access, repo, tree
 from app.db import get_cursor
 from app.repo import BadRequest, Conflict, NotFound
 from app.routers.pages import FLASH_COOKIE, ProjectDep, _cookie_safe, render
@@ -210,6 +210,8 @@ def render_page(request: Request, account: dict, role: str = "all", status: int 
 
 @project_router.get("/machines", response_class=HTMLResponse)
 def machines_page(request: Request, project: dict = ProjectDep, role: str = "", tab: str = ""):
+    if not tree.is_runner_home(project):
+        return _belongs_to_account(request, project)     # #987: a project's own Machines page points at the account's, never a dead end
     account = _account(project)
     if not request.query_params:
         # a bare arrival opens the person's saved default (#772), unless they came from this very page ("All" is a choice)
@@ -220,6 +222,18 @@ def machines_page(request: Request, project: dict = ProjectDep, role: str = "", 
                 saved = found["data"]["role"]
                 return RedirectResponse(f"/{account['slug']}/machines?" + (f"tab={ROLE_TAB[saved]}" if saved in ROLE_TAB else f"role={saved}"), status_code=302)
     return render_page(request, account, role or "all")
+
+
+def _belongs_to_account(request: Request, project: dict):
+    """Runners and servers belong to the ACCOUNT, not a project inside it (#987). Say so, and link the account's Machines page; with agent
+    files waiting for review in the account, the link goes straight to that card."""
+    root = tree.account_root_id(project["id"])
+    if root is None or root == project["id"]:
+        raise NotFound("runners belong to an account")
+    account = repo.get_project(root)
+    pending = agent_pins.pending_in_account(root)
+    return render(request, "pages/machines_account.html", "machines", account=account, pending=pending,
+                  account_url=f"/{account['slug']}/machines?tab=runners" + ("#agent-files" if pending else ""))
 
 
 def _back(account: dict, message: str, anchor: str = "", tab: str = ""):

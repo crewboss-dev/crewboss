@@ -1,0 +1,7 @@
+{# The live runner conversation (#89), read-only, for ONE job. Self-contained: include it anywhere (the job card's Activity slot, a timeline row that expands).
+   Needs: base (the project's URL prefix, e.g. "/acme-app"), task (any dict with .id). Optional: job_id (show THAT job; omitted = the task's current job),
+   open (true = start loading at once; default: loads when the nearest <details> is opened, or at once when there is none).
+   static/js/activity.js (loaded by base.html) mounts it by itself on page load and after every htmx swap: nothing to call. #}
+<div class="jact-host" data-live-activity data-activity-url="{{ base }}/tasks/{{ task.id }}/run/activity"{% if job_id %} data-activity-job="{{ job_id }}"{% endif %}>
+  <p class="jact-empty">Nothing to show yet.</p>
+</div>

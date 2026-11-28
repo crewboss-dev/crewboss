@@ -1,0 +1,13 @@
+{# THE JOB CARD (#987): from the moment Run is pressed. Needs: task, base, run (pages._run_context: job, card, live, can_run, is_starter, stuck,
+   server_reads, model_uses). Two parts: the STATUS (partials/job_card_status.html, which re-fetches itself every few seconds while the job is
+   live, and on the board's live ping) and the ACTIVITY slot below it, which the poll never touches so it keeps its open/closed state. #}
+{% set job = run.job %}
+<div class="card p-2.5 mb-2" data-run-job id="job-card-{{ task.id }}">
+  {% include "partials/job_card_status.html" %}
+  {# Activity: change #89 (the live "runner conversation") streams the agent's transcript into [data-activity-body]. Empty on purpose until
+     then: nothing here is built, and nothing is fetched. The slot carries the job id and a stream URL to be filled by #89, nothing more. #}
+  <details class="mt-2" data-job-activity data-activity-job="{{ job.id }}" data-activity-task="{{ task.id }}" data-activity-url="{{ base }}/tasks/{{ task.id }}/run/activity">
+    <summary class="press cursor-pointer text-micro text-charcoal/60 touch-target">Activity</summary>
+    <div class="mt-1 text-micro text-charcoal/55" data-activity-body aria-live="polite"><p data-activity-empty>Nothing to show yet.</p></div>
+  </details>
+</div>

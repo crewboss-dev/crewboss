@@ -104,7 +104,7 @@ Both need the same Entra session and the same-origin guard, record who asked (`r
   its target's time limit + 60, whichever process owns it.
 - **Timeout:** if ssh times out on the dashboard's side the request is `failed`, the partial output is kept, and the target's lock is
   marked **orphaned** (the box may still be running it; the `timeout` wrapper stops it, but a person checks and Clears the lock).
-- An orphaned lock blocks that target (new approved requests wait) until a person clears it with **Clear** on the Runners page
+- An orphaned lock blocks that target (new approved requests wait) until a person clears it with **Clear** on the Machines page (Runners tab)
   (`jobs.clear_orphan`, the P2 rule); then the human re-requests. The box may be half-deployed: check it first.
 - The P2 rule for a *job* that dies holding a deploy/migrate lock still exists (`jobs.end_lease`) for old rows; a job can no longer
   create one.

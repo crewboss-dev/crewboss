@@ -176,14 +176,15 @@ def test_howto_three_cards_and_tabs():
 
 
 def test_howto_repo_address_and_windows_commands():
-    """The clone lines show this install's repo (HTTPS), never the ORG placeholder; Windows uses the py launcher (#806)."""
+    """The install lines show this install's repo (HTTPS), never the ORG placeholder; Windows uses the py launcher (#806)."""
     from app.templating import templates
     tpl = templates.env.get_template("partials/runner_howto.html")
     html = tpl.render(devices=[], runner_repo="https://github.com/Acme/Crewboss.git")
-    assert html.count("git clone https://github.com/Acme/Crewboss.git") == 4 and "ORG/crewboss" not in html
-    assert "py -m pip install --user pipx" in html and "py -m pipx install .\\runner" in html
+    spec = "git+https://github.com/Acme/Crewboss.git#subdirectory=runner"
+    assert html.count("git clone") == 0 and html.count(f'pipx install "{spec}"') == 4 and "ORG/crewboss" not in html
+    assert "py -m pip install --user pipx" in html and f'py -m pipx install "{spec}"' in html
     assert "setx PATH" not in html.replace("Don't use <code class=\"font-mono\">setx PATH</code>", "")
-    assert "git clone https://github.com/ORG/crewboss.git" in tpl.render(devices=[])   # neutral fallback
+    assert "git+https://github.com/crewboss-dev/crewboss.git#subdirectory=runner" in tpl.render(devices=[])   # public default
     # every command block has its copy icon; Android uses Studio's bundled Java (no separate JDK)
     assert html.count("data-copy") == html.count("<pre ") > 10 and 'aria-label="Copy to clipboard"' in html
     assert "Temurin" not in html and 'JAVA_HOME", $jbr' in html

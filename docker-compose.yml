@@ -15,7 +15,7 @@ name: crewboss
 #   CREWBOSS_MATERIALS_HOST_DIR   the shared materials folder (default ~/.local/share/crewboss/materials)
 #   CREWBOSS_CA_UPLOADS_HOST_DIR  CA chat uploads (default ~/.local/share/crewboss/ca-uploads); back it up
 #   CREWBOSS_EXPORTS_HOST_DIR     the catalog export folder (default ./exports in the checkout; the installer sets <home>/exports)
-#   (the Mallen-style add-on mounts, e.g. CREWBOSS_ESTATE_SRC and CREWBOSS_DRIFT_GIT_SRC, are in the override example)
+#   (the optional add-on mounts, e.g. CREWBOSS_ESTATE_SRC and CREWBOSS_DRIFT_GIT_SRC, are in the override example)
 #   CREWBOSS_FRONTDOOR_DIR        the bundled proxy's folder (default ~/.crewboss/frontdoor): Caddyfile, LAN certificate, front_door.json
 #   CREWBOSS_UID / CREWBOSS_GID   the install user, for the frontdoor sidecar (the installer writes them)
 #   CREWBOSS_DB_VOLUME            the Postgres volume's name (default crewboss_db-data)

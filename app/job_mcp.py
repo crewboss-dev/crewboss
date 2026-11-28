@@ -83,12 +83,16 @@ def job_tick_subtask(fence: int, subtask_id: int, done: bool = True) -> dict:
 
 
 @mcp.tool()
-def job_finish(fence: int, summary: str, outcome: str = "done") -> dict:
+def job_finish(fence: int, summary: str, outcome: str = "done", next_steps: list[str] | None = None, remaining_work: list[str] | None = None,
+               tests: str = "") -> dict:
     """Call this when your work is over, so the session ends cleanly instead of waiting at the prompt. Do it once the work is
     committed on your branch, checks are recorded and the task is commented. `summary`: a short account of what you did (it is
     saved on the job and posted as a task comment). `outcome`: 'done', or 'blocked' when you cannot go on without a person
-    (then say what is needed). The runner then closes this session, pushes your branch and ends the job; you do not push."""
-    return _guard(jobs.agent_finish, _job()["job_id"], fence, summary, outcome)
+    (then say what is needed). Optional, and shown to the person on the task: `tests` (the checks you ran and how they came out, one line),
+    `next_steps` (what a person should do next, a short list) and `remaining_work` (what is NOT done yet; empty when the work is complete).
+    Lead with the outcome in 1-2 short lines; put details in a folded section (a line holding only
+    <details>, then the details). The runner then closes this session, pushes your branch and ends the job; you do not push."""
+    return _guard(jobs.agent_finish, _job()["job_id"], fence, summary, outcome, next_steps, remaining_work, tests)
 
 
 @mcp.tool()

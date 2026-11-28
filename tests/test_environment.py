@@ -338,24 +338,16 @@ def test_switching_runs_on_queues_a_check_and_the_picker_shows_the_badge(world, 
     h = _h(signed_in)
     desktop, laptop = _device(world, world["bob"], name="desktop"), _device(world, world["bob"], name="laptop")
     _rows(world, ("tool", "java", "17"), ("tool", "node"))
-    html = client.get("/acme-app/list", headers=h).text
-    assert html.count('data-ro-env="unchecked"') == 2                                      # nothing is checked until a switch or Check again
+    # change #90: the header picker (and its badge) is gone; the check itself still queues on a switch
     r = client.post("/acme-app/runs-on", data={"device_id": str(laptop["device_id"]), "next": "/acme-app/list"}, headers=h, follow_redirects=False)
     assert r.status_code == 303
     with get_cursor(commit=False) as cur:
         cur.execute("SELECT device_id, state FROM project_env_checks")
         assert [(c["device_id"], c["state"]) for c in cur.fetchall()] == [(laptop["device_id"], "queued")]       # only the runner switched to
-    assert 'data-ro-env="checking"' in client.get("/acme-app/list", headers=h).text
     check = environment.claim(laptop["device_id"])
     by = {r["name"]: r["i"] for r in check["rows"]}
     environment.finish(laptop["device_id"], check["check_id"], [{"i": by["java"], "s": "ok", "v": ""}, {"i": by["node"], "s": "missing", "v": ""}], "linux")
-    html = client.get("/acme-app/list", headers=h).text
-    assert 'data-ro-env="missing"' in html and ">Missing 1<" in html and "data-ro-env-warn" in html and "Jobs still run" in html
-    assert "laptop is missing 1 thing this project needs" in html
-    check = _check(world, laptop)
-    environment.finish(laptop["device_id"], check["check_id"], [{"i": r["i"], "s": "ok", "v": ""} for r in check["rows"]], "linux")
-    html = client.get("/acme-app/list", headers=h).text
-    assert 'data-ro-env="compliant"' in html and ">Compliant<" in html and "data-ro-env-warn" not in html
+    assert environment.latest(world["app"]["id"], laptop["device_id"]) is not None     # the finished check is recorded
     # "any runner" checks nothing
     with get_cursor() as cur:
         cur.execute("DELETE FROM project_env_checks")

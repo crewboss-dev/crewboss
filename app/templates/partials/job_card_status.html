@@ -1,0 +1,47 @@
+{# The swappable status of the job card (#987). Needs: task, base, run, job (= run.job); run.card from app/job_card.view. #}
+{% set card = run.card %}
+<div id="job-status-{{ task.id }}" data-job-state="{{ job.state }}" data-card="{{ card.key }}"{% if card.live %}
+     hx-get="{{ base }}/tasks/{{ task.id }}/run/card?was=live" hx-trigger="every {{ card.poll }}s, mdd:board-stale from:body" hx-swap="outerHTML"{% endif %}>
+  <p class="text-small flex flex-wrap items-baseline gap-x-2">
+    <span class="chip {{ 'bg-status-ok/10 text-status-ok' if job.state in ('running', 'done') else 'bg-status-disaster/10 text-status-disaster' if job.state == 'failed' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}" data-run-state>{{ card.label }}</span>
+    <span class="font-semibold" data-run-text>{{ card.title }}</span>
+    <span class="text-charcoal/60 tabular" data-run-elapsed>{{ card.detail }}</span>
+    <span class="text-micro text-charcoal/50">&middot; {{ job.profile }} &middot; job {{ job.id }}{% if job.requires_labels %} &middot; needs {{ job.requires_labels|join(', ') }}{% endif %}</span></p>
+  <ol class="flex gap-1 mt-1.5 text-micro text-charcoal/55" aria-label="Job progress" data-run-steps>
+    {% for name in card.steps %}<li class="px-2 py-0.5 rounded-full {{ 'bg-charcoal/[.08] text-charcoal font-medium' if loop.index <= card.step else 'bg-charcoal/[.03]' }}"{% if loop.index == card.step %} aria-current="step"{% endif %}>{{ name }}</li>{% endfor %}
+  </ol>
+  {% if card.banner %}
+  <div class="mt-2 rounded-lg bg-status-warn/15 px-3 py-2 text-small" role="status" data-run-waiting-you>
+    <p>{{ card.banner.text }}</p>
+  </div>
+  {% endif %}
+  {% if card.note %}<p class="text-small text-charcoal/80 mt-1.5 break-words" data-run-note>{{ card.note }}</p>{% endif %}
+    {% if run.server_reads %}
+    <div class="mt-1" data-run-reads><p class="text-micro text-charcoal/60">Server reads by this job</p>
+      <ul class="text-micro text-charcoal/70">{% for l in run.server_reads %}<li class="break-all" data-run-read>{{ l.server_name or '?' }} · {{ l.read_name }} ({{ l.env }}) · {{ l.window }} · {% if l.ok %}{{ l.bytes }} bytes{% else %}refused{% endif %}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if run.model_uses %}
+    <div class="mt-1" data-run-models><p class="text-micro text-charcoal/60">Other models used by this job</p>
+      <ul class="text-micro text-charcoal/70">{% for u in run.model_uses %}<li class="break-all" data-run-model>{{ u.provider|capitalize }} {{ u.label }} ({{ u.model or 'default' }}) · {% if u.ok %}{{ u.bytes_in }} bytes sent, {{ u.bytes_out }} back{% elif u.state == 'refused' %}refused: switched off or the job's call ceiling{% elif u.state == 'pending' %}in progress{% elif u.error == 'Gemini limit reached' %}limit reached{% else %}failed{% endif %}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if card.branch %}<p class="text-micro text-charcoal/60 mt-1">Branch {% if card.branch_url %}<a class="font-mono break-all underline" href="{{ card.branch_url }}" target="_blank" rel="noopener" data-run-branch>{{ card.branch }}</a>{% else %}<span class="font-mono break-all" data-run-branch>{{ card.branch }}</span>{% endif %}</p>{% endif %}
+    {% if run.live and run.can_run and run.is_starter %}
+    <form hx-post="{{ base }}/tasks/{{ task.id }}/run/cancel" hx-target="#drawer-content" hx-swap="innerHTML" class="mt-2">
+      <button type="submit" class="btn-ghost text-small border border-line touch-target" data-run-cancel>Stop</button>
+    </form>
+    {% elif run.live %}
+    <p class="text-micro text-charcoal/60 mt-1" data-run-starter>Started by {{ job.user_name or 'another person' }}</p>
+    {% endif %}
+
+    {% if run.stuck %}
+    <div class="mt-2 rounded-lg bg-status-warn/15 px-3 py-2 text-small" data-run-stuck>
+      <p>{% if run.stuck.device.dead %}{{ run.stuck.device.name }} was revoked or has expired, so this job can never start there.{% else %}{{ run.stuck.device.name }} is offline and this job has waited over 10 minutes.{% endif %}</p>
+      <div class="flex flex-wrap gap-2 mt-1">
+        {% for a in run.stuck.alternates %}
+        <form hx-post="{{ base }}/tasks/{{ task.id }}/run/move" hx-target="#drawer-content" hx-swap="innerHTML"><input type="hidden" name="device_id" value="{{ a.id }}">
+          <button type="submit" class="btn-ghost text-small border border-line touch-target" data-run-move>Run on {{ a.name }}</button></form>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+</div>

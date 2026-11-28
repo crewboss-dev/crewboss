@@ -14,7 +14,7 @@ import logging
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
-from app import access, config, local_auth as la, web_auth
+from app import access, config, local_auth as la, task_summary, web_auth
 from app.templating import templates
 
 log = logging.getLogger("crewboss.web_auth")
@@ -25,7 +25,7 @@ NOTICES = {"confirmed": "Confirmed.", "passkey-removed": "Passkey removed.", "pa
            "password-saved": "Password saved.", "offer-passkey": "You're in. Want to skip the password and code next time? Add a passkey below.",
            "add-backup": "You sign in with a passkey. Add a password and authenticator app below as a backup, so a lost device can't lock you out.",
            "email-saved": "Sign-in email saved.", "email-cleared": "Sign-in email removed.",
-           "session-ended": "That session is signed out."}      # fixed texts: ?notice= is a key, never shown raw
+           "session-ended": "That session is signed out.", "prefs-saved": "Preference saved."}      # fixed texts: ?notice= is a key, never shown raw
 GENERIC_FAIL = "Those sign-in details didn't work."
 CODE_FAIL = "That code didn't work."
 PASSWORD_FAIL = "That password didn't match."
@@ -463,6 +463,34 @@ def _account_ctx(request: Request, s: dict, **extra) -> dict:
 def account_page(request: Request):
     s = _full_session(request)
     return _account_page(request, **_account_ctx(request, s, notice=NOTICES.get(request.query_params.get("notice", ""), "")))
+
+
+prefs_router = APIRouter(include_in_schema=False)      # every sign-in mode (the rest of this module is local-only)
+
+
+def _pref_user(request: Request) -> dict:
+    """Whoever is signed in, local account or Microsoft (OIDC) sign-in: preferences are the person's own and need no fresh factor."""
+    try:
+        return web_auth.signed_in_user_row(request)
+    except PermissionError:
+        raise HTTPException(401, "Sign in first") from None
+
+
+@prefs_router.get("/account/preferences")
+def preferences_page(request: Request):
+    from app.routers.pages import render
+    user = _pref_user(request)
+    resp = render(request, "pages/account_preferences.html", "home", runner_summaries=task_summary.runner_summaries_on(user["id"]),
+                  notice=NOTICES.get(request.query_params.get("notice", ""), ""))
+    resp.headers.update(_NO_STORE)
+    return resp
+
+
+@prefs_router.post("/account/preferences/runner-summaries")
+def set_runner_summaries(request: Request, on: str = Form("")):
+    """Your own preference "Use my runner for task summaries" (users.use_runner_summaries)."""
+    task_summary.set_runner_summaries(_pref_user(request)["id"], on == "1")
+    return RedirectResponse("/account/preferences?notice=prefs-saved", status_code=303, headers=_NO_STORE)
 
 
 @router.get("/account/security/stepup-info")
