@@ -53,7 +53,7 @@ def test_board_card_list_row_and_drawer_show_the_number(client, cookie, project)
     assert no(t) in listed and "Fix the invoice export" in listed
     assert "text-charcoal/30 font-normal" not in listed  # the old too-faint #id is gone
     panel = client.get(f"/test-proj/tasks/{t['id']}/panel", headers=cookie).text
-    assert no(t) in panel
+    assert f'data-task-no>Task #{t["id"]}:<' in panel      # the task window's header (#91) prints it as "Task #N:" before the title
 
 
 def test_board_fragment_refetch_keeps_the_number(client, cookie, project):
@@ -140,8 +140,10 @@ def test_task_number_style_is_small_muted_and_shared():
     assert "text-micro" in rule and "tabular-nums" in rule and "whitespace-nowrap" in rule
     assert "text-charcoal/65" in rule and "dark:" not in rule  # muted, still AA at 11px; the token swaps (#479)
     for tpl in ("partials/task_card.html", "partials/focus.html", "partials/global_plan.html",
-                "partials/tasklist.html", "pages/home.html", "pages/workflow_detail.html", "partials/task_form.html"):
+                "partials/tasklist.html", "pages/home.html", "pages/workflow_detail.html"):
         assert 'class="task-no' in (ROOT / "app/templates" / tpl).read_text(), tpl
+    # the task window's header (#91) prints the number large, before the title, in its own style
+    assert 'class="tw-no" data-task-no' in (ROOT / "app/templates/partials/task_header.html").read_text()
 
 
 # --- 2. jump to a number -------------------------------------------------------------------------------------------

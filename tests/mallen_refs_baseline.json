@@ -19,7 +19,6 @@
  "db/migrations/0023_account_sessions.py": 22,
  "db/migrations/0026_server_access.sql": 1,
  "db/migrations/0028_web_push.sql": 1,
- "docker-compose.yml": 1,
  "docs/canvas-contract.md": 25,
  "docs/catalog-schema.md": 6,
  "docs/runner-protocol.md": 3,

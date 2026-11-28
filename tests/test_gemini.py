@@ -948,5 +948,5 @@ def test_a_job_has_a_row_ceiling_with_one_refusal_row_and_one_activity_row(world
 
 def test_the_run_panel_shows_a_limited_call_as_limit_reached():
     from app.templating import templates
-    html = templates.env.get_template("partials/task_run.html")
+    html = templates.env.get_template("partials/job_card_status.html")
     assert "limit reached" in open(html.filename).read()

@@ -1,0 +1,41 @@
+{# THE RUN BUTTON (change #90). One button; the profile and the runner are chosen from the task and the project (app/run_plan.py), shown as one line.
+   Everything else is behind the settings icon beside Run (a popover; its button is labelled "More options"). `again_text`: the box that starts a run with words for the AI. Needs: task, base, run (plan, profiles, runs_on). #}
+{% set plan = run.plan %}
+<form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML" data-run-form>
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+    {# THE RUN BUTTON and, next to it, a small settings icon (#91): runner, profile, labels and words for the AI live in its popover. They are rarely changed. #}
+    <div class="tw-run-row" x-data="{ open: false }" @keydown.escape.stop="if (open) { open = false; $refs.gear.focus(); }" @click.outside="open = false" data-run-more>
+      <button type="submit" class="{{ 'btn-ghost border border-line' if waiting_on_you else 'btn-primary' }} touch-target tw-run-btn" data-run-button data-now-primary>Run</button>
+      <button type="button" class="press tw-gear touch-target" x-ref="gear" aria-haspopup="dialog" :aria-expanded="open ? 'true' : 'false'" aria-controls="run-options-{{ task.id }}"
+              aria-label="More options for this run" title="More options" @click="open = !open; if (open) $nextTick(() => { let f = $refs.pop.querySelector('select, input, textarea'); f && f.focus(); })" data-run-gear>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+      </button>
+      <div class="tw-pop" id="run-options-{{ task.id }}" role="dialog" aria-label="More options for this run" x-ref="pop" x-show="open" x-cloak>
+        <div class="flex flex-wrap items-end gap-2">
+          {% if run.runs_on and run.runs_on.devices %}
+          <label class="text-micro">Runner
+            <select name="runner" class="field text-small" data-run-runner>
+              <option value="">Automatic</option>
+              <option value="any">Any of my runners</option>
+              {% for d in run.runs_on.devices %}<option value="{{ d.id }}">{{ d.name }} ({{ 'online' if d.connected else 'offline' }})</option>{% endfor %}
+            </select></label>
+          {% endif %}
+          <label class="text-micro">Profile
+            <select name="profile" class="field text-small" data-run-profile>
+              <option value="">Automatic{% if plan and plan.profile %}: {{ plan.profile }}{% endif %}</option>
+              {% for p in run.profiles %}<option value="{{ p.name }}">{{ p.name }} ({{ p.model }}){% if p.requires_labels %} · needs {{ p.requires_labels|join(', ') }}{% endif %}</option>{% endfor %}
+            </select></label>
+          <label class="text-micro">Extra labels <span class="text-charcoal/40">optional</span>
+            <input name="labels" class="field text-small" placeholder="e.g. gpu" autocomplete="off"></label>
+        </div>
+        {% if run.runs_on and run.runs_on.ignored_pref %}<p class="text-micro text-charcoal/60 mt-2" data-run-ignored-pref>Your saved runner, {{ run.runs_on.ignored_pref }}, is not allocated to this project, so Run does not use it.</p>{% endif %}
+        <label class="block text-micro mt-2">Details for the AI <span class="text-charcoal/40">optional</span>
+          <textarea name="details" rows="2" class="field text-small w-full" placeholder="Anything the agent should know for this run"></textarea></label>
+        <button type="button" class="btn-ghost text-small mt-2" @click="open = false; $refs.gear.focus()">Close</button>
+      </div>
+    </div>
+    {% if plan %}<span class="text-small {{ 'text-charcoal/70' if plan.device or plan.pin is not none else 'rounded-lg bg-status-warn/15 px-2 py-1' }}" data-run-plan-line {% if plan.device is none and plan.pin is none %}data-run-no-runner{% endif %}>{{ plan.line }}</span>{% endif %}
+  </div>
+  {% if plan %}<p class="text-micro text-charcoal/55 mt-1" data-run-plan-why>{{ plan.profile }}: {{ plan.why }}</p>{% endif %}
+</form>
+<p class="text-micro text-charcoal/45 mt-1">Your own runner takes it; your click is the approval. Nothing is pushed to main.</p>

@@ -1,0 +1,54 @@
+{# THE SUMMARY (#91): three short lines (What / Done / Left), kept current by the AI after each run, comment and answer (app/task_summary.py), and
+   editable by the owner: their text shows with an "edited by you" mark until a NEW event arrives, when a refreshed AI summary replaces it and
+   "Restore your version" brings theirs back. Under it, the ORIGINAL REQUEST (the task body): collapsible, edited in place, never written by the AI.
+   Needs: task, base, summary (task_summary.view). All text is autoescaped; the request is shown through the safe Markdown filter. #}
+{% set s = summary %}
+<section id="task-summary" class="tw-summary" aria-label="Summary" data-summary data-summary-source="{{ s.source }}"
+         {% if s.pending %}hx-get="{{ base }}/tasks/{{ task.id }}/summary" hx-trigger="every 8s" hx-swap="outerHTML"{% endif %}
+         x-data="{ editing: false }">
+  <div class="tw-sec-head">
+    <h2 class="tw-h">Summary</h2>
+    {% if s.source == 'owner' %}<span class="tw-mark" data-summary-edited>{{ 'edited by you' if s.edited_by_you else 'edited by ' ~ s.edited_by }}</span>{% elif s.source == 'ai' %}<span class="tw-mark tw-mark-ai" data-summary-kind="{{ s.ai_kind }}">{{ 'Written by the AI' if s.ai_kind == 'ai' else 'Auto summary' }}{% if s.pending %}, updating…{% endif %}</span>{% endif %}
+    <button type="button" class="press tw-link ml-auto" x-show="!editing" @click="editing = true; $nextTick(() => $refs.what.focus())" data-summary-edit>Edit</button>
+  </div>
+  {% if s.lines %}
+  <dl class="tw-lines" x-show="!editing" data-summary-lines>
+    <div><dt>What</dt><dd data-summary-what>{{ s.lines.what }}</dd></div>
+    <div><dt>Done</dt><dd data-summary-done>{{ s.lines.done }}</dd></div>
+    <div><dt>Left</dt><dd data-summary-left>{{ s.lines.left }}</dd></div>
+  </dl>
+  {% else %}
+  <p class="tw-muted" x-show="!editing" data-summary-empty>{{ 'Writing the summary…' if s.pending else 'No summary yet.' }}</p>
+  {% endif %}
+  {% if s.restorable %}
+  <form hx-post="{{ base }}/tasks/{{ task.id }}/summary/restore" hx-target="#task-summary" hx-swap="outerHTML" x-show="!editing">
+    <button type="submit" class="press tw-link" data-summary-restore>Restore your version</button>
+  </form>
+  {% endif %}
+  <form hx-post="{{ base }}/tasks/{{ task.id }}/summary" hx-target="#task-summary" hx-swap="outerHTML" class="tw-summary-form" x-show="editing" x-cloak @keydown.escape.stop="editing = false">
+    {% set cur = s.lines or {} %}
+    {% for key, label in (('what', 'What'), ('done', 'Done'), ('left', 'Left')) %}
+    <label class="tw-field"><span>{{ label }}</span>
+      <input name="{{ key }}" value="{{ cur.get(key, '') }}" maxlength="220" class="field text-small" autocomplete="off"{% if key == 'what' %} x-ref="what"{% endif %}></label>
+    {% endfor %}
+    <div class="flex gap-2 items-center">
+      <button type="submit" class="btn-primary text-small">Save my version</button>
+      <button type="button" class="btn-ghost text-small" @click="editing = false">Cancel</button>
+      <span class="tw-muted text-micro">Your text stays until something new happens on the task.</span>
+    </div>
+  </form>
+
+  <details class="tw-request" data-original-request x-data="{ edit: false }" @task-edit-request.document="$el.open = true; edit = true; $nextTick(() => $refs.body.focus())">
+    <summary class="press tw-link-sum">Original request</summary>
+    <div class="tw-request-body">
+      <div class="tw-prose" x-show="!edit" data-request-text>{% if task.body %}{{ task.body|render_text }}{% else %}<span class="tw-muted">No description.</span>{% endif %}</div>
+      <button type="button" class="press tw-link" x-show="!edit" @click="edit = true; $nextTick(() => $refs.body.focus())" data-request-edit>Edit</button>
+      <div x-show="edit" x-cloak>
+        <label class="sr-only" for="task-body-{{ task.id }}">Original request</label>
+        <textarea id="task-body-{{ task.id }}" name="body" rows="5" class="field text-small" x-ref="body" placeholder="What you need, in your own words" data-task-body
+                  hx-post="{{ base }}/tasks/{{ task.id }}/autosave" hx-trigger="change, keyup changed delay:1200ms" hx-target="#save-tick-{{ task.id }}" hx-swap="outerHTML">{{ task.body }}</textarea>
+        <button type="button" class="btn-ghost text-small mt-1" @click="edit = false">Done editing</button>
+      </div>
+    </div>
+  </details>
+</section>

@@ -106,3 +106,6 @@ menu_links:
 #   - name: knowledge
 #     url: http://knowledge.example.com:8970/mcp
 #     projects: [my-app]
+
+# The repository the "How to set up a runner" page tells a new PC to install the runner from. Default: the public Crewboss repository.
+# runner_repo: https://github.com/crewboss-dev/crewboss.git

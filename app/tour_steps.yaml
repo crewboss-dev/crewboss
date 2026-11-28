@@ -48,7 +48,7 @@ steps:
   - id: run
     title: Run it with an agent
     doc: Run your first agent job
-    text: Open the task and use Run on a PC. Pick a profile and start it, then watch the job's state and branch right here in the task window.
+    text: Open the task and press Run. Crewboss picks a runner for you (change it in Run settings), then you can watch the agent work in the Activity slot, and the outcome card tells you how it went.
     go: /{project}/tasks/{task}
     page: /tasks/\d+$
     target: "[data-run]"
@@ -65,7 +65,7 @@ steps:
     else_text: When a job finishes, read its branch and the task thread. The project's owner approves the merge or the deploy; nothing ships until a person says so.
   - id: assistant
     title: Ask the assistant
-    doc: Ask CA
+    doc: Ask the Crewboss Assistant (CA)
     text: CA is the assistant on every page. Open it and ask what is waiting on you. It shows a confirm card before it does anything.
     target: "[data-ca-open]"
   - id: settings

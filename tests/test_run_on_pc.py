@@ -58,7 +58,7 @@ def test_run_creates_an_approved_job_and_shows_its_state(world, client, signed_i
     drawer = client.get(f"/acme-app/tasks/{world['task']['id']}/panel", headers=h).text
     assert "data-run-form" in drawer and "android" in drawer and "needs android-usb" in drawer
     r = _run(client, h, world)
-    assert r.status_code == 200 and 'data-job-state="queued"' in r.text and "Queued, waiting for a runner" in r.text
+    assert r.status_code == 200 and 'data-job-state="queued"' in r.text and "Waiting for a runner" in r.text
     (job,) = _live_jobs(world["task"]["id"])
     assert job["user_id"] == world["bob"]["id"] and job["approved_at"] is not None and job["state"] == "queued"
     assert not job["unattended"] and job["requires_labels"] == []
@@ -67,7 +67,7 @@ def test_run_creates_an_approved_job_and_shows_its_state(world, client, signed_i
     claim = jobs.claim(dev["device_id"])
     assert claim and claim["job_id"] == job["id"]
     page = client.get(f"/acme-app/tasks/{world['task']['id']}/panel", headers=h).text
-    assert "Running on bobs-desktop" in page and claim["branch"] in page and "data-run-cancel" in page
+    assert "Claimed by bobs-desktop" in page and claim["branch"] in page and "data-run-cancel" in page
 
 
 def test_run_needs_a_web_session_and_refuses_runner_tokens(world, client, signed_in):

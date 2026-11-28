@@ -3,7 +3,8 @@
    `win_default` ('ps' = native PowerShell, 'wsl' = WSL2). Each tab's own "use for" line is `win_tabs[].use`.
    Without JS every system's steps show (the hidden attributes are set by the script at the bottom). Needs: devices. #}
 {% set win_default = 'ps' %}
-{% set repo = runner_repo or 'https://github.com/ORG/crewboss.git' %}
+{% set repo = runner_repo or 'https://github.com/crewboss-dev/crewboss.git' %}
+{% set spec = 'git+' ~ repo ~ '#subdirectory=runner' %}
 {% set os_cards = [
   {'key': 'linux', 'label': 'Linux', 'use': 'Web apps, Android, anything Linux-built.'},
   {'key': 'windows', 'label': 'Windows', 'use': 'Windows EXE/MSI (PowerShell). Android and web apps on either PowerShell or WSL2, picked per project.'},
@@ -64,16 +65,16 @@ claude   # sign in once, then /exit{% endcall %}</div>
     <div>Install pipx, git and the GitHub CLI (Debian/Ubuntu first, Arch and Omarchy second), then close and reopen the terminal:
       {% call pre() %}sudo apt install pipx git gh                         # Debian / Ubuntu
 sudo pacman -S --needed python-pipx git github-cli   # Arch / Omarchy
-pipx ensurepath{% endcall %}</div>
+pipx ensurepath{% endcall %}
+      The runner needs Python 3.12 or newer: check with <code class="font-mono">python3 --version</code>. Ubuntu 24.04 and newer have it. On Ubuntu 22.04 or Debian 12, get it first (Ubuntu: <code class="font-mono">sudo add-apt-repository ppa:deadsnakes/ppa &amp;&amp; sudo apt install python3.12 python3.12-venv</code>; Debian: <code class="font-mono">curl -LsSf https://astral.sh/uv/install.sh | sh</code> then <code class="font-mono">uv python install 3.12</code>), then add <code class="font-mono">--python python3.12</code> to the <code class="font-mono">pipx install</code> line below.</div>
     {% if runner_repo_private %}<div>Sign git in to GitHub (needed only while the repo is private; GitHub refuses a typed password for git). Choose GitHub.com, HTTPS, and "Login with a web browser":
       {% call pre() %}gh auth login
 gh auth setup-git{% endcall %}
       If you use SSH keys instead, skip this and clone the <code class="font-mono">git@github.com:</code> form of the same address.</div>{% endif %}
-    <div>Get the code and install the runner:
-      {% call pre() %}git clone {{ repo }} crewboss
-cd crewboss
-pipx install ./runner
-crewboss-runner --version{% endcall %}</div>
+    <div>Install the runner (this needs no clone; pipx fetches it from the repository):
+      {% call pre() %}pipx install "{{ spec }}"
+crewboss-runner --version{% endcall %}
+      <span class="text-micro text-charcoal/65">Already have a clone (a contributor)? <code class="font-mono">pipx install ./runner</code> from its folder does the same.</span></div>
   </div>
 
   <div class="mt-4 space-y-3 text-small text-charcoal/75" data-os="windows" role="tabpanel" aria-labelledby="os-tab-windows" hidden>
@@ -98,11 +99,9 @@ py -m pipx ensurepath{% endcall %}
       <div>Install Claude Code for Windows and sign in (it needs Git for Windows, installed above):
         {% call pre() %}irm https://claude.ai/install.ps1 | iex
 claude   # sign in once, then /exit{% endcall %}</div>
-      <div>Get the code and install the runner. The first clone opens your browser to sign in to GitHub (Git Credential Manager, part of Git for Windows); after that it remembers. This clone is only for installing the runner; Android projects go on a Dev Drive (below):
-        {% call pre() %}git clone {{ repo }} crewboss
-cd crewboss
-py -m pipx install .\runner
-crewboss-runner --version{% endcall %}</div>
+      <div>Install the runner (no clone needed; pipx fetches it from the repository). If the repository is private, the first run opens your browser to sign in to GitHub (Git Credential Manager, part of Git for Windows):
+        {% call pre() %}py -m pipx install "{{ spec }}"
+crewboss-runner --version{% endcall %}<span class="text-micro text-charcoal/65">Already have a clone? <code class="font-mono">py -m pipx install .\runner</code> from its folder does the same. Android projects go on a Dev Drive (below).</span></div>
       <p><span class="kb-label">Android on this PC, natively</span> PowerShell runs Windows EXE/MSI jobs, and Android jobs when the Android work lives on this PC.</p>
       <ul class="list-disc pl-5 space-y-1">
         <li>Android Studio (it brings its own Java, in its <code class="font-mono">jbr</code> folder, so no separate JDK is needed). Skip the install if you already have it:
@@ -137,10 +136,8 @@ pipx ensurepath{% endcall %}</div>
       {% if runner_repo_private %}<div>Close and reopen Ubuntu, then sign git in to GitHub (only while the repo is private; GitHub.com, HTTPS, "Login with a web browser"):
         {% call pre() %}gh auth login
 gh auth setup-git{% endcall %}</div>{% endif %}
-      <div>Get the code. Keep the repo in the WSL filesystem (<code class="font-mono">~/</code>), not <code class="font-mono">/mnt/c</code>: builds are much faster.
-        {% call pre() %}git clone {{ repo }} ~/crewboss
-cd ~/crewboss
-pipx install ./runner
+      <div>Install the runner (no clone needed). Keep your project repos in the WSL filesystem (<code class="font-mono">~/</code>), not <code class="font-mono">/mnt/c</code>: builds are much faster.
+        {% call pre() %}pipx install "{{ spec }}"
 crewboss-runner --version{% endcall %}</div>
       <p><span class="kb-label">Android inside WSL</span></p>
       <ul class="list-disc pl-5 space-y-1">
@@ -173,22 +170,21 @@ pipx ensurepath{% endcall %}</div>
     {% if runner_repo_private %}<div>Sign git in to GitHub (only while the repo is private; GitHub.com, HTTPS, "Login with a web browser"):
       {% call pre() %}gh auth login
 gh auth setup-git{% endcall %}</div>{% endif %}
-    <div>Get the code and install the runner:
-      {% call pre() %}git clone {{ repo }} crewboss
-cd crewboss
-pipx install ./runner
-crewboss-runner --version{% endcall %}</div>
+    <div>Install the runner (this needs no clone; pipx fetches it from the repository):
+      {% call pre() %}pipx install "{{ spec }}"
+crewboss-runner --version{% endcall %}
+      <span class="text-micro text-charcoal/65">Already have a clone (a contributor)? <code class="font-mono">pipx install ./runner</code> from its folder does the same.</span></div>
     <p>iOS and macOS builds need Xcode (App Store) and <code class="font-mono">xcode-select --install</code>. Give the runner the label <code class="font-mono">macos</code>.</p>
   </div>
 
   <ol class="list-decimal pl-5 mt-4 space-y-3 text-small text-charcoal/75" start="3">
     <li><span class="kb-label">Make a code, then enrol</span> Make a code above (Mode: Subscription); it works once, for 5 minutes. Copy the whole code, including the part after <code class="font-mono">#</code>. On the PC, within 5 minutes:
       {% call pre() %}crewboss-runner enrol '&lt;code&gt;'{% endcall %}
-      Add <code class="font-mono">--runner-name &lt;pc-name&gt;</code> if you want; the default is the hostname. If this dashboard is a localhost install (an address that starts <code class="font-mono">http://localhost</code>, no https), add <code class="font-mono">--insecure-http</code> to <code class="font-mono">enrol</code>; without it the runner tries https and fails with an SSL error. It checks this dashboard's key against the fingerprint in the code before it sends anything, then keeps its own key and token in the PC's secret store (the OS keyring: Windows Credential Manager, macOS Keychain, or the desktop keyring on Linux).
+      Add <code class="font-mono">--runner-name &lt;pc-name&gt;</code> if you want; the default is the hostname. If this dashboard is a localhost install (an address that starts <code class="font-mono">http://localhost</code>, no https), add <code class="font-mono">--insecure-http</code> to <code class="font-mono">enrol</code> (for the localhost try-out only; without it the runner tries https and fails with an SSL error). On a home or office network install, do NOT add it: the code already carries this server's certificate fingerprint. It checks this dashboard's key against the fingerprint in the code before it sends anything, then keeps its own key and token in the PC's secret store (the OS keyring: Windows Credential Manager, macOS Keychain, or the desktop keyring on Linux).
       <div class="mt-2 os-hint" data-profile-hint><span class="kb-label">Already have a runner for another Crewboss?</span> Add this one as a profile (this works the same on Linux, Windows PowerShell, WSL and macOS; one PC can hold several, one active at a time):
         {% call pre() %}crewboss-runner enrol '&lt;code&gt;' --name {{ profile_hint or 'work' }}
 crewboss-runner use {{ profile_hint or 'work' }}{% endcall %}
-        <code class="font-mono">crewboss-runner profiles</code> lists them (the active one is marked), <code class="font-mono">crewboss-runner use &lt;name&gt;</code> switches and reconnects (it refuses while a job runs unless you add <code class="font-mono">--force</code>), and <code class="font-mono">crewboss-runner profile remove &lt;name&gt;</code> deletes one (revoke it on that Crewboss's Runners page too). A profile name is 1-32 of <code class="font-mono">a-z 0-9 -</code>. <strong>Every server enrolled on one PC can read the others' keys and repositories</strong> (the same OS user): servers that must not trust each other need separate OS users or PCs, so do not put two unrelated clients on one PC this way.</div></li>
+        <code class="font-mono">crewboss-runner profiles</code> lists them (the active one is marked), <code class="font-mono">crewboss-runner use &lt;name&gt;</code> switches and reconnects (it refuses while a job runs unless you add <code class="font-mono">--force</code>), and <code class="font-mono">crewboss-runner profile remove &lt;name&gt;</code> deletes one (revoke it on that Crewboss's Machines page, Runners tab, too). A profile name is 1-32 of <code class="font-mono">a-z 0-9 -</code>. <strong>Every server enrolled on one PC can read the others' keys and repositories</strong> (the same OS user): servers that must not trust each other need separate OS users or PCs, so do not put two unrelated clients on one PC this way.</div></li>
   </ol>
 
   <p class="mt-3 text-small text-charcoal/75" data-doctor-hint><span class="kb-label">Something wrong? Run the doctor</span> On the PC, <code class="font-mono">crewboss-runner doctor</code> checks Python, git, Claude Code and its sign-in, the keyring, this dashboard's pinned key, the enrolment, the label tools (add <code class="font-mono">--label android-usb</code>), the autostart, disk space and the agent's setup (hooks, MCP servers, permissions, stray secrets), and says pass, warn or fail for each. <code class="font-mono">crewboss-runner doctor --json</code> prints it for a script. <code class="font-mono">crewboss-runner repair</code> fixes the safe things (asking first; <code class="font-mono">--yes</code> skips the questions). <code class="font-mono">crewboss-runner uninstall</code> removes the autostart, this PC's key and settings, and leaves your repositories alone, and refuses to delete a folder that is not the runner's own (named <code class="font-mono">crewboss-runner</code> or holding its marker file) or while a job is running. Where it keeps things can be moved with <code class="font-mono">CREWBOSS_RUNNER_CONFIG_DIR</code> and <code class="font-mono">CREWBOSS_RUNNER_STATE_DIR</code> (absolute paths). The scan looks for known risky patterns; "no known-risky setup found" is not a guarantee.</p>
@@ -199,7 +195,7 @@ crewboss-runner use {{ profile_hint or 'work' }}{% endcall %}
       {% call pre() %}crewboss-runner service install
 crewboss-runner service status
 journalctl --user -u crewboss-runner -f{% endcall %}
-      The log includes the status page link (it opens only on that PC). <code class="font-mono">crewboss-runner service uninstall</code> reverses it; add <code class="font-mono">--dry-run</code> to see what it would do first. It runs while you are logged in, which is what Subscription mode needs: it uses your Claude login, and the runner's key is in your keyring. To try it in the terminal first, <code class="font-mono">crewboss-runner run</code> (Ctrl+C stops it).
+      The log includes the status page link (it opens only on that PC). <code class="font-mono">crewboss-runner service uninstall</code> reverses it; add <code class="font-mono">--dry-run</code> to see what it would do first. It runs while you are logged in, which is what Subscription mode needs: it uses your Claude login, and the runner's key is in your keyring. To try it in the terminal first, <code class="font-mono">crewboss-runner run</code>: it keeps this window busy until you press Ctrl+C, so open a second window for <code class="font-mono">crewboss-runner status</code>.
       <p class="mt-2"><span class="kb-label">No tray here</span> The tray icon is Windows-only (<code class="font-mono">crewboss-runner tray</code> says so). Use the commands above: <code class="font-mono">status</code>, <code class="font-mono">doctor</code>, <code class="font-mono">service start|stop</code>. The same local control panel page also works: <code class="font-mono">crewboss-runner status</code> prints its link while the runner is running (optional).</p>
       <p class="mt-2"><span class="kb-label">Sleep</span> While a job is running the runner keeps this PC from going to sleep on its own (<code class="font-mono">systemd-inhibit</code>), and lets go as soon as no job is running; an idle runner never keeps it awake, and the screen may still turn off. This stops idle sleep only: closing a laptop lid or pressing the power button still sleeps the PC, so plug in and leave the lid open for long jobs. Turn it off with <code class="font-mono">CREWBOSS_RUNNER_KEEP_AWAKE_DURING_JOBS=0</code>.</p></div>
   </div>
@@ -207,7 +203,7 @@ journalctl --user -u crewboss-runner -f{% endcall %}
     <div data-wtab="ps"><div><span class="kb-label">4. Keep it running</span> One command makes a hidden per-user Scheduled Task that starts the runner when you log in to Windows (no admin needed, no console window), and starts it now:
       {% call pre() %}crewboss-runner service install
 crewboss-runner status{% endcall %}
-      <code class="font-mono">status</code> prints the status page link (it opens only on that PC) and shows whether the runner is running; the runner's log is <code class="font-mono">%LOCALAPPDATA%\crewboss-runner\logs\&lt;profile&gt;\runner.log</code> (profile <code class="font-mono">default</code> unless you added more). Stop or start it with <code class="font-mono">crewboss-runner service stop</code> (a graceful stop; it refuses while a job runs unless you add <code class="font-mono">--force</code>) and <code class="font-mono">crewboss-runner service start</code>; <code class="font-mono">crewboss-runner service uninstall</code> removes it. To try it in the terminal first, <code class="font-mono">crewboss-runner run</code> (Ctrl+C stops it).
+      <code class="font-mono">status</code> prints the status page link (it opens only on that PC) and shows whether the runner is running; the runner's log is <code class="font-mono">%LOCALAPPDATA%\crewboss-runner\logs\&lt;profile&gt;\runner.log</code> (profile <code class="font-mono">default</code> unless you added more). Stop or start it with <code class="font-mono">crewboss-runner service stop</code> (a graceful stop; it refuses while a job runs unless you add <code class="font-mono">--force</code>) and <code class="font-mono">crewboss-runner service start</code>; <code class="font-mono">crewboss-runner service uninstall</code> removes it. To try it in the terminal first, <code class="font-mono">crewboss-runner run</code>: it keeps this window busy until you press Ctrl+C, so open a second window for <code class="font-mono">crewboss-runner status</code>.
       <p class="mt-2"><span class="kb-label">Optional: tray icon and control panel</span> <code class="font-mono">crewboss-runner tray</code> (or <code class="font-mono">crewboss-runner-tray</code>, no console window) puts an icon in the notification area: grey = stopped, green = idle and connected, blue = a job is running, amber = needs attention. Its menu starts and stops the runner and opens the control panel (state, current job, automatic start, keep-awake, health, log, and "Remove runner from this PC"). A checkbox in the panel starts the tray when you sign in. No admin needed; only choosing the Windows service asks for it.</p>
       <p class="mt-2"><span class="kb-label">Optional: a real Windows service</span> From an administrator PowerShell opened by the same user, <code class="font-mono">crewboss-runner service install --windows-service</code> installs a service that logs on as you (it asks for your Windows password, which goes straight to Windows and is not stored), starts at boot (delayed) and restarts on failure. It runs as you, with standard-user rights, even though it is a service: the service only supervises and starts the runner with a filtered (non-administrator) token, so the agents do not get admin rights. It runs as you, not as SYSTEM, because the key store and your Claude Code login belong to your user. A service has no desktop and cannot open a browser, so sign in to Claude Code (run <code class="font-mono">claude</code> once) before installing. The service runs from its own admin-only copy in Program Files (so Python must be installed for all users, not just for you; after <code class="font-mono">pipx upgrade</code>, re-run the install to update it). Entra ID (AzureAD) accounts cannot be service accounts: use the hidden task. Installing one kind removes the other; stopping, starting and removing the service need an administrator PowerShell.</p>
       <p class="mt-2"><span class="kb-label">Sleep</span> While a job is running the runner keeps this PC from going to sleep on its own (Windows power request), and lets go as soon as no job is running; an idle runner never keeps it awake, and the screen may still turn off. This stops idle sleep only: closing a laptop lid or pressing the power button still sleeps the PC, so plug in and leave the lid open for long jobs. Turn it off with <code class="font-mono">CREWBOSS_RUNNER_KEEP_AWAKE_DURING_JOBS=0</code>.</p></div></div>

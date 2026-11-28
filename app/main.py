@@ -20,7 +20,7 @@ from app.web_auth import WebAuthGate
 from app.origin_guard import SameOriginGuard
 from app.security_headers import SecurityHeaders
 from app.routers import (admin_pages, ca_pages, releases_pages, api, auth_pages, local_auth_pages, frontdoor_pages, trust_pages, keys_pages, knowledge_pages, materials_pages, assets_pages, tabs_pages, connections_pages, handoffs_pages, pages, push_pages,
-                         servers_pages, machines_pages, environment_pages, lives_pages, logic_pages, runner, runners_pages, approvals_pages, shell_pages, filter_pages, skills_pages)
+                         servers_pages, machines_pages, environment_pages, lives_pages, logic_pages, runner, runners_pages, approvals_pages, shell_pages, filter_pages, skills_pages, job_activity_pages)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("crewboss")
@@ -353,6 +353,7 @@ def apple_touch_icon():
 app.include_router(ca_pages.router)                 # /ca/… the CA drawer's JSON + SSE (task #702; signed-in web session)
 app.include_router(runner.router)                   # /runner/identity, /runner/enrol (task #627; code/signature auth)
 app.include_router(auth_pages.router)               # /auth/login, /auth/callback, /auth/logout (#394)
+app.include_router(local_auth_pages.prefs_router)       # /account/preferences: the person's own settings, in every sign-in mode
 app.include_router(local_auth_pages.router)         # local sign-in: /auth/login (POST), /auth/enrol, /account/security (#706)
 app.include_router(admin_pages.home_router)          # /admin: the Administration overview (#778)
 app.include_router(frontdoor_pages.router)         # /admin/front-door: the Front door card (#976)
@@ -375,6 +376,7 @@ app.include_router(skills_pages.project_router)      # /{slug}/build-skills: a p
 app.include_router(lives_pages.project_router)         # /{slug}/where (#839, #726)
 app.include_router(logic_pages.project_router)         # /{slug}/logic (#715)
 app.include_router(environment_pages.project_router)   # /{slug}/environment (#810 step 6)
+app.include_router(job_activity_pages.project_router)  # /{slug}/tasks/<id>/run/activity: the live runner conversation (#89)
 app.include_router(machines_pages.project_router)    # /{slug}/machines (#810: Servers and Runners in one page)
 app.include_router(servers_pages.project_router)    # /{slug}/servers (task #300)
 app.include_router(releases_pages.project_router)   # /{slug}/releases, /{slug}/team (change #77)

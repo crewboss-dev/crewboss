@@ -124,7 +124,7 @@ SERVER_HEALTH_KEYS = instance.get_map("server_health_keys")
 DEFAULT_PROJECT = instance.get_str("roles.default")
 # The Crewboss repo a new runner PC clones to install the runner (runners page how-to, #806). HTTPS so a fresh Windows PC can
 # sign in through Git Credential Manager without an SSH key. instance.yaml `runner_repo`; env CREWBOSS_RUNNER_REPO wins.
-RUNNER_REPO = os.environ.get("CREWBOSS_RUNNER_REPO", instance.get_str("runner_repo", "https://github.com/ORG/crewboss.git"))
+RUNNER_REPO = os.environ.get("CREWBOSS_RUNNER_REPO", instance.get_str("runner_repo", "https://github.com/crewboss-dev/crewboss.git"))
 # A suggested runner PROFILE name for the how-to ("crewboss-runner enrol <code> --name <profile>", #975): this instance's `name` as a slug
 # (a-z, 0-9, -; at most 32), or "work" when it has none.
 import re as _re
@@ -424,6 +424,7 @@ CA_TIMEZONE = os.environ.get("CREWBOSS_CA_TIMEZONE", "").strip() or LOCAL_TZ
 CA_TICK_SECONDS = int(os.environ.get("CREWBOSS_CA_TICK_SECONDS", "20"))
 CA_TURN_LEASE_SECONDS = int(os.environ.get("CREWBOSS_CA_TURN_LEASE_SECONDS", "90"))
 CA_TURN_MAX_SECONDS = int(os.environ.get("CREWBOSS_CA_TURN_MAX_SECONDS", "900"))
+TASK_SUMMARY_MODEL = os.environ.get("CREWBOSS_TASK_SUMMARY_MODEL", "").strip() or instance.get_str("task_summary_model", "haiku")   # the cheap model that writes a task's summary (#91): haiku or sonnet
 CA_QUEUE_WAIT_SECONDS = int(os.environ.get("CREWBOSS_CA_QUEUE_WAIT_SECONDS", "90"))
 # CA uploads (task #727): the bytes live on the server's own disk in this folder (bind-mounted, like the materials folder: add it to the
 # backups); the database holds the metadata. Stripped (file deleted, a stub kept) once the linked task has been closed this many days,

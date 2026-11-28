@@ -90,12 +90,42 @@ def root_commit(root: Path, local_sha: str) -> str | None:
     return out[-1] if out else None
 
 
-def base_commit(root: Path, local_sha: str, remote_sha: str, known: list[str]) -> str | None:
-    """The commit this push builds on, whose copy of the baseline the pushed one may not exceed (and whose binary allowlist applies)."""
+def default_head(root: Path, remote: str, url: str) -> str | None:
+    """The sha of the remote's DEFAULT branch (ls-remote --symref HEAD, else refs/heads/main), or None. Never a tag."""
+    target = url or remote
+    if not target:
+        return None
+    key = ("default", root, target)
+    if key in _VIEW:
+        return _VIEW[key]
+    sha = None
+    try:
+        res = subprocess.run(["git", "ls-remote", "--symref", target, "HEAD"], cwd=root, capture_output=True, text=True, timeout=30)
+        lines = res.stdout.splitlines() if res.returncode == 0 else []
+        sym = next((ln.split()[1] for ln in lines if ln.startswith("ref:")), None)
+        if sym and sym.startswith("refs/heads/"):
+            r2 = subprocess.run(["git", "ls-remote", target, sym], cwd=root, capture_output=True, text=True, timeout=30)
+            sha = next((ln.split()[0] for ln in r2.stdout.splitlines() if ln.split()[1:] == [sym]), None) if r2.returncode == 0 else None
+        if sha is None:
+            r3 = subprocess.run(["git", "ls-remote", target, "refs/heads/main"], cwd=root, capture_output=True, text=True, timeout=30)
+            sha = next((ln.split()[0] for ln in r3.stdout.splitlines() if ln.split()[1:] == ["refs/heads/main"]), None) \
+                if r3.returncode == 0 else None
+    except (subprocess.TimeoutExpired, OSError):
+        sha = None
+    if sha and _git(root, "cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+        sha = None
+    _VIEW[key] = sha
+    return sha
+
+
+def base_commit(root: Path, local_sha: str, remote_sha: str, known: list[str], default: str | None = None) -> str | None:
+    """The commit this push builds on, whose copy of the baseline the pushed one may not exceed (and whose binary allowlist applies):
+    the old tip of the ref being updated, or, for a NEW branch, the merge-base with the remote's DEFAULT branch head. Never picked from
+    tags or other branches (an old tag would let a baseline that was lowered since come back); unknown = None = strict."""
     if remote_sha != ZERO and _git(root, "cat-file", "-e", f"{remote_sha}^{{commit}}").returncode == 0:
         return remote_sha
-    for k in known:
-        mb = _git(root, "merge-base", local_sha, k)
+    if default:
+        mb = _git(root, "merge-base", local_sha, default)
         if mb.returncode == 0 and mb.stdout.strip():
             return mb.stdout.strip()
     return None
@@ -127,7 +157,8 @@ def check_ref(root: Path, remote: str, url: str, local_ref: str, local_sha: str,
     names, binaries = commit_guard.range_files(spec, root)
     for n in names:
         say(f"{n}: a file of this kind (secret, key, dump, credentials or environment file) must not be pushed")
-    base = None if tip_only else base_commit(root, local_sha, remote_sha, known)
+    base = None if tip_only else base_commit(root, local_sha, remote_sha, known, default_head(root, remote, url))
+    real_base = base                                       # a base the remote really has; NOT the fail-closed root fallback below
     if not ok and base is None:
         base = root_commit(root, local_sha)                # fail closed: the policy files of the oldest commit, not the pushed one
     # the allowlist of the commit this builds on, so a push cannot widen its own; the pushed one only for a first single commit
@@ -145,7 +176,11 @@ def check_ref(root: Path, remote: str, url: str, local_ref: str, local_sha: str,
     # 2. the tree at the pushed commit (secrets, private denylist, address ratchet, stale headroom); gitleaks runs below
     bad |= 1 if commit_guard.main(["--strict", "--no-gitleaks", "--rev", local_sha], root) else 0
     # 3. everything ADDED across the pushed commits (denylist, secrets, addresses; not addresses for a first push to an empty remote)
-    adds = commit_guard.added_hits(spec, root, deny, ips=not tip_only)
+    # Addresses: ONE commit that BUILDS ON a known base (a release pull request) is judged by VALUE: an added address is allowed only when
+    # that exact value is already in the same file at the base (or on a line the commit removes). A value new to the file is blocked as
+    # before; touching a line that carries a known fixture address is not. The tree ratchet (step 2) and step 5 still apply. With several
+    # commits (an add that a later commit removes is still in history) or no known base, every added address is blocked.
+    adds = commit_guard.added_hits(spec, root, deny, ips=not tip_only, ip_base=real_base if (real_base and len(commits) == 1) else None)
     for line in adds:
         say(line)
     if adds:

@@ -17,7 +17,7 @@
           <span>Back</span>
         </button>
         <span class="task-sheet-no" data-task-sheet-no></span>
-        {% include "partials/task_tabs.html" %}
+        <span class="flex-1"></span>
         <button type="button" onclick="window.crewbossCloseTask()" class="task-sheet-x press" aria-label="Close">
           <svg class="nav-ico" style="opacity:1" viewBox="0 -960 960 960" aria-hidden="true"><path d="{{ icon('close') }}"/></svg>
         </button>
@@ -25,7 +25,7 @@
     </div>
     <div class="task-sheet-body">
       <div class="task-sheet-inner">
-        <h1 id="task-sheet-title" class="text-lead font-semibold mb-3 break-words" data-task-sheet-title>Task</h1>
+        <h1 id="task-sheet-title" class="sr-only" data-task-sheet-title>Task</h1>
         <div id="drawer-content"></div>
       </div>
     </div>

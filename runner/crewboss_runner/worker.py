@@ -18,9 +18,10 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 from pathlib import Path
 
-from . import agentscan, elevation, gemini, guard, keepawake, settings, skills, spawn, store
+from . import activity, agentscan, elevation, gemini, guard, keepawake, settings, skills, spawn, store
 from .link import Link, LinkDown
 
 log = logging.getLogger("crewboss-runner.worker")
@@ -166,7 +167,11 @@ def prepare_worktree(state: Path, job: dict) -> tuple[Path, str]:
         bare, base = ensure_bare_unlocked(state, remote, job["project_id"])
         wt = store.ensure_private_dir(state / "jobs") / f"j{int(job['job_id'])}-e{int(job['fence'])}" / "work"
         wt.parent.mkdir(parents=True, exist_ok=True)
-        git(["worktree", "add", "-q", "-b", job["branch"], str(wt), f"refs/remotes/{base}"], cwd=bare)
+        start = f"refs/remotes/{base}"
+        carried = job.get("base_branch") or ""    # an earlier job's pushed branch (Run again, a review, the tests): start FROM it; absent or gone = the default branch
+        if re.fullmatch(r"dash/j\d+-e\d+", carried) and git(["rev-parse", "--verify", "-q", f"refs/remotes/origin/{carried}"], cwd=bare, check=False):
+            start = f"refs/remotes/origin/{carried}"
+        git(["worktree", "add", "-q", "-b", job["branch"], str(wt), start], cwd=bare)
     return wt, base
 
 
@@ -199,12 +204,18 @@ def gemini_out_dir(state: Path, job: dict) -> Path:
     return state / "gemini-out" / f"j{int(job['job_id'])}-e{int(job['fence'])}"
 
 
+def gemini_activity_file(state: Path, job: dict) -> Path:
+    """Where the local Gemini MCP logs what it was asked and what it answered, for the live view (#89): in the job dir, outside the worktree."""
+    return job_dir(state, job) / "gemini-activity.jsonl"
+
+
 def write_job_files(state: Path, job: dict, base_url: str, use_gemini: bool = False) -> str:
     """The agent's MCP config (0600; it holds the job token) in the job dir, which is the worktree's PARENT: outside the
     worktree, so a commit or `git add -A` can never pick it up. Returns its path."""
     d = job_dir(state, job)
     mcp = d / "mcp.json"
-    entry = (spawn.gemini_server(base_url, job["job_token"], job["fence"], str(gemini_out_dir(state, job))) if use_gemini else None)
+    entry = (spawn.gemini_server(base_url, job["job_token"], job["fence"], str(gemini_out_dir(state, job)),
+                                 activity_file=str(gemini_activity_file(state, job))) if use_gemini else None)
     store.write_private(mcp, spawn.mcp_config(base_url, job["job_token"], spawn.extra_mcp_servers(job), entry))
     return str(mcp)
 
@@ -395,7 +406,7 @@ class Worker:
         lease = float(job.get("lease_seconds") or 90)
         max_seconds = float(job["max_seconds"]) if job.get("max_seconds") else None
         mode = "api" if self.cfg.get("mode") == "api" else "subscription"
-        wt = agent = hb = None
+        wt = agent = hb = live_view = streamer = None
         baseline: dict = {}
         pins: set = set()
         lost = asyncio.Event()
@@ -414,8 +425,10 @@ class Worker:
                     if unreviewed and "pins" in job:   # an older dashboard has no place to put them: the reason still says so
                         failed = await self._report_files(job, wt, unreviewed, "preflight")
                     # the worktree is removed afterwards, so `doctor` cannot see it: name the files, and say to fix them in the repository
+                    only_unreviewed = all(f["rule"] == "config.unreviewed" for f in blocks)   # #987: the dashboard holds the job for the Owner's review
                     return await self._release(job, (f"could not send {failed} to the dashboard for review; " if failed else "")
-                                               + release_reason(self.job_findings, "pins" in job))
+                                               + release_reason(self.job_findings, "pins" in job),
+                                               "agent_files_unreviewed" if only_unreviewed and unreviewed and "pins" in job else "")
                 use_gemini = self.job_may_use_gemini(job)
                 mcp = await asyncio.to_thread(write_job_files, self.state, job, self.base_url, use_gemini)
                 skills_report = await asyncio.to_thread(self._install_skills, wt, job)
@@ -428,8 +441,9 @@ class Worker:
                 if blocks:
                     self.job_findings = self.job_findings + again
                     return await self._release(job, release_reason(again, "pins" in job))
+                session_id = str(uuid.uuid4())   # named by us so the live view (#89) knows the transcript file exactly
                 agent = spawn.start(mode, job, mcp, str(wt), str(job_dir(self.state, job) / "agent.log"), self.claude,
-                                    extra_env=skills.git_env((skills_report or {}).get("exclude_file")), gemini=use_gemini)
+                                    extra_env=skills.git_env((skills_report or {}).get("exclude_file")), gemini=use_gemini, session_id=session_id)
             except (JobError, OSError, ValueError, subprocess.SubprocessError) as exc:
                 # setup error: give the job back (requeued, attempts counted) rather than failing it for good
                 return await self._release(job, f"runner could not start the job: {exc}"[:300])
@@ -437,6 +451,9 @@ class Worker:
             await self._report_skills(job, skills_report)
             # heartbeats run from here until AFTER finish (through the push too)
             hb = asyncio.create_task(self._heartbeats(job, lease, lost, finish_now))
+            streamer = activity.Streamer(self.link, job, str(wt), session_id, gemini_activity_file(self.state, job) if use_gemini else None,
+                                         screen=(self._screen_probe(agent) if mode != "api" else None))
+            live_view = asyncio.create_task(streamer.run())   # #89: the live runner conversation; never fails the job
             waiter = asyncio.create_task(asyncio.to_thread(agent.wait))
             lost_wait = asyncio.create_task(lost.wait())
             finish_wait = asyncio.create_task(finish_now.wait())
@@ -510,6 +527,8 @@ class Worker:
             if lost.is_set():
                 self.status.event(f"job {jid}: stale fence; nothing pushed")
                 return "lost"
+            live_view.cancel()
+            await streamer.drain()   # the agent's last words, while the fence is still ours
             self.status.set(job={**self.status.data["job"], "state": "finishing"})
             # the final heartbeat: only a runner that still holds the job at this fence may push. Its reply also carries
             # the finish mark, so a finish the heartbeat loop had not seen yet still counts.
@@ -532,6 +551,10 @@ class Worker:
         finally:
             if hb is not None:
                 hb.cancel()
+            if live_view is not None:
+                live_view.cancel()
+            if streamer is not None and mode == "api":   # an API job's transcript is not kept on the PC (the live view has already read it)
+                await asyncio.to_thread(streamer.forget)
             await asyncio.to_thread(self._cleanup, job, wt)
             self.status.set(job=None)
 
@@ -595,6 +618,20 @@ class Worker:
                 return None
             await asyncio.sleep(min(0.5, lease / 10))
         return None
+
+    @staticmethod
+    def _screen_probe(agent):
+        """What the live view reads from a subscription session's screen when it has gone quiet: (the tool a permission prompt asks about, the claude.ai/code link)."""
+        def probe() -> tuple[str, str]:
+            text = guard.log_text(agent.log_path, 0, False)
+            m = activity.SESSION_FIND.search(text)
+            size = guard.log_size(agent.log_path)
+            quiet = size == seen[0]      # the screen has not changed since the last look: a prompt waiting for a person, not output scrolling by
+            seen[0] = size
+            tool = guard.permission_prompt_tool(text) or ""
+            return (tool if quiet else ""), (m.group(0) if m else "")
+        seen = [-1]
+        return probe
 
     def _permission_reason(self, tool: str) -> str:
         name = str(self.cfg.get("name") or "this PC")[:60]
@@ -689,13 +726,13 @@ class Worker:
         except LinkDown:
             pass
 
-    async def _release(self, job: dict, reason: str) -> str:
+    async def _release(self, job: dict, reason: str, code: str = "") -> str:
         """Give the job back over the socket: the server requeues it (new fence, attempts counted) like a lapsed lease."""
         self.status.set(last_error=reason)
         self.status.event(f"job {job['job_id']}: {reason}")
         for _ in range(5):
             try:
-                reply = await self.link.rpc("release", job_id=job["job_id"], fence=job["fence"], reason=reason)
+                reply = await self.link.rpc("release", job_id=job["job_id"], fence=job["fence"], reason=reason, **({"code": code} if code else {}))
             except LinkDown:
                 await asyncio.sleep(0.5)
                 continue

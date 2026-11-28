@@ -1,0 +1,48 @@
+{# THE OUTCOME CARD (change #90, folded into the "Last run" line in 0.1.2, so NOW owns the one primary button and every button here is secondary): replaces the Run button once a job has ended. Needs: task, base, run (outcome from app/job_card.outcome, job). #}
+{% set oc = run.outcome %}
+<div class="card p-3 mb-2" data-outcome="{{ oc.key }}">
+  <p class="text-small font-semibold flex items-center gap-2"><span class="chip {{ 'bg-status-ok/10 text-status-ok' if oc.key == 'done' else 'bg-status-disaster/10 text-status-disaster' if oc.key == 'failed' else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}" data-outcome-label>{% if oc.key == 'done' %}&#10003; {% endif %}{{ oc.label }}</span>
+    {% if oc.key == 'done' %}Finished{% elif oc.key == 'needs_work' %}Not finished yet{% elif oc.key == 'waiting' %}The agent needs a person{% else %}The job did not finish{% endif %}</p>
+  {% if oc.summary %}<p class="text-small mt-1 break-words" data-outcome-summary>{{ oc.summary }}</p>{% endif %}
+  {% if oc.branch and oc.key in ('done', 'needs_work') %}<p class="text-micro text-charcoal/60 mt-1">Branch {% if oc.branch_url %}<a class="font-mono break-all underline" href="{{ oc.branch_url }}" target="_blank" rel="noopener">{{ oc.branch }}</a>{% else %}<span class="font-mono break-all">{{ oc.branch }}</span>{% endif %}</p>{% endif %}
+  {% if oc.tests %}<p class="text-micro text-charcoal/70 mt-1" data-outcome-tests><span class="text-charcoal/50">Tests</span> {{ oc.tests }}</p>{% elif oc.key == 'done' %}<p class="text-micro text-charcoal/50 mt-1" data-outcome-tests>The agent did not report any tests.</p>{% endif %}
+  {% if oc.owner_note %}<p class="text-small mt-2 rounded-lg bg-status-warn/15 px-3 py-2 break-words" data-outcome-owner-note>You said: {{ oc.owner_note }}</p>{% endif %}
+  {% if oc.remaining %}
+  <div class="mt-2" data-outcome-remaining><p class="text-micro text-charcoal/60">Still to do</p>
+    <ul class="list-disc pl-5 text-small">{% for x in oc.remaining %}<li class="break-words">{{ x }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if oc.next_steps and oc.key == 'done' %}
+  <div class="mt-2" data-outcome-steps><p class="text-micro text-charcoal/60">The agent suggests</p>
+    <ul class="list-disc pl-5 text-small">{% for x in oc.next_steps %}<li class="break-words">{{ x }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if oc.followups %}
+  <div class="mt-2" data-outcome-followups><p class="text-micro text-charcoal/60">Since then</p>
+    <ul class="text-small">{% for f in oc.followups %}<li class="break-words" data-followup="{{ f.profile }}"><span class="font-semibold">{{ 'Review' if f.profile == 'code-auditor' else 'Full tests' if f.profile == 'chores' else f.profile }}</span> <span class="text-charcoal/60">{{ f.state }}</span>{% if f.summary %}: {{ f.summary|truncate(240) }}{% endif %}{% if f.tests %} <span class="text-charcoal/60">({{ f.tests }})</span>{% endif %}</li>{% endfor %}</ul></div>
+  {% endif %}
+  <div class="flex flex-wrap gap-2 mt-3" data-outcome-actions>
+    {% if oc.key == 'done' %}
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run/review" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-ghost text-small border border-line touch-target" data-next="review">Review the change</button></form>
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run/tests" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-ghost text-small border border-line touch-target" data-next="tests">Run the full tests</button></form>
+      <a class="btn-ghost text-small border border-line touch-target inline-flex items-center" href="{{ base }}/releases" data-next="deploy">Ready to deploy</a>
+      {% if not oc.task_done %}<form hx-post="{{ base }}/tasks/{{ task.id }}/run/done" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-ghost text-small border border-line touch-target" data-next="mark-done">Mark task done</button></form>{% endif %}
+    {% elif oc.key == 'waiting' %}
+      <a class="btn-ghost text-small border border-line touch-target inline-flex items-center" href="#task-comments" data-next="answer">Answer in a comment, then Run again</a>
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-ghost text-small border border-line touch-target" data-run-again>Run again</button></form>
+    {% else %}
+      <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML"><button class="btn-ghost text-small border border-line touch-target" data-run-again>Run again</button></form>
+      {% if oc.key == 'needs_work' %}<button type="button" class="btn-ghost text-small border border-line touch-target" onclick="this.closest('[data-outcome]').querySelector('[data-add-details]').hidden = false; this.hidden = true" data-next="details">Add details for the AI</button>{% endif %}
+      <button type="button" class="btn-ghost text-small border border-line touch-target" data-ca-new="task:{{ task.id }}" data-ca-title="{{ task.title }}" data-next="ask-ca">Ask CA</button>
+    {% endif %}
+  </div>
+  {% if oc.key == 'needs_work' %}
+  <form hx-post="{{ base }}/tasks/{{ task.id }}/run" hx-target="#drawer-content" hx-swap="innerHTML" class="mt-2" data-add-details hidden>
+    <label class="block text-micro">Details for the AI<textarea name="details" rows="3" class="field text-small w-full" required placeholder="What should it do differently?"></textarea></label>
+    <button type="submit" class="btn-ghost text-small border border-line touch-target mt-1" data-run-again-details>Run again</button></form>
+  {% endif %}
+  {% if oc.key == 'done' %}
+  <details class="mt-2" data-not-fixed><summary class="press cursor-pointer text-micro underline text-charcoal/60 touch-target">It is not fixed</summary>
+    <form hx-post="{{ base }}/tasks/{{ task.id }}/run/needs-work" hx-target="#drawer-content" hx-swap="innerHTML" class="mt-1">
+      <textarea name="words" rows="2" class="field text-small w-full" required placeholder="What is still wrong?"></textarea>
+      <button class="btn-ghost text-small border border-line touch-target mt-1" data-needs-work>Mark as needs more work</button></form></details>
+  {% endif %}
+</div>

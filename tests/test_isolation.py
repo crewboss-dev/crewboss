@@ -403,7 +403,7 @@ _ALLOW = [
     *A("POST", "/auth/enrol/passkey/verify", "own enrolment"), *A("POST", "/auth/enrol/codes", "own enrolment (restricted session)"),
     *A("POST", "/auth/enrol/complete", "own enrolment (restricted session)"),
     *A("POST", "/auth/enrol/password", "own enrolment (restricted session, stage 1)"), *A("POST", "/auth/enrol/totp", "own enrolment (restricted session, stage 2)"),
-    *A("POST", "/account/security/reauth", "own account (a fresh authenticator code)"), *A("GET", "/account/security/stepup-info", "own account"),
+    *A("POST", "/account/security/reauth", "own account (a fresh authenticator code)"), *A("POST", "/account/preferences/runner-summaries", "own account (the person's own preference; any signed-in person)"), *A("GET", "/account/preferences", "own account"), *A("GET", "/account/security/stepup-info", "own account"),
     *A("POST", "/account/security/password", "own account (after a fresh factor)"),
     *A("POST", "/account/security/authenticator/start", "own account (after a fresh factor)"),
     *A("POST", "/account/security/authenticator/confirm", "own account (after a fresh factor)"), *A("GET", "/account/security", "own account"),

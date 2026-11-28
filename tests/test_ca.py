@@ -864,3 +864,72 @@ def test_a_resumed_session_is_told_what_happened_since_its_last_reply(cw):
         assert again["user_text"] == "thanks"                                   # nothing new since the last reply
     finally:
         r.close()
+
+
+def test_needs_more_work_card_attaches_the_words_and_runs_again(cw, monkeypatch):
+    """Change #90: "it's not fixed" -> a confirm card; on the tap the task has the person's words, and the same auto-planned job starts."""
+    conv, turn = _running_turn(cw)
+    _as_turn(monkeypatch, turn["turn_token"])
+    tid = cw["task"]["id"]
+    out = ca_mcp.propose_needs_more_work(tid, "The button still does nothing on my phone")
+    assert out["status"].startswith("waiting") and _live_jobs(tid) == []
+    card = ca.get_conversation(cw["bob"]["id"], conv)["cards"][0]
+    assert card["payload"]["action"] == "needs_work" and "phone" in card["payload"]["detail"]
+    r = cw["client"].post(f"/ca/cards/{card['id']}", json={"action": "confirm"}, headers=cw["bob_h"])
+    assert r.status_code == 200 and r.json()["state"] == "done"
+    (job,) = _live_jobs(tid)
+    assert job["state"] == "queued" and job["approved_at"] is not None
+    assert any("Needs more work: The button still does nothing" in c["body"] for c in repo.get_task(tid)["comments"])
+    with pytest.raises(ValueError):
+        ca_mcp.propose_needs_more_work(tid, "again")     # a live job exists: wait or stop it
+    with pytest.raises(ValueError):
+        ca_mcp.propose_needs_more_work(_task(cw["acme_app"])["id"], "  ")
+
+
+def test_propose_task_status_is_a_confirm_card_that_closes_the_task_when_tapped(cw, monkeypatch):
+    """0.1.2: CA can propose closing a task ("already fixed on main"): nothing happens until the tap; the tap needs edit rights, comments and audits."""
+    conv, turn = _running_turn(cw)
+    _as_turn(monkeypatch, turn["turn_token"])
+    tid = cw["task"]["id"]
+    assert "propose_task_status" in ca_mcp.TOOLS and "propose_task_status" in ca.SYSTEM_PROMPT
+    out = ca_mcp.propose_task_status(tid, "done", "Already fixed on main by 8eba0f29")
+    assert out["status"].startswith("waiting") and repo.get_task(tid)["status"] != "done"
+    card = ca.get_conversation(cw["bob"]["id"], conv)["cards"][0]
+    assert card["payload"]["action"] == "task_status" and "8eba0f29" in card["payload"]["detail"]
+    r = cw["client"].post(f"/ca/cards/{card['id']}", json={"action": "confirm"}, headers=cw["bob_h"])
+    assert r.status_code == 200 and r.json()["state"] == "done"
+    t = repo.get_task(tid)
+    assert t["status"] == "done" and any("8eba0f29" in c["body"] for c in t["comments"])
+    with pytest.raises(ValueError):
+        ca_mcp.propose_task_status(tid, "done", "again")                 # already done
+    with pytest.raises(ValueError):
+        ca_mcp.propose_task_status(tid, "finished", "x")                 # not a status
+    with pytest.raises(ValueError):
+        ca_mcp.propose_task_status(tid, "ready", "  ")                   # a reason is required
+
+
+def test_propose_task_status_needs_edit_rights(cw, monkeypatch):
+    conv, turn = _running_turn(cw)
+    _as_turn(monkeypatch, turn["turn_token"])
+    tid = cw["task"]["id"]
+    monkeypatch.setattr(ca_tools.access, "can_edit", lambda p, pid: False)
+    with pytest.raises(ValueError):
+        ca_mcp.propose_task_status(tid, "done", "no rights")
+    assert repo.get_task(tid)["status"] != "done"
+
+
+def test_a_stale_status_card_cannot_close_a_task_with_a_live_job(cw, monkeypatch):
+    """The live-job check is repeated at the tap: a job started after the card was made blocks it."""
+    conv, turn = _running_turn(cw)
+    _as_turn(monkeypatch, turn["turn_token"])
+    tid = cw["task"]["id"]
+    ca_mcp.propose_task_status(tid, "done", "Already fixed on main")
+    card = ca.get_conversation(cw["bob"]["id"], conv)["cards"][0]
+    with get_cursor() as cur:
+        cur.execute("SELECT id FROM agent_profiles ORDER BY id LIMIT 1")
+        prof = cur.fetchone()["id"]
+        cur.execute("INSERT INTO jobs (task_id, account_id, user_id, profile_id, state, branch) VALUES (%s, %s, %s, %s, 'running', 'ai/x')",
+                    (tid, cw["acme_app"]["id"], cw["bob"]["id"], prof))
+    r = cw["client"].post(f"/ca/cards/{card['id']}", json={"action": "confirm"}, headers=cw["bob_h"])
+    assert r.json()["state"] == "failed" and "job running" in r.json()["result"]
+    assert repo.get_task(tid)["status"] != "done"

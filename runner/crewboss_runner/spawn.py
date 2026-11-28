@@ -84,7 +84,7 @@ def extra_mcp_servers(job: dict) -> list[dict]:
     return out
 
 
-def gemini_server(base_url: str, job_token: str, fence: int, out_dir: str, python: str | None = None) -> dict:
+def gemini_server(base_url: str, job_token: str, fence: int, out_dir: str, python: str | None = None, activity_file: str | None = None) -> dict:
     """The stdio entry for the local Gemini MCP server. The config file is outside the worktree and 0600, like the job token's own entry."""
     from . import gemini
     # What this entry adds is only what the server needs (its own settings, the key file's PATH, the job token and URL). Claude Code merges its
@@ -94,6 +94,8 @@ def gemini_server(base_url: str, job_token: str, fence: int, out_dir: str, pytho
     env = {"CB_GEMINI_BASE_URL": base_url, "CB_GEMINI_TOKEN": job_token, "CB_GEMINI_FENCE": str(int(fence)), "CB_GEMINI_OUT": out_dir,
            "CB_GEMINI_REVIEW_MODEL": gemini.review_model(), "CB_GEMINI_IMAGE_MODEL": gemini.image_model(),
            "PYTHONSAFEPATH": "1"}      # the job's worktree must not shadow the runner's own modules
+    if activity_file:   # #89: where it logs the question and the reply, for the live view (outside the worktree)
+        env["CB_GEMINI_ACTIVITY"] = activity_file
     ca_file = tlspin.pinned_ca_file()
     if ca_file:   # trusted by the Gemini MCP for the DASHBOARD connection only; never SSL_CERT_FILE (that would break the Google API call)
         env["CB_SERVER_CA_FILE"] = ca_file
@@ -177,7 +179,7 @@ def disallowed_tools(job: dict, gemini: bool = False) -> list[str]:
     return [*deny_unnamed(tool_ceiling(job, gemini)), *ALWAYS_DENIED]
 
 
-def argv_for(mode: str, job: dict, mcp_file: str, claude: str | None = None, gemini: bool = False) -> list[str]:
+def argv_for(mode: str, job: dict, mcp_file: str, claude: str | None = None, gemini: bool = False, session_id: str | None = None) -> list[str]:
     prof = job.get("profile") or {}
     claude = claude or claude_binary()
     tools = tool_ceiling(job, gemini)
@@ -193,14 +195,17 @@ def argv_for(mode: str, job: dict, mcp_file: str, claude: str | None = None, gem
     allowed = "--allowedTools=" + ",".join(tools)   # one token: the flag is variadic and would swallow the prompt
     denied = ["--disallowedTools=" + ",".join(d)] if (d := disallowed_tools(job, gemini)) else []
     prompt = prompt_for(job, gemini)
+    # The live view (#89) reads Claude Code's own session transcript, so the session gets a name we choose (--session-id) and, in API mode, is
+    # saved (no --no-session-persistence) under the user's Claude config like any session. Without a session id, nothing changes.
+    sid = ["--session-id", session_id] if session_id and re.fullmatch(r"[0-9a-f-]{36}", session_id) else []
     if mode == "api":
-        return [claude, "-p", *common, "--permission-mode", "dontAsk", allowed, *denied, "--no-session-persistence",
+        return [claude, "-p", *common, "--permission-mode", "dontAsk", allowed, *denied, *([] if sid else ["--no-session-persistence"]), *sid,
                 "--output-format", "text", prompt]
     # anything but exactly "api" is a subscription session (fail closed)
     # An EXPLICIT --permission-mode default: without it 2.1.330 started in AUTO mode (its classifier / acceptEdits fast path ran a Write that
     # --allowedTools did not name, with no prompt). In default mode a tool outside the ceiling PROMPTS (a person may approve it from the phone
     # within guard.PERMISSION_GRACE; otherwise the permission watcher releases the job) and the flag outranks a repository's defaultMode.
-    return [claude, "--remote-control", f"dash-j{job['job_id']}", *common, "--permission-mode", "default", allowed, *denied, prompt]
+    return [claude, "--remote-control", f"dash-j{job['job_id']}", *common, "--permission-mode", "default", allowed, *denied, *sid, prompt]
 
 
 def new_group_kwargs() -> dict:
@@ -368,6 +373,6 @@ class Agent:
 
 
 def start(mode: str, job: dict, mcp_file: str, cwd: str, log_path: str, claude: str | None = None,
-          base_env: dict | None = None, extra_env: dict | None = None, gemini: bool = False) -> Agent:
-    return Agent(argv_for(mode, job, mcp_file, claude, gemini), cwd, {**agent_env(mode, base_env), **(extra_env or {})}, pty_mode=(mode == "subscription"),
+          base_env: dict | None = None, extra_env: dict | None = None, gemini: bool = False, session_id: str | None = None) -> Agent:
+    return Agent(argv_for(mode, job, mcp_file, claude, gemini, session_id), cwd, {**agent_env(mode, base_env), **(extra_env or {})}, pty_mode=(mode == "subscription"),
                  log_path=log_path)

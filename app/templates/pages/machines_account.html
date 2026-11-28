@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Machines · {{ current_project.name }}{% endblock %}
+{% block page_title %}Machines{% endblock %}
+{% block content %}
+{# A project's own Machines page (#987): runners and servers belong to the ACCOUNT. Says so and links the account's page; with agent files
+   waiting for the Owner's review the link goes straight to that card. Needs: account, pending, account_url. #}
+<div class="max-w-2xl min-w-0" data-machines-account>
+  <p class="text-small text-charcoal/80">Runners belong to an account, not to a project. <strong>{{ current_project.name }}</strong> uses the runners of <strong>{{ account.name }}</strong>.</p>
+  {% if pending %}
+  <p class="mt-2 rounded-lg bg-status-warn/15 px-3 py-2 text-small" data-machines-pending>{{ pending }} agent file{{ '' if pending == 1 else 's' }} in {{ account.name }} {{ 'is' if pending == 1 else 'are' }} waiting for the Owner's review before jobs can run.</p>
+  {% endif %}
+  <a class="btn-primary text-small touch-target inline-block mt-3" href="{{ account_url }}" data-machines-account-link>Open {{ account.name }}'s Machines page</a>
+</div>
+{% endblock %}

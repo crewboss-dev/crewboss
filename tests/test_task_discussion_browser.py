@@ -93,17 +93,18 @@ def _open(browser, server, project, width, can_post=True):
     return page, task, errors
 
 
-def test_wide_screen_the_discussion_never_opens_by_itself_but_the_button_and_tab_open_it(server, project):
+def test_wide_screen_the_discussion_never_opens_by_itself_but_the_button_opens_it(server, project):
     with pw.sync_playwright() as p:
         b = p.chromium.launch(executable_path=CHROME)
         page, task, errors = _open(b, server, project, 1440)
         page.goto(f"{server}/{project['slug']}/board")
         _open_sheet(page, project, task)                                           # the task window opens over the board
         page.wait_for_selector(".task-sheet.is-open")
-        page.wait_for_selector(".task-sheet [data-task-tab=discussion] .task-tab-n:not([hidden])")   # the list has loaded (the tab's count shows)
         assert not page.evaluate("document.documentElement.classList.contains('ca-open')")   # opening a task never opens the CA (#954)
         assert not page.is_visible("#ca-disc")
-        page.click(".task-sheet [data-task-tab=discussion]")                      # the tab opens it
+        assert page.locator(".task-sheet [data-task-tab]").count() == 0                # the Task | Discussion toggle is gone (#91)
+        page.wait_for_timeout(1000)    # the richer task window (#91) takes a moment to be seen as "the task in view"; a person cannot click within it
+        page.evaluate("document.querySelector('.ca-hdr-btn').click()")            # the assistant button opens it
         page.wait_for_function("document.documentElement.classList.contains('ca-open')")
         page.wait_for_selector("#ca-disc-list .ca-disc-row")
         assert page.is_visible("#ca-disc") and "Task #" in page.inner_text("#ca-disc-title")
@@ -140,38 +141,6 @@ def test_wide_screen_the_discussion_never_opens_by_itself_but_the_button_and_tab
         b.close()
 
 
-def test_the_discussion_tab_shows_how_many_conversations_the_task_has(server, project):
-    with pw.sync_playwright() as p:
-        b = p.chromium.launch(executable_path=CHROME)
-        page, task, errors = _open(b, server, project, 1440)
-        page.goto(f"{server}/{project['slug']}/board")
-        _open_sheet(page, project, task)
-        page.wait_for_selector(".task-sheet.is-open")
-        badge = ".task-sheet [data-task-tab=discussion] .task-tab-n"
-        page.wait_for_selector(badge + ":not([hidden])")
-        assert page.inner_text(badge) == "3" and page.is_visible(badge)           # the mock task has three conversations
-        assert not page.evaluate("document.documentElement.classList.contains('ca-open')")
-        assert not errors, errors
-        b.close()
-
-
-def test_a_task_with_no_conversations_shows_no_number(server, project):
-    with pw.sync_playwright() as p:
-        b = p.chromium.launch(executable_path=CHROME)
-        page, task, errors = _open(b, server, project, 1440)
-        page.route(f"**/ca/tasks/{task['id']}/discussion", lambda r: r.fulfill(
-            status=200, content_type="application/json", body=json.dumps({"task": {"id": task["id"], "title": task["title"]}, "can_post": True, "items": []})))
-        page.goto(f"{server}/{project['slug']}/board")
-        with page.expect_response(lambda r: f"/ca/tasks/{task['id']}/discussion" in r.url):   # loadDisc really ran (not just "pill starts hidden")
-            _open_sheet(page, project, task)
-        page.wait_for_selector(".task-sheet.is-open")
-        badge = ".task-sheet [data-task-tab=discussion] .task-tab-n"
-        page.wait_for_timeout(200)                                                 # let paintDisc apply the (empty) list
-        assert page.inner_text(badge) == "" and not page.is_visible(badge)
-        assert not errors, errors
-        b.close()
-
-
 def test_a_view_only_person_reads_but_has_no_composer(server, project):
     with pw.sync_playwright() as p:
         b = p.chromium.launch(executable_path=CHROME)
@@ -192,22 +161,15 @@ def test_a_view_only_person_reads_but_has_no_composer(server, project):
         b.close()
 
 
-def test_phone_tabs_reach_the_discussion(server, project):
+def test_phone_has_no_tabs_and_the_timeline_composer_starts_a_discussion(server, project):
     with pw.sync_playwright() as p:
         b = p.chromium.launch(executable_path=CHROME)
         page, task, errors = _open(b, server, project, 390)
         page.goto(f"{server}/{project['slug']}/board")
         _open_sheet(page, project, task)
-        page.wait_for_selector(".task-sheet.is-open")
-        assert page.is_visible(".task-sheet .task-tabs") and not page.evaluate("document.documentElement.classList.contains('ca-open')")
+        page.wait_for_selector(".task-sheet.is-open [data-timeline]")
+        assert page.locator(".task-sheet [data-task-tab]").count() == 0 and not page.evaluate("document.documentElement.classList.contains('ca-open')")
         _shot(page, "phone-task-sheet.png")
-        page.click(".task-sheet [data-task-tab=discussion]")
-        page.wait_for_function("document.documentElement.classList.contains('ca-open')")
-        page.wait_for_selector("#ca-disc-list .ca-disc-row")
-        assert page.is_visible("#ca-disc-back")
-        _shot(page, "phone-task-sheet-discussion.png")
-        page.click("#ca-disc-back")                                                # back to the task
-        page.wait_for_function("!document.documentElement.classList.contains('ca-open')")
-        assert page.is_visible(".task-sheet.is-open")
+        assert page.locator(".task-sheet [data-start-discussion]").count() == 1          # "Start a discussion" lives in the timeline composer
         assert not errors, errors
         b.close()

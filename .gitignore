@@ -37,3 +37,4 @@ id_*
 runner/build/
 runner/*.egg-info/
 .venv*/
+tests/home/secrets/

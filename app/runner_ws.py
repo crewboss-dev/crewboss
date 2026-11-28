@@ -47,7 +47,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
-from app import auth, config, jobs, local_auth, repo, runner_identity
+from app import auth, config, job_activity, jobs, local_auth, repo, runner_identity
 from app.db import get_cursor
 
 log = logging.getLogger("crewboss.runner-ws")
@@ -67,7 +67,7 @@ MAX_FRAME = 4096
 MAX_BIG_FRAME = 7168
 MAX_CHUNK_B64 = 6144
 MAX_FILE_PARTS = 100
-BIG_PREFIX = re.compile(r'\{\s*"type"\s*:\s*"agent_file"')
+BIG_PREFIX = re.compile(r'\{\s*"type"\s*:\s*"(agent_file|job_activity)"')   # job_activity (#89): a batch of live-view frames, <= MAX_BIG_FRAME too
 # Protocol identifiers (domain separation in the signed handshake), not names (the same lines are in runner/crewboss_runner/link.py).
 # A runner built after the #589 rename says so in its hello ("labels": "crewboss") and gets the crewboss labels; a runner that
 # says nothing still speaks the pre-rename labels, so a PC that was not updated keeps working. A device proof under either
@@ -463,7 +463,7 @@ def _verify(pubkey_b64: str, message: bytes, signature: bytes) -> bool:
     return True
 
 
-JOB_MESSAGES = ("claim", "heartbeat", "finish", "release", "skills", "agent_file")
+JOB_MESSAGES = ("claim", "heartbeat", "finish", "release", "skills", "agent_file", "job_activity")
 CA_MESSAGES = ("ca_claim", "ca_event", "ca_finish", "ca_attach")   # the CA's chat turns (task #702, app/ca.py); verified socket only
 ENV_MESSAGES = ("env_claim", "env_finish")   # environment checks (#810, app/environment.py); verified socket only
 MAX_ATTENTION = 8
@@ -492,9 +492,11 @@ def _job_message(device_id: int, msg: dict) -> dict:
             if mtype == "heartbeat":
                 out.update(jobs.heartbeat(device_id, job_id, fence))
             elif mtype == "release":
-                out.update(jobs.release(device_id, job_id, fence, str(msg.get("reason") or "")))
+                out.update(jobs.release(device_id, job_id, fence, str(msg.get("reason") or ""), str(msg.get("code") or "")[:40]))
             elif mtype == "agent_file":
                 out.update(jobs.agent_file_reported(device_id, job_id, fence, msg.get("path"), msg.get("sha256"), msg.get("b64"), msg.get("source")))
+            elif mtype == "job_activity":   # #89: the live runner conversation; only the device holding the job at this fence
+                out.update(job_activity.accept(device_id, job_id, fence, msg.get("frames")))
             elif mtype == "skills":
                 w, k = msg.get("written"), msg.get("skipped")
                 out.update(jobs.skills_delivered(device_id, job_id, fence, w if isinstance(w, list) else [], k if isinstance(k, list) else []))
@@ -762,7 +764,7 @@ async def _session(ws: WebSocket, conn: Conn, device_id: int, host: str) -> tupl
             try:
                 big = len(data) <= MAX_BIG_FRAME and conn.verified and bool(BIG_PREFIX.match(data))
                 msg = json.loads(data) if len(data) <= MAX_FRAME or big else None
-                if big and isinstance(msg, dict) and msg.get("type") != "agent_file":
+                if big and isinstance(msg, dict) and msg.get("type") not in ("agent_file", "job_activity"):
                     msg = None
             except ValueError:
                 msg = None

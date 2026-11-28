@@ -195,7 +195,7 @@ the new `claim`/`heartbeat`/`finish` messages: `docs/runner-protocol.md`. Tests:
 
 ## Start a job from a task, git remotes, labels (task #627, P4b)
 
-- **Run on a PC.** The task drawer has a "Run on a PC" block: pick a profile (plus optional extra labels) and a job is queued for
+- **Run.** The task window has one **Run** button (under the Now line; profile, labels and runner are in its Run settings popover) and a job is queued for
   the signed-in person (`POST /<project>/tasks/<id>/run`). The starter's click is their approval, so their own subscription runner
   can take it. The drawer shows the job's state (queued, running on <device>, done, failed, cancelled) with the branch, and a
   Cancel (`POST /<project>/tasks/<id>/run/cancel`, the starter only) that ends the lease cleanly: the job is `cancelled`, its token
@@ -216,23 +216,23 @@ the new `claim`/`heartbeat`/`finish` messages: `docs/runner-protocol.md`. Tests:
 
 1. **Network first.** A runner reaches Crewboss over a **private network**: we recommend a
    VPN, a mesh network or the same LAN, and never the open internet. The deployment tool only opens the port; reachability is yours.
-2. On the PC (Python 3.12+, `git` and `claude` installed and logged in): `pipx install ./runner` from a checkout of this repo.
-3. In Crewboss open `/<account>/runners`, choose the mode (Subscription = the person's own Claude login; API key) and press
+2. On the PC (Python 3.12+, `git` and `claude` installed and logged in): `pipx install "git+https://github.com/crewboss-dev/crewboss.git#subdirectory=runner"` (or `pipx install ./runner` from a clone).
+3. In Crewboss open **Machines** (Runners tab), choose the mode (Subscription = the person's own Claude login; API key) and press
    "New enrolment code". The code is shown once and lives 5 minutes.
 4. On the PC: `crewboss-runner enrol '<code>'`, then keep `crewboss-runner run` running as a systemd **user** service
    (`~/.config/systemd/user/crewboss-runner.service` with `ExecStart=%h/.local/bin/crewboss-runner run`, `Restart=on-failure`,
-   `WantedBy=default.target`; then `systemctl --user enable --now crewboss-runner`). The Runners page how-to has the full unit.
+   `WantedBy=default.target`; then `systemctl --user enable --now crewboss-runner`). The Machines page's how-to (Runners tab) has the full unit.
    `crewboss-runner status` prints state; `journalctl --user -u crewboss-runner` shows the local status page address.
-5. Back on the Runners page, give the PC its labels. For Android work with a phone on USB (adb), add `android-usb`.
-6. Set the project's git remote, open a task, pick a profile in "Run on a PC".
+5. Back on the Machines page (Runners tab), give the PC its labels. For Android work with a phone on USB (adb), add `android-usb`.
+6. Set the project's git remote, open a task, press Run.
 
 #### Windows: use WSL
 
-Most Windows users already SSH into a Linux VM. Enrol that VM as a normal Linux PC (above). Native Windows is not supported; for people working only on the Windows machine itself, WSL is the fallback:
+Most Windows users already SSH into a Linux VM. Enrol that VM as a normal Linux PC (above). Native Windows is supported (the PowerShell tab of the in-app how-to, see [runners.md](runners.md); it is new and not yet tested on real hardware at 0.1.1). WSL2 is the alternative, for people who prefer a Linux toolchain on the Windows machine:
 
 1. In an admin PowerShell: `wsl --install -d Ubuntu`, then reboot.
 2. In Ubuntu: `sudo apt install python3 pipx git`, install Claude Code, and sign in (`claude`).
-3. The same steps as above: `pipx install ./runner`, then `crewboss-runner enrol <code>`, then `crewboss-runner run`.
+3. The same steps as above: `pipx install "git+https://github.com/crewboss-dev/crewboss.git#subdirectory=runner"`, then `crewboss-runner enrol <code>`, then `crewboss-runner run`.
 4. Keep the WSL session running: the runner stops when WSL shuts down.
 5. Reach Crewboss over the private network (a VPN or mesh network) from inside WSL.
 6. A USB device such as a phone for adb needs `usbipd-win` to attach it to WSL (https://github.com/dorssel/usbipd-win), then label the runner `android-usb`.
@@ -272,12 +272,12 @@ of the app process, not a systemd timer. Web Push subscriptions are per install,
    `ca_model:` and `timezone:` (see `instance.example.yaml`). Deploy this build (it applies migration `0060_ca.sql`); the runner
    identity key must exist (`python -m app.runner_identity keygen`, see "Runner identity key").
 2. On that box, as the user who will use CA: `claude` installed and signed in (`claude auth status`), `git` installed,
-   `pipx install ./runner` from this repo.
-3. In Crewboss open Machines (`/runners`) for the ACCOUNT whose projects you want CA to see, choose **Subscription**, press
+   `pipx install "git+https://github.com/crewboss-dev/crewboss.git#subdirectory=runner"` (or `pipx install ./runner` from a clone).
+3. In Crewboss open **Machines** (Runners tab) for the ACCOUNT whose projects you want CA to see, choose **Subscription**, press
    "New enrolment code". The runner's server address must be one the box reaches (same box: `CREWBOSS_RUNNER_BASE_URL` or `public_url`;
    plain-http local development needs `crewboss-runner enrol --insecure-http`).
 4. `crewboss-runner enrol '<code>'`, then `crewboss-runner run` (keep it as the systemd user service in "Enrol a Linux PC").
-   `crewboss-runner status` should say the link is ready, and the Runners page shows the PC online.
+   `crewboss-runner status` should say the link is ready, and the Machines page (Runners tab) shows the PC online.
 5. Open any page, press CA, ask "what's waiting on me?". Check: a reply streams in; "remind me in 2 minutes to test" rings in-app
    and by push; start an agent on a task from the card and see "Task #N done" when it ends.
 

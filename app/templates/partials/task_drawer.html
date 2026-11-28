@@ -1,25 +1,27 @@
-{# THE TASK RECORD, drawer and full page (#816): one set of partials so the two never drift. The drawer stacks them (banner, questions, form,
-   checklist, run, thread); the FULL PAGE (full_page, GET /<slug>/tasks/<id>) lays them out for the room: the body and subtasks on the left,
-   questions / comments / history on the right from 1024px, stacked on a phone. Every write answers with THIS fragment into #drawer-content. #}
+{# THE TASK RECORD, drawer and full page: ONE layout from the same partials (#816), redesigned in #91 so you can see what is going on in a task
+   without hunting: header, the pinned code line, the NOW line, the summary (with the original request under it), the checklist, then ONE timeline
+   with its composer. One column, the same order on a phone. Every write answers with THIS fragment into #drawer-content (the title, the summary and
+   the request autosave on their own and swap only their own tick or block). #}
 <span data-full-url="{{ base }}/tasks/{{ task.id }}" data-full-no="{{ task.id }}" data-full-title="{{ task.title }}" hidden></span>
-{% if full_page %}
-<div class="task-rec grid gap-x-8 gap-y-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start" data-task-record>
-  <div class="min-w-0">
-    {% include "partials/task_banner.html" %}
-    {% include "partials/task_form.html" %}
-    {% include "partials/checklist.html" %}
+<div class="task-rec tw-record" data-task-record x-data>
+  {% include "partials/task_header.html" %}
+  {% include "partials/task_banner.html" %}
+  {% include "partials/task_codeline.html" %}
+  {# NOW (#91): ONE block: who has the ball, its ONE primary button, Stop while running, then the Run form (Run + a settings icon) and the run state
+     (full card while live, one compact "Last run" line after). #987's partials/task_now.html and task_run.html fill it; a question waiting on you takes the
+     primary place (Answer), and Run steps back to a plain button. #}
+  {% set now_html %}{% include "partials/task_now.html" %}{% endset %}
+  <section class="tw-now{{ ' is-waiting' if waiting_on_you else '' }}" aria-label="What is happening now" data-now-line>
+    {% if now_text %}<p class="tw-now-text" data-now-sentence><span class="tw-now-label">NOW</span> {{ now_text }}</p>{% endif %}
+    {% if waiting_on_you %}
+    <div class="tw-now-actions"><button type="button" class="btn-primary touch-target" data-now-primary data-now-answer
+            @click="let w = document.querySelector('[data-waiting]'); if (w) { w.scrollIntoView({ block: 'center', behavior: 'smooth' }); let f = w.querySelector('textarea, input, button'); f && f.focus({ preventScroll: true }); }">Answer</button></div>
+    {% endif %}
+    {{ now_html }}
     {% include "partials/task_run.html" %}
-  </div>
-  <div class="min-w-0 lg:border-l lg:border-line lg:pl-8">
-    {% include "partials/task_questions.html" %}
-    {% include "partials/task_thread.html" %}
-  </div>
+  </section>
+  {% include "partials/task_summary.html" %}
+  {% include "partials/checklist.html" %}
+  {% include "partials/task_details.html" %}
+  {% include "partials/task_timeline.html" %}
 </div>
-{% else %}
-{% include "partials/task_banner.html" %}
-{% include "partials/task_questions.html" %}
-{% include "partials/task_form.html" %}
-{% include "partials/checklist.html" %}
-{% include "partials/task_run.html" %}
-{% include "partials/task_thread.html" %}
-{% endif %}

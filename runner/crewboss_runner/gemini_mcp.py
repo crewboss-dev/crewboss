@@ -17,6 +17,7 @@ import urllib.request
 
 from . import gemini
 
+WATCH_CHARS = 4000
 PROTOCOL = "2025-06-18"
 SERVER_NAME = "crewboss-gemini"
 
@@ -172,17 +173,41 @@ class Server:
         return key
 
     # --- tools -----------------------------------------------------------------------------------------------------------
+    def watch(self, k: str, text: str) -> None:
+        """The live view (#89): append what Claude asked Gemini and what Gemini answered to a log beside the job; the runner shows it as a second
+        speaker. `text` is already what was scrubbed for Gemini (or Gemini's scrubbed reply), cut here; best effort, never an error for the tool."""
+        path = self.env.get("CB_GEMINI_ACTIVITY")
+        if not path:
+            return
+        try:
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"k": k, "text": gemini.redact(str(text or "").replace("\x00", ""))[:WATCH_CHARS]}) + "\n")
+        except OSError:
+            pass
+
+    @staticmethod
+    def _inner(wrapped: str) -> str:
+        """The text between the <<<...>>> marker lines of what was sent or received (the markers are protocol, not content)."""
+        return "\n".join(l for l in str(wrapped or "").splitlines() if not l.startswith("<<<"))
+
     def second_opinion(self, a: dict) -> dict:
         prep = gemini.prepare_review(str(a.get("kind") or ""), a.get("text") if isinstance(a.get("text"), str) else "", str(a.get("question") or ""))
         key = self._key()
+        try:
+            sent = prep["body"]["contents"][0]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            sent = ""
+        self.watch("question", f"[{prep.get('kind', '')}] " + self._inner(sent))
         model = self.env.get("CB_GEMINI_REVIEW_MODEL") or gemini.review_model()
         use_id = self.begin("second_opinion", model, prep["bytes_in"])
         out, err, limited = None, "", False
         try:
             out = self.review(prep, key, model)
+            self.watch("reply", self._inner(out.get("review", "")))
             return out
         except gemini.GeminiError as exc:
             err, limited = str(exc), isinstance(exc, gemini.GeminiLimit)
+            self.watch("error", f"Gemini did not answer: {err}")
             raise
         except Exception as exc:  # noqa: BLE001
             err = type(exc).__name__

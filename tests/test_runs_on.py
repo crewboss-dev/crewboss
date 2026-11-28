@@ -79,13 +79,13 @@ def test_a_job_cannot_be_pinned_to_someone_elses_runner(world):
         jobs.create_job(world["task"]["id"], world["bob"]["id"], "builder", approved=True, pin_device_id=theirs["device_id"])
 
 
-def test_the_run_form_uses_the_saved_default_and_can_override(world, client, signed_in):
+def test_the_run_form_chooses_by_itself_and_can_override(world, client, signed_in, monkeypatch):
     h = _h(signed_in)
     desktop, laptop = _two(world)
-    runs_on.set_pref(world["app"]["id"], world["bob"]["id"], laptop["device_id"])
+    _online(monkeypatch, laptop)
     drawer = client.get(f"/acme-app/tasks/{world['task']['id']}/panel", headers=h).text
-    assert "data-run-runner" in drawer and "Default: laptop" in drawer and "Any of my runners" in drawer
-    _run(client, h, world, runner="default")
+    assert "data-run-runner" in drawer and "Automatic" in drawer and "Any of my runners" in drawer and "Will run on laptop" in drawer   # change #90: chosen by itself
+    _run(client, h, world, runner="")
     (job,) = _live_jobs(world["task"]["id"])
     assert job["pin_device_id"] == laptop["device_id"]
     with get_cursor() as cur:
@@ -94,17 +94,16 @@ def test_the_run_form_uses_the_saved_default_and_can_override(world, client, sig
     assert _live_jobs(world["task"]["id"])[0]["pin_device_id"] is None
     with get_cursor() as cur:
         cur.execute("DELETE FROM jobs")
-    _run(client, h, world, runner=str(desktop["device_id"]))                        # this one job only: the default is unchanged
+    _run(client, h, world, runner=str(desktop["device_id"]), queue_offline="1")      # More options: this one job
     assert _live_jobs(world["task"]["id"])[0]["pin_device_id"] == desktop["device_id"]
-    assert runs_on.get_pref(world["app"]["id"], world["bob"]["id"]) == laptop["device_id"]
 
 
-def test_an_offline_default_offers_a_choice_and_queues_nothing(world, client, signed_in, monkeypatch):
+def test_an_offline_runner_chosen_by_hand_offers_a_choice_and_queues_nothing(world, client, signed_in, monkeypatch):
     h = _h(signed_in)
     desktop, laptop = _two(world)
     runs_on.set_pref(world["app"]["id"], world["bob"]["id"], desktop["device_id"])
     _online(monkeypatch, laptop)                                                    # the desktop is off, the laptop is on
-    r = _run(client, h, world)
+    r = _run(client, h, world, runner=str(desktop["device_id"]))                    # chosen by hand under More options
     assert r.status_code == 200 and "data-run-offer" in r.text and "desktop</strong> is offline" in r.text
     assert "Run on laptop" in r.text and "Queue for desktop" in r.text and "data-make-default" in r.text
     assert _live_jobs(world["task"]["id"]) == []                                    # nothing was queued behind the person's back
@@ -175,21 +174,12 @@ def test_only_the_starter_moves_a_queued_job_to_a_runner_that_has_the_labels(wor
         runs_on.repin(job["id"], world["bob"]["id"], desktop["device_id"])          # already running: left alone
 
 
-def test_the_header_pill_lists_my_runners_and_guards_labels(world, client, signed_in, monkeypatch):
+def test_the_header_pill_is_gone_but_the_old_forms_and_label_button_still_work(world, client, signed_in, monkeypatch):
     h = _h(signed_in)
-    assert "data-runs-on" not in client.get("/acme-app/list", headers=h).text       # no runner yet: no pill
     desktop, laptop = _two(world)
     _set_labels(world, desktop, "android-usb")
     _online(monkeypatch, desktop)
-    html = client.get("/acme-app/list", headers=h).text
-    assert "data-runs-on" in html and "Any runner" in html and "data-ro-panel" in html
-    assert "data-sheet-grab" in html and "Any of my runners" in html                # the phone's bottom sheet shares the panel
-    assert ">desktop<" in html and ">laptop<" in html and "online" in html
-    assert "data-ro-missing" not in html                                            # the guard speaks only about the selected runner
-    runs_on.set_pref(world["app"]["id"], world["bob"]["id"], laptop["device_id"])
-    html = client.get("/acme-app/list", headers=h).text
-    assert "<b data-ro-name>laptop</b>" in html and 'data-ro-missing="android-usb"' in html
-    assert "laptop has no android-usb: android jobs won't start there." in html and "Add the label" in html
+    assert "data-runs-on" not in client.get("/acme-app/list", headers=h).text      # change #90: runners belong to the project, Run chooses
     # picking from the pill saves; the guard's button adds the label
     r = client.post("/acme-app/runs-on", data={"device_id": str(desktop["device_id"]), "next": "/acme-app/list"}, headers=h, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/acme-app/list"

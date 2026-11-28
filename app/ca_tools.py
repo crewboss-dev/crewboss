@@ -202,7 +202,7 @@ def _do_tick(who: dict, subtask_id: int, done: bool = True) -> dict:
 
 # --- proposals: a card the person taps -----------------------------------------------------------------------------
 
-CONFIRM_ACTIONS = ("answer", "decision", "start_job", "stop_job", "retry_job", "add_task", "comment", "tick", "plan_change", "skill_edit")
+CONFIRM_ACTIONS = ("answer", "decision", "start_job", "stop_job", "retry_job", "add_task", "comment", "tick", "plan_change", "skill_edit", "task_status")
 
 
 def _confirm(who: dict, action: str, summary: str, params: dict, detail: str = "") -> dict:
@@ -319,6 +319,45 @@ def propose_retry_job(who: dict, task_id: int, profile: str = "builder") -> dict
         raise BadRequest(f"task #{task_id} has no finished job to retry" if not last else f"task #{task_id} already has a live job")
     return _confirm(who, "retry_job", f"Retry task #{task_id} with a {profile} agent (last job {last['state']}): {task['title'][:80]}",
                     {"task_id": task_id, "profile": profile})
+
+
+def propose_needs_more_work(who: dict, task_id: int, words: str, run_again: bool = True) -> dict:
+    task = ca.check_task_visible(who["user_id"], who["account_id"], task_id, who.get("conversation_id"))
+    words = (words or "").strip()
+    if not words:
+        raise BadRequest("put the person's own words in `words`: what is not right")
+    last = jobs.latest_for_task(task_id)
+    if last and last["state"] in jobs.LIVE_STATES:
+        raise BadRequest(f"task #{task_id} has a job running: wait for it, or stop it first")
+    how = ""
+    if run_again:
+        from app import run_plan     # name what will run and where, like start_job's card
+        rp = run_plan.plan(task, who["user_id"])
+        how = (f" with a {rp['profile']} agent ({rp['line'] or rp['message']})" if rp["profile"] else f" (not a job: {rp['why']})")
+    return _confirm(who, "needs_work", f"Task #{task_id} needs more work{' and run it again' + how if run_again else ''}: {task['title'][:80]}",
+                    {"task_id": task_id, "words": words[:2000], "run_again": bool(run_again)}, detail=words[:2000])
+
+
+def propose_task_status(who: dict, task_id: int, new_status: str, reason: str) -> dict:
+    """Offer to move a task to another status (for example close it as done: "already fixed on main"): a confirm card, nothing changes until the
+    person taps it. Needs edit rights on the task's project; the tap re-checks them, records the reason as a comment and audits the change."""
+    new_status = (new_status or "").strip().lower()
+    if new_status not in repo.VALID_STATUS:
+        raise BadRequest(f"new_status must be one of {', '.join(repo.VALID_STATUS)}")
+    reason = _one_line(reason, 300)
+    if not reason:
+        raise BadRequest("give a one-line reason: it is recorded on the task")
+    task = ca.check_task_visible(who["user_id"], who["account_id"], task_id, who.get("conversation_id"))
+    if not access.can_edit(access.principal_for_user_id(who["user_id"]), task["project_id"]):
+        raise BadRequest(f"you can look at task #{task_id} but not change it")
+    if task["status"] == new_status:
+        raise BadRequest(f"task #{task_id} is already {new_status}")
+    last = jobs.latest_for_task(task_id)
+    if new_status == "done" and last and last["state"] in jobs.LIVE_STATES:
+        raise BadRequest(f"task #{task_id} has a job running: wait for it, or stop it first")
+    return _confirm(who, "task_status", f"Move task #{task_id} from {task['status']} to {new_status}: {task['title'][:100]}",
+                    {"task_id": task_id, "new_status": new_status, "reason": reason},
+                    detail=f"Move task #{task_id} to {new_status}.\n\nReason: {reason}")
 
 
 def propose_stop_job(who: dict, job_id: int) -> dict:
@@ -457,6 +496,37 @@ def _run_confirm(who: dict, p: dict) -> str:
     if action == "tick":
         _do_tick(who, int(params["subtask_id"]), bool(params["done"]))
         return f"step {'ticked' if params['done'] else 'unticked'}"
+    if action == "task_status":
+        task = ca.check_task_visible(who["user_id"], who["account_id"], int(params["task_id"]), who.get("conversation_id"))
+        if not access.can_edit(access.principal_for_user_id(who["user_id"]), task["project_id"]):
+            raise NotFound("task not found")
+        new, why = str(params["new_status"]), _one_line(params.get("reason") or "", 300)
+        if new not in repo.VALID_STATUS:
+            raise BadRequest("not a task status")
+        last = jobs.latest_for_task(task["id"])     # the job may have started since the card was made
+        if new == "done" and last and last["state"] in jobs.LIVE_STATES:
+            raise BadRequest(f"task #{task['id']} has a job running now: wait for it, or stop it first")
+        repo.update_task(task["id"], {"status": new}, actor(who))          # audited like any status change (the task's history)
+        repo.comment_task(task["id"], f"Status {task['status']} -> {new} (confirmed by the person in CA): {why}", actor(who))
+        _note_task(who, task["id"])
+        return f"task #{task['id']} moved to {new}"
+    if action == "needs_work":
+        task = ca.check_task_visible(who["user_id"], who["account_id"], int(params["task_id"]), who.get("conversation_id"))
+        if not access.can_edit(access.principal_for_user_id(who["user_id"]), task["project_id"]):
+            raise NotFound("task not found")
+        jobs.mark_needs_work(task["id"], params["words"], actor(who))
+        _note_task(who, task["id"])
+        if not params.get("run_again"):
+            return f"task #{task['id']} set to needs more work, with their words attached"
+        from app import run_plan
+        rp = run_plan.plan(task, who["user_id"])
+        if not rp["profile"]:
+            return f"task #{task['id']} set to needs more work; it is not a job ({rp['why']})"
+        if rp.get("refuse"):
+            return f"task #{task['id']} set to needs more work; not started: {rp['message']}"
+        j = jobs.create_job(task["id"], who["user_id"], rp["profile"], approved=True, ca_conversation_id=who.get("conversation_id"),
+                            pin_device_id=rp["pin"], base_branch=jobs.carry_branch(task["id"]))   # the tap IS the approval
+        return f"task #{task['id']} set to needs more work and job {j['id']} queued ({rp['line'] or rp['message']})"
     if action in ("start_job", "retry_job"):
         ca.check_task_visible(who["user_id"], who["account_id"], int(params["task_id"]), who.get("conversation_id"))
         _profile(params["profile"])
@@ -465,7 +535,8 @@ def _run_confirm(who: dict, p: dict) -> str:
         if plan["message"]:
             return f"not started: {plan['message']}"
         j = jobs.create_job(int(params["task_id"]), who["user_id"], params["profile"], approved=True,
-                           ca_conversation_id=who.get("conversation_id"), pin_device_id=plan["pin"])   # the tap IS the approval
+                           ca_conversation_id=who.get("conversation_id"), pin_device_id=plan["pin"],
+                           base_branch=jobs.carry_branch(int(params["task_id"])))   # the tap IS the approval
         _note_task(who, int(params["task_id"]))
         return f"job {j['id']} queued for task #{params['task_id']}"
     if action == "skill_edit":

@@ -103,13 +103,14 @@ def test_desktop_links_swap_the_page_and_keep_the_assistant(server, project):
         assert _msgs(page) == 1 and "Task Alpha" in page.inner_text("#page-inner")
         assert page.evaluate("document.querySelectorAll('#drawer-content').length") == 1
         # an htmx write inside the swapped page works (comment form posts and re-renders in place)
-        page.fill("#drawer-content input[name=body]", "hello from the page")
-        page.click("#drawer-content button:has-text('Post')")
+        page.fill("#drawer-content [data-composer] textarea[name=body]", "hello from the page")
+        page.click("#drawer-content [data-composer] button[type=submit]")
         page.wait_for_selector("#drawer-content :text('hello from the page')")
         assert page.evaluate("document.querySelectorAll('[data-task-record]').length") == 1
         # a title saved on the page updates the heading and the tab title; nothing was re-injected by the swap
-        page.fill("#drawer-content input[name=title]", "Alpha renamed")
-        page.click("#drawer-content button:has-text('Save changes')")
+        page.fill("#drawer-content [data-task-title]", "Alpha renamed")     # edited in place: it saves by itself (#91), no button
+        page.dispatch_event("#drawer-content [data-task-title]", "change")
+        page.wait_for_selector("#drawer-content [data-save-tick]:has-text('Saved')")
         page.wait_for_function("document.querySelector('[data-ca-page] [data-record-title]').textContent.trim() === 'Alpha renamed' && document.title.indexOf('Alpha renamed') >= 0")
         assert page.evaluate("document.querySelectorAll('script[src*=\"tabs.js\"]').length") == 1
         # the second link, then Back to the first, still no document load
@@ -206,8 +207,8 @@ def test_a_task_opens_as_a_full_window_over_the_page_and_back_leaves_the_page_as
         z = page.evaluate("[getComputedStyle(document.getElementById('ca-drawer')).zIndex, getComputedStyle(document.querySelector('[data-task-sheet]')).zIndex].map(Number)")
         assert z[0] > z[1], z                                                                 # the assistant is above the task window
         # a write inside the sheet keeps the full-page layout (the address bar is the task's)
-        page.fill("#drawer-content input[name=body]", "from the sheet")
-        page.click("#drawer-content button:has-text('Post')")
+        page.fill("#drawer-content [data-composer] textarea[name=body]", "from the sheet")
+        page.click("#drawer-content [data-composer] button[type=submit]")
         page.wait_for_selector("#drawer-content :text('from the sheet')")
         assert page.query_selector("[data-task-sheet] [data-task-record]")
         # Back closes it: the board's URL, the board as it was, still no document load

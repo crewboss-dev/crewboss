@@ -1,0 +1,101 @@
+{# THE TIMELINE (#91): everything that happened on the task, OLDEST FIRST like a chat, one list instead of the old right column: comments, questions
+   and answers, each run (a row that opens into the live runner conversation, #89), status/priority changes, decisions, branch/merge/deploy steps and
+   Discussions as threads. It opens scrolled to the first thing WAITING ON YOU (pinned with a highlight), else to the bottom. Runs of AI comments fold
+   into one row ("4 updates from Claude"); long comments are clamped with "Show more"; a comment's folded details (the AI writing rule) sit under
+   "Details". The composer at the bottom adds a comment or starts a discussion. Needs: task, base, timeline (task_timeline.build). All text is
+   autoescaped, or goes through the safe render_text filter (escaped first); nothing here marks text as trusted. #}
+{% macro body(c) %}
+<div x-data="{ open: false }">
+  <div class="tw-prose{{ ' tw-clamped' if c.clamp else '' }}" :class="{ 'tw-clamped': {{ 'true' if c.clamp else 'false' }} && !open }" data-comment-text>{{ c.lead|render_text }}</div>
+  {% if c.clamp %}<button type="button" class="press tw-link" @click="open = !open" :aria-expanded="open ? 'true' : 'false'" x-text="open ? 'Show less' : 'Show more'" data-show-more>Show more</button>{% endif %}
+  {% if c.more %}<details class="tw-folded"><summary class="press tw-link-sum">Details</summary><div class="tw-prose" data-comment-details>{{ c.more|render_text }}</div></details>{% endif %}
+</div>
+{% endmacro %}
+<section id="task-timeline" class="tw-timeline" aria-label="Timeline" data-timeline data-first-waiting="{{ timeline.first_waiting or '' }}" tabindex="-1"
+         x-data="{ id: {{ task.id }} }"
+         x-init="window.__twSeen = window.__twSeen || {}; if (!window.__twSeen[id]) { window.__twSeen[id] = 1; $nextTick(() => { var w = $el.querySelector('[data-waiting]'); var t = w || $el.querySelector('[data-tl-last]'); if (t) t.scrollIntoView({ block: w ? 'center' : 'end' }); }); }">
+  <div class="tw-sec-head"><h2 class="tw-h">Timeline</h2>
+    {% if timeline.waiting_ids %}<a href="#{{ 'tl-' ~ timeline.first_waiting }}" class="tw-mark tw-mark-wait" data-jump-waiting>Waiting on you</a>{% endif %}</div>
+  <ol class="tw-list" data-timeline-list>
+    {% for it in timeline['items'] %}
+    {% set last = loop.last %}
+    {% if it.kind == 'comment' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-comment{{ ' is-me' if it.human else ' is-ai' }}" data-tl="comment"{% if last %} data-tl-last{% endif %}>
+      <div class="tw-meta"><span class="tw-who">{{ it.author|actor_label }}</span><time>{{ it.at|timeago }}</time></div>
+      {{ body(it) }}
+    </li>
+    {% elif it.kind == 'ai_group' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-group" data-tl="ai-group"{% if last %} data-tl-last{% endif %}>
+      <details>
+        <summary class="press tw-group-sum"><span class="tw-who">{{ it.n }} updates from {{ it.who }}</span><time>{{ it.last_at|timeago }}</time></summary>
+        <ol class="tw-group-list">
+          {% for c in it['items'] %}<li class="tw-comment is-ai" id="tl-{{ c.id }}"><div class="tw-meta"><span class="tw-who">{{ c.author|actor_label }}</span><time>{{ c.at|timeago }}</time></div>{{ body(c) }}</li>{% endfor %}
+        </ol>
+      </details>
+    </li>
+    {% elif it.kind == 'question' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-question{{ ' tw-waiting' if it.open else '' }}" data-tl="question"{% if it.open %} data-waiting{% endif %}{% if last %} data-tl-last{% endif %}>
+      {% if it.open %}<div class="tw-wait-label" role="status">Waiting on you</div>
+      {% with q = it.q, post_url = base ~ '/questions/' ~ it.q.id ~ '/answer', target = '#drawer-content', swap = 'innerHTML' %}{% include "partials/question.html" %}{% endwith %}
+      {% else %}
+      <div class="tw-meta"><span class="tw-who">{{ it.q.asked_by|actor_label }} asked</span><time>{{ it.at|timeago }}</time></div>
+      <div class="tw-prose" data-question-text>{{ it.q.question|render_text }}</div>
+      {% endif %}
+    </li>
+    {% elif it.kind == 'answer' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-comment is-me" data-tl="answer"{% if last %} data-tl-last{% endif %}>
+      <div class="tw-meta"><span class="tw-who">Answer{{ ' (in the session)' if it.q.answered_via == 'session' else '' }}</span><time>{{ it.at|timeago }}</time></div>
+      <div class="tw-prose" data-answer-text>{{ it.q.answer|render_text }}</div>
+    </li>
+    {% elif it.kind == 'run' %}
+    {% set j = it.job %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-run" data-tl="run" data-run-state="{{ j.state }}"{% if last %} data-tl-last{% endif %}>
+      {# the runner conversation (#89): partials/job_activity.html mounts itself (static/js/activity.js) when this row is opened; the fallback line shows until #89 is merged #}
+      <details data-run-row>
+        <summary class="press tw-run-sum"><span class="chip {{ 'bg-status-ok/10 text-status-ok' if j.state in ('running', 'done') else 'bg-status-disaster/10 text-status-disaster' if j.state in ('failed', 'cancelled') else 'bg-status-warn/15 text-charcoal dark:text-status-warn' }}">{{ j.state }}</span>
+          <span class="tw-who">Run {{ j.id }} · {{ j.profile }}{% if j.device %} · {{ j.device }}{% endif %} · {{ j.headline }}</span><time>{{ it.at|timeago }}</time></summary>
+        <ol class="tw-run-events" data-run-events>{% for e in j.events %}<li data-run-event="{{ e.kind }}"><time>{{ e.at|timeago }}</time> <strong>{{ e.title }}</strong>{% if e.body %}<span class="tw-prose block">{{ e.body }}</span>{% endif %}</li>{% endfor %}</ol>
+        {% if j.link %}<p class="text-micro"><a class="tw-view" href="{{ j.link }}" target="_blank" rel="noopener noreferrer">View branch</a></p>{% endif %}
+        {% if j.summary and not j.events %}<p class="tw-prose" data-run-summary>{{ j.summary }}</p>{% endif %}
+        {% if j.branch %}<p class="tw-muted text-micro">Branch <span class="font-mono break-all">{{ j.branch }}</span></p>{% endif %}
+        {% with job_id = j.id %}{% include ["partials/job_activity.html", "partials/job_activity_fallback.html"] %}{% endwith %}
+      </details>
+    </li>
+    {% elif it.kind == 'change' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-event" data-tl="change"{% if last %} data-tl-last{% endif %}><span class="tw-dot" aria-hidden="true"></span><span>{{ it.actor|actor_label }}: {{ it.text }}</span><time>{{ it.at|timeago }}</time></li>
+    {% elif it.kind == 'decision' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-event" data-tl="decision"{% if last %} data-tl-last{% endif %}><span class="tw-dot" aria-hidden="true"></span><span>Decision #{{ it.change_id }}: {{ it.title }}{% if it.decision %} <strong>({{ it.decision }})</strong>{% else %} ({{ it.stage }}){% endif %}</span><time>{{ it.at|timeago }}</time></li>
+    {% elif it.kind == 'release' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-event" data-tl="release"{% if last %} data-tl-last{% endif %}><span class="tw-dot" aria-hidden="true"></span><span>{{ {'requested': 'Release requested', 'reviewed': 'Review passed', 'merged': 'Merged'}[it.step] }} · <span class="font-mono break-all">{{ it.branch }}</span></span><time>{{ it.at|timeago }}</time></li>
+    {% elif it.kind == 'deploy' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-event" data-tl="deploy"{% if last %} data-tl-last{% endif %}><span class="tw-dot" aria-hidden="true"></span><span>Deploy to {{ it.target }}: {{ it.state }}</span><time>{{ it.at|timeago }}</time></li>
+    {% elif it.kind == 'thread' %}
+    <li id="tl-{{ it.id }}" class="tw-item tw-thread" data-tl="thread"{% if last %} data-tl-last{% endif %}>
+      {% if it.open %}
+      <details>
+        <summary class="press tw-group-sum"><span class="tw-who">Discussion: {{ it.title }}</span><span class="tw-muted text-micro">{{ it.messages|length }} message{{ '' if it.messages|length == 1 else 's' }} · {{ it.by }}</span></summary>
+        <ol class="tw-group-list">
+          {% for m in it.messages %}<li class="tw-comment {{ 'is-me' if m.role == 'user' and m.mine else 'is-ai' if m.role != 'user' else '' }}"><div class="tw-meta"><span class="tw-who">{{ ('You' if m.mine else m.author) if m.role == 'user' else 'Assistant' }}</span><time>{{ m.at|timeago }}</time></div><div class="tw-prose">{{ m.text|render_text }}</div></li>{% endfor %}
+        </ol>
+        <button type="button" class="press tw-link" data-ca-open-conv="{{ it.conv }}">Open this discussion</button>
+      </details>
+      {% else %}
+      <div class="tw-event-line">{% if it.linked %}A chat by {{ it.by }} that changed this task{% else %}Discussion by {{ it.by }}{% endif %} · {{ it.at|timeago }}</div>
+      {% endif %}
+    </li>
+    {% endif %}
+    {% else %}
+    <li class="tw-muted" data-timeline-empty>Nothing has happened yet. Add a comment, run it, or start a discussion below.</li>
+    {% endfor %}
+  </ol>
+  <form hx-post="{{ base }}/tasks/{{ task.id }}/comments" hx-target="#drawer-content" hx-swap="innerHTML" class="tw-composer" data-composer
+        hx-on::before-request="if (window.__twSeen) delete window.__twSeen[{{ task.id }}]">
+    <label class="sr-only" for="task-comment-{{ task.id }}">Add a comment</label>
+    <textarea id="task-comment-{{ task.id }}" name="body" required rows="2" class="field text-small" placeholder="Add a comment…"
+              @keydown.ctrl.enter="$el.form.requestSubmit()" @keydown.meta.enter="$el.form.requestSubmit()" x-data></textarea>
+    <div class="tw-composer-actions">
+      <button type="button" class="press btn-ghost text-small border border-line" data-ca-new="task:{{ task.id }}" data-ca-title="{{ task.title }}" data-start-discussion>Start a discussion</button>
+      <button type="submit" class="btn-primary text-small">Comment</button>
+    </div>
+  </form>
+</section>

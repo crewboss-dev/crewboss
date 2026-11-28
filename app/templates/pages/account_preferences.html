@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Preferences{% endblock %}
+{% block page_title %}Preferences{% endblock %}
+{% block content %}
+<div class="max-w-lg" data-preferences>
+<h1 class="text-lg font-semibold mb-3">Preferences</h1>
+{% if notice %}<p class="text-sm mb-3 rounded-md border border-line px-3 py-2" role="status" data-notice>{{ notice }}</p>{% endif %}
+<section class="mb-4">
+  <form method="post" action="/account/preferences/runner-summaries" class="flex flex-col gap-1">
+    <label class="text-sm"><input type="checkbox" name="on" value="1" {% if runner_summaries %}checked{% endif %} data-summary-runner> Use my runner for task summaries</label>
+    <p class="text-xs text-charcoal/60">When on, the AI task summaries you see are written by a runner of yours. Off shows the plain automatic summary only. This only changes what you see.</p>
+    <button type="submit" class="btn-ghost border border-line self-start">Save</button>
+  </form>
+</section>
+</div>
+{% endblock %}

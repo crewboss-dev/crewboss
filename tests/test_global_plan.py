@@ -323,7 +323,7 @@ def test_overseer_suggestion_is_recorded_as_overseer_and_never_overwrites(client
         mcp_server.suggest_triage(bt["id"], rationale="x" * 2001)
     mcp_server.suggest_triage(bt["id"], rationale="ship first", priority="should")
     html = client.get(f"/proj-b/tasks/{bt['id']}/panel").text
-    assert "dash (overseer) suggests" in html and "dash (overseer)</span>" in html
+    assert "dash (overseer) suggests" in html      # (the old history list's "dash (overseer)</span>" row is gone: #91's timeline lists changes, not suggestions)
     assert "claude:overseer" not in html
 
 

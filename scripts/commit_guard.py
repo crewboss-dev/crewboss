@@ -171,13 +171,13 @@ def binary_allowed(path: str, patterns: list[str]) -> bool:
 
 
 def tracked(root: Path = ROOT, rev: str | None = None) -> list[str]:
-    """Tracked paths: the index's (git ls-files), or those of commit `rev` (git ls-tree; submodules and symlinks left out)."""
+    """Tracked paths: the index's (git ls-files), or those of commit `rev` (git ls-tree; submodules left out; a symlink is kept, its content is its target string)."""
     if rev:
         out = subprocess.run(["git", "ls-tree", "-r", "-z", "--full-tree", rev], cwd=root, capture_output=True, check=True).stdout
         paths = []
         for ent in out.decode("utf-8", "replace").split("\0"):
             meta, _, path = ent.partition("\t")
-            if path and meta.split()[:1] and meta.split()[0] in ("100644", "100755"):
+            if path and meta.split()[:1] and meta.split()[0] in ("100644", "100755", "120000"):
                 paths.append(path)
         return paths
     out = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True).stdout
@@ -189,7 +189,9 @@ def read_files(files: list[str], root: Path = ROOT, rev: str | None = None):
     if not rev:
         for rel in files:
             try:
-                yield rel, (root / rel).read_bytes()
+                f = root / rel
+                # a symlink's content is its TARGET string (what git stores), never the file it points at
+                yield rel, (os.readlink(f).encode("utf-8", "surrogateescape") if f.is_symlink() else f.read_bytes())
             except OSError:
                 continue
         return
@@ -292,12 +294,49 @@ def line_hits(text: str, low_deny: list[str], ips: bool = True, secrets: bool = 
     return hits
 
 
+def ip_values(text: str) -> tuple[set[str], set[str]]:
+    """(full addresses, address PREFIXES) on a line, normalised (escapes and leading zeros dropped; a prefix loses its trailing dot / x).
+    The two never mix: a prefix is not a value a full address may be matched against, nor the other way round."""
+    full, pfx = set(), set()
+    for m in INTERNAL_IP.finditer(text):
+        v = m.group(0).replace("\\", "").rstrip(".xX")
+        parts = [str(int(o)) if o.isdigit() else o for o in v.split(".")]
+        (full if len(parts) == 4 else pfx).add(".".join(parts))
+    return full, pfx
+
+
+def removed_ip_values(rng: str | list[str], root: Path = ROOT) -> dict[str, set[str]]:
+    """{path: internal-address values on lines REMOVED by `rng`} (plain, non-merge diffs)."""
+    out: dict[str, set[str]] = {}
+    in_hunk, path = False, "?"
+    for line in _log(root, "-p", "-U0", "--format=", *_spec(rng)).split("\n"):
+        if line.startswith("@@"):
+            in_hunk = True
+        elif line.startswith("diff "):
+            in_hunk, path = False, "?"
+        elif in_hunk:
+            if line.startswith("-"):
+                out.setdefault(path, set()).update(ip_values(line[1:])[0])
+        elif line.startswith("--- "):
+            p = line[4:].split("\t")[0]
+            if p.startswith("a/"):
+                path = p[2:]
+        elif line.startswith("+++ ") and line[4:].startswith("b/"):
+            path = line[6:].split("\t")[0]
+    return out
+
+
 def added_hits(rng: str | list[str], root: Path = ROOT, deny: list[str] = (), ips: bool = True,
-               exclude_rev: str | None = None) -> list[str]:
-    """Denylist values, secret patterns and (with ips) internal addresses on lines ADDED anywhere in `rng`. Names the file, never the value."""
+               exclude_rev: str | None = None, ip_base: str | None = None) -> list[str]:
+    """Denylist values, secret patterns and (with ips) internal addresses on lines ADDED anywhere in `rng`. Names the file, never the value.
+    With `ip_base` (ONE commit on a known base: a release pull request) an added address is allowed only when that exact VALUE is already
+    in the same file at `ip_base`, or on a line this change removes from it: touching a line that carries a known fixture address is
+    fine, a value that is new to the file is blocked exactly as before."""
     low = [d.lower() for d in deny]
     out = set()
     known: dict[str, set] = {}
+    allowed_ips: dict[str, set] = {}
+    removed = removed_ip_values(rng, root) if (ips and ip_base) else {}
     for path, text in added_lines(rng, root):
         if path == IP_BASELINE_REL:
             continue
@@ -306,9 +345,23 @@ def added_hits(rng: str | list[str], root: Path = ROOT, deny: list[str] = (), ip
                 known[path] = set((read_blob(root, exclude_rev, path) or "").split("\n"))
             if text in known[path]:
                 continue
-        for rule in line_hits(text, low, ips):
+        for rule in line_hits(text, low, ips and not ip_base):
             out.add(f"{path}: an added line matches {rule}")
+        if ips and ip_base and INTERNAL_IP.search(text):
+            if path not in allowed_ips:
+                base_text = read_blob(root, ip_base, path) or ""
+                allowed_ips[path] = (ip_values(base_text)[0] | removed.get(path, set()), set(base_text.split("\n")))
+            full, pfx = ip_values(text)
+            # a full address must already be in the file; a PREFIX can be completed into a new address by the next token, so a line
+            # carrying one is allowed only when that exact line is already in the file
+            if not full <= allowed_ips[path][0] or (pfx and text not in allowed_ips[path][1]):
+                out.add(f"{path}: an added line matches an internal (RFC1918 / CGNAT) address")
     return sorted(out)
+
+
+def _commit_count(rng, root: Path) -> int:
+    res = subprocess.run(["git", "rev-list", "--count", *_spec(rng)], cwd=root, capture_output=True, text=True)
+    return int(res.stdout.strip() or 0) if res.returncode == 0 else 0
 
 
 def ip_added_by(rng: str | list[str], root: Path = ROOT) -> list[str]:
@@ -528,7 +581,8 @@ def main(argv: list[str], root: Path = ROOT) -> int:
         code = 1
     ips = ip_ratchet(files, root, rev)
     if added_in:
-        ips += added_hits(added_in, root, deny, ips=not tip_only, exclude_rev=exclude_rev)
+        one = bool(base_rev) and _commit_count(added_in, root) == 1     # one commit on a known base: addresses judged by VALUE
+        ips += added_hits(added_in, root, deny, ips=not tip_only, exclude_rev=exclude_rev, ip_base=base_rev if one else None)
     if base_rev:
         ips += baseline_grew(root, base_rev, rev)
     for line in ips:

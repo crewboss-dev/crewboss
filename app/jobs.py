@@ -22,6 +22,7 @@ Every refusal is logged."""
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 import secrets
@@ -119,7 +120,7 @@ def _profile(cur, name: str) -> dict:
 
 def create_job(task_id: int, user_id: int, profile: str, unattended: bool = False, approved: bool = False,
                extra_labels=None, ca_conversation_id: int | None = None, keep_open: bool = False,
-               pin_device_id: int | None = None) -> dict:
+               pin_device_id: int | None = None, base_branch: str = "") -> dict:
     """Queue a job for `task_id`, started by `user_id`. `approved` records the starter's own approval (the approval cards
     are P5). `unattended` makes it eligible for an API runner, which needs a profile with unattended_ok and a task that
     is not client-authored. The job's requires_labels are the profile's plus `extra_labels`. A second live job on the same
@@ -162,6 +163,12 @@ def create_job(task_id: int, user_id: int, profile: str, unattended: bool = Fals
             pinned = cur.fetchone()
             if not pinned:
                 raise BadRequest("that runner is not one of yours")
+        if pin_device_id is not None:   # the claim only lets an ALLOCATED runner take a project that has an allocation: never queue what it would refuse
+            cur.execute("SELECT (EXISTS (SELECT 1 FROM project_runners WHERE project_id = %s) AND NOT EXISTS "
+                        "(SELECT 1 FROM project_runners WHERE project_id = %s AND device_id = %s)) AS refused",
+                        (task["project_id"], task["project_id"], pin_device_id))
+            if cur.fetchone()["refused"]:
+                raise BadRequest("that runner is not allocated to this project (Settings, Runners for this project)")
         if pin_device_id is not None and not set(requires) <= set(pinned["labels"]):
             raise BadRequest("that runner lacks a label the job needs: " + ", ".join(l for l in requires if l not in pinned["labels"]))
         if len(requires) > MAX_LABELS:
@@ -169,13 +176,14 @@ def create_job(task_id: int, user_id: int, profile: str, unattended: bool = Fals
         try:
             cur.execute(
                 "INSERT INTO jobs (task_id, account_id, user_id, profile_id, unattended, approved_at, approved_by, "
-                "requires_labels, ca_conversation_id, keep_open, pin_device_id) VALUES (%s, %s, %s, %s, %s, CASE WHEN %s THEN now() END, "
-                "CASE WHEN %s THEN %s::int END, %s, %s, %s, %s) RETURNING *",
+                "requires_labels, ca_conversation_id, keep_open, pin_device_id, base_branch, owner_says) VALUES (%s, %s, %s, %s, %s, CASE WHEN %s THEN now() END, "
+                "CASE WHEN %s THEN %s::int END, %s, %s, %s, %s, %s, %s) RETURNING *",
                 (task_id, account_id, user_id, prof["id"], unattended, approved, approved, user_id, requires, ca_conversation_id,
-                 bool(keep_open), pin_device_id))
+                 bool(keep_open), pin_device_id, base_branch if re.fullmatch(r"dash/j\d+-e\d+", base_branch or "") else "", task.get("needs_work_note")))
         except UniqueViolation:
             raise Conflict(f"task {task_id} already has a live job") from None
         job = cur.fetchone()
+        cur.execute("UPDATE tasks SET needs_work_note = NULL, needs_work_at = NULL WHERE id = %s", (task_id,))   # the owner's words are carried by this run (brief)
         repo.record_activity(cur, account_id, f"user:{user_id}", "queued", "job", job["id"],
                              f"Queued a {prof['name']} job for task #{task_id}" + (" (unattended)" if unattended else ""))
     nudge([job["id"]])
@@ -218,7 +226,9 @@ _ELIGIBLE_FROM = """
 """
 _ELIGIBLE_WHERE = """
       d.revoked_at IS NULL AND d.expires_at > now() AND u.disabled_at IS NULL
-      AND j.state = 'queued'
+      AND j.state = 'queued' AND j.hold_reason IS NULL
+      AND (NOT EXISTS (SELECT 1 FROM project_runners pr WHERE pr.project_id = t.project_id)
+           OR EXISTS (SELECT 1 FROM project_runners pr WHERE pr.project_id = t.project_id AND pr.device_id = d.id))
       AND j.requires_labels <@ d.labels
       AND (j.pin_device_id IS NULL OR j.pin_device_id = d.id)
       AND ( (d.mode = 'subscription' AND j.approved_at IS NOT NULL)
@@ -278,7 +288,7 @@ def claim(device_id: int) -> dict | None:
         from app import agent_pins              # the Owner-reviewed agent / command / skill files (#829): a job may start only on these
         pins = agent_pins.pins_for(cur, task["project_id"])
     return {"job_id": job["id"], "task_id": job["task_id"], "project_id": task["project_id"],
-            "account_id": job["account_id"], "fence": job["fence"], "branch": job["branch"], "job_token": token,
+            "account_id": job["account_id"], "fence": job["fence"], "branch": job["branch"], "base_branch": job.get("base_branch") or "", "job_token": token,
             "lease_seconds": config.JOB_LEASE_SECONDS, "max_seconds": config.JOB_MAX_SECONDS, "keep_open": bool(job.get("keep_open")), "git_remote": task["git_remote"],
             "gemini_allowed": bool(task["gemini_allowed"]),   # #861: the project's switch; the runner adds its Gemini tools only if it also can
             "profile": {"name": prof["name"], "model": prof["model"], "skills": list(prof["skills"]),
@@ -396,8 +406,12 @@ def _brief_comment(c: dict) -> dict:
 
 
 WHEN_DONE = ("When the work is done (committed on your branch, checks recorded, task commented), call job_finish with a short "
-             "summary: that ends your session cleanly. If you are blocked and need a person, call job_finish with "
-             "outcome='blocked' and say what is needed. Do not just stop and wait at the prompt.")
+             "summary: that ends your session cleanly. Also pass, when you can: `tests` (the checks you ran and how they came out, one line), "
+             "`next_steps` (a short list of what a person should do next, such as review the change or run the full tests) and `remaining_work` "
+             "(a list of what is NOT done yet; leave it empty when the work is complete). If you are blocked and need a person, call job_finish with "
+             "outcome='blocked' and say what is needed. Do not just stop and wait at the prompt. "
+             "Task comments and the summary: lead with the outcome in 1-2 short lines; put details in a folded section "
+             "(a line holding only <details>, then the details).")
 
 
 LOGIC_RULE = ("Update the logic map in the same change: if you add, change or remove a workflow, button action, timer, webhook, queue "
@@ -415,12 +429,15 @@ def brief(job_id: int, fence: int) -> dict:
         project = cur.fetchone()
     uses_logic = bool(project.pop("uses_logic"))
     task = repo.get_task(job["task_id"])
-    out = {"job_id": job_id, "fence": fence, "branch": job["branch"], "project": dict(project),
+    out = {"job_id": job_id, "fence": fence, "branch": job["branch"], "base_branch": job.get("base_branch") or "", "project": dict(project),
            "task": {k: task[k] for k in ("id", "title", "body", "priority", "stream", "status") if k in task},
            "subtasks": [{"id": s["id"], "text": s["text"], "done": s["done"]} for s in task["subtasks"]],
            "recent_comments": [_brief_comment(c) for c in task["comments"][-10:]]}
     from app import ca   # discussions the starter linked to this task (task #727): ids and titles only; job_read_discussion fetches one
     out["when_done"] = WHEN_DONE
+    prev = _previous_outcome(job["task_id"], job_id, job.get("owner_says"))
+    if prev:
+        out["previous_attempt"] = prev
     if uses_logic:      # only where the gate is on or a map was ever reported: nobody else is asked to keep one
         out["logic_map"] = LOGIC_RULE
     out["discussions"] = [{"id": d["id"], "title": d["title"], "updated_at": d["updated_at"].isoformat()} for d in ca.discussions_for_job(job)]
@@ -429,6 +446,40 @@ def brief(job_id: int, fence: int) -> dict:
     if task.get("client_authored"):
         out["task"]["client_authored"] = True
         out["task"]["trust_note"] = task["trust_note"]
+    return out
+
+
+def mark_needs_work(task_id: int, words: str, by: str) -> None:
+    """The task needs more work, in the owner's words (the outcome card's box, or the assistant): kept on the task for the Run-again card and
+    posted as a comment, which the next job's brief carries. Needs a note."""
+    words = re.sub(r"[ \t]+", " ", (words or "")).strip()[:2000]
+    if not words:
+        raise BadRequest("say what is not right, so the next run knows")
+    with get_cursor() as cur:
+        repo._task_row(cur, task_id)
+        cur.execute("UPDATE tasks SET needs_work_note = %s, needs_work_at = now() WHERE id = %s", (words, task_id))
+    repo.comment_task(task_id, "Needs more work: " + words, by)
+    task = repo.get_task(task_id)
+    if task["status"] in ("done", "review"):    # "it is not fixed": the task is open work again (Doing), not a finished one
+        try:
+            repo.update_task(task_id, {"status": "doing"}, by)
+        except Conflict:
+            pass   # a work-in-progress limit: the note and the comment stand; the person moves it
+
+
+def _previous_outcome(task_id: int, job_id: int, owner_says: str | None = None) -> dict | None:
+    """What the task's last finished job left over (its remaining work) and the owner's own words, so 'Run again' carries them forward."""
+    with get_cursor(commit=False) as cur:
+        cur.execute("SELECT j.id, j.state, j.summary, j.finish_summary, j.remaining_work, j.branch FROM tasks t "
+                    "LEFT JOIN jobs j ON j.task_id = t.id AND j.id <> %s AND j.state IN ('done', 'failed') WHERE t.id = %s ORDER BY j.id DESC NULLS LAST LIMIT 1",
+                    (job_id, task_id))
+        r = cur.fetchone()
+    if not r or not (r["id"] or owner_says):
+        return None
+    out = {"job_id": r["id"], "state": r["state"], "summary": (r["finish_summary"] or r["summary"] or "")[:600], "branch": r["branch"] or "",
+           "remaining_work": r["remaining_work"] or []}
+    if owner_says:
+        out["owner_says"] = owner_says[:1500]
     return out
 
 
@@ -479,7 +530,14 @@ FINISH_OUTCOMES = ("done", "blocked")
 AGENT_SUMMARY_CAP = 1500
 
 
-def agent_finish(job_id: int, fence: int, summary: str, outcome: str = "done") -> dict:
+def _clean_list(items, n: int = 10, width: int = 240) -> list[str]:
+    """An optional list of short plain strings from the agent (next_steps / remaining_work): trimmed, capped, anything else dropped."""
+    if isinstance(items, str):
+        items = [items]
+    return [re.sub(r"\s+", " ", x).strip()[:width] for x in (items or [])[:n] if isinstance(x, str) and x.strip()] if isinstance(items, (list, tuple)) else []
+
+
+def agent_finish(job_id: int, fence: int, summary: str, outcome: str = "done", next_steps=None, remaining_work=None, tests: str = "") -> dict:
     """The agent says its work is over (job_finish). It does NOT end the job: the runner still has to stop the session, push
     the branch and finish the job (done()), so the agent can never end its own job or skip the push. This records the
     summary on the job and as a task comment (same transaction as the fence check) and marks the job "finishing"
@@ -493,8 +551,10 @@ def agent_finish(job_id: int, fence: int, summary: str, outcome: str = "done") -
     with get_cursor() as cur:
         job = _running(cur, job_id, fence)
         task = repo._task_row(cur, job["task_id"])
-        cur.execute("UPDATE jobs SET finish_outcome = %s, finish_summary = %s, finish_requested_at = now(), finish_fence = %s "
-                    "WHERE id = %s", (outcome, summary, fence, job_id))
+        steps, left = _clean_list(next_steps), _clean_list(remaining_work)
+        cur.execute("UPDATE jobs SET finish_outcome = %s, finish_summary = %s, finish_requested_at = now(), finish_fence = %s, "
+                    "next_steps = %s::jsonb, remaining_work = %s::jsonb, tests_run = %s WHERE id = %s",
+                    (outcome, summary, fence, json.dumps(steps), json.dumps(left), re.sub(r"[ \t]+", " ", str(tests or "")).strip()[:600], job_id))
         text = ("Job finished: " if outcome == "done" else "Job blocked, needs a person: ") + summary
         cur.execute("INSERT INTO task_comments (task_id, author, body) VALUES (%s, %s, %s) RETURNING id",
                     (task["id"], actor(job_id), text))
@@ -633,15 +693,87 @@ def _tell_finished(job_id: int) -> None:
 def finish(device_id: int, job_id: int, fence: int, ok: bool, summary: str = "", outcome: str = "") -> dict:
     """The runner ends its own job after pushing the branch (over the verified socket): running on THIS device at this
     fence, else StaleFence. `outcome` is 'blocked' when the agent's job_finish said so."""
-    return done(job_id, fence, ok, summary, device_id=device_id, outcome=outcome if outcome in FINISH_OUTCOMES else "")
+    out = done(job_id, fence, ok, summary, device_id=device_id, outcome=outcome if outcome in FINISH_OUTCOMES else "")
+    _wake_views(job_id)
+    return out
+
+
+def _wake_views(job_id: int) -> None:
+    """The job ended: open live views (#89) look at it now instead of at their next check."""
+    try:
+        from app import job_activity
+        job_activity.wake(job_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+HOLD_AGENT_FILES = "agent_files"
+
+
+def is_unreviewed_release(reason: str, code: str = "") -> bool:
+    """The runner gave the job back only because agent / command / skill files are not reviewed (#987). A newer runner says so with
+    code 'agent_files_unreviewed'; the 0.1.0 runner is recognised by the rule id its reason always carries. Other blocks are not holds."""
+    if code == "agent_files_unreviewed":
+        return True
+    reason = reason or ""
+    return "config.unreviewed" in reason and not re.search(r"\b(?!config\.unreviewed)[a-z_]+\.[a-z_]+ in \S", reason)   # no other block mixed in
+
+
+def _unreviewed_count(reason: str) -> int | None:
+    m = re.search(r"(\d+) agent/command/skill file", reason or "")
+    return int(m.group(1)) if m else None
+
+
+HOLD_MAX_DAYS = 7
+
+
+def sweep_holds() -> tuple[list[int], int]:
+    """Holds that must not outlive their cause (the sweeper runs this): a job held while its project has NO pending agent file left (pinned, purged
+    after 30 days, deleted, however it went) is released; a hold older than HOLD_MAX_DAYS fails with a plain message. -> (job ids released, failed)."""
+    with get_cursor() as cur:
+        cur.execute("UPDATE jobs j SET hold_reason = NULL, hold_count = NULL, hold_at = NULL WHERE j.hold_reason IS NOT NULL AND j.state = 'queued' "
+                    "AND NOT EXISTS (SELECT 1 FROM project_agent_files f JOIN tasks t ON t.project_id = f.project_id WHERE t.id = j.task_id AND f.state = 'pending') "
+                    "RETURNING j.id")
+        freed = [r["id"] for r in cur.fetchall()]
+        cur.execute("UPDATE jobs SET state = 'failed', hold_reason = NULL, hold_at = NULL, finished_at = now(), "
+                    "summary = %s WHERE hold_reason IS NOT NULL AND state = 'queued' AND hold_at < now() - make_interval(days => %s) "
+                    "RETURNING id, account_id, task_id", (f"Waiting for the agent files to be reviewed for {HOLD_MAX_DAYS} days, so the job was stopped. "
+                                                          "Review them on the Machines page and press Run again.", HOLD_MAX_DAYS))
+        stale = cur.fetchall()
+        for r in stale:
+            repo.record_activity(cur, r["account_id"], "runner:sweeper", "failed", "job", r["id"],
+                                 f"Job {r['id']} failed: held {HOLD_MAX_DAYS} days waiting for agent file review")
+    return freed, len(stale)
+
+
+def release_holds(cur, project_id: int) -> list[int]:
+    """The project has no unreviewed agent file left: its held jobs may be claimed again. -> the job ids (to nudge after the commit)."""
+    cur.execute("SELECT 1 FROM project_agent_files WHERE project_id = %s AND state = 'pending' LIMIT 1", (project_id,))
+    if cur.fetchone():
+        return []
+    cur.execute("UPDATE jobs SET hold_reason = NULL, hold_count = NULL WHERE hold_reason = %s AND state = 'queued' "
+                "AND task_id IN (SELECT id FROM tasks WHERE project_id = %s) RETURNING id", (HOLD_AGENT_FILES, project_id))
+    return [r["id"] for r in cur.fetchall()]
+
+
+def cap_words(text: str, n: int) -> str:
+    """Cap text at n characters on a WORD boundary with an ellipsis, never in the middle of a word (0.1.2: "...the Owner pi")."""
+    text = text or ""
+    if len(text) <= n:
+        return text
+    cut = text[:n - 1].rsplit(" ", 1)[0] if " " in text[:n - 1] else text[:n - 1]
+    return cut.rstrip(" ,;:(") + "\u2026"
+
+
+REASON_CAP = 300
 
 
 def _clean_reason(reason: str) -> str:
-    """The runner's reason is text from a semi-trusted PC: printable characters only, one line, capped."""
-    return re.sub(r"\s+", " ", "".join(ch for ch in str(reason or "") if ch.isprintable() or ch.isspace())).strip()[:200]
+    """The runner's reason is text from a semi-trusted PC: printable characters only, one line, capped on a word boundary."""
+    return cap_words(re.sub(r"\s+", " ", "".join(ch for ch in str(reason or "") if ch.isprintable() or ch.isspace())).strip(), REASON_CAP)
 
 
-def release(device_id: int, job_id: int, fence: int, reason: str = "") -> dict:
+def release(device_id: int, job_id: int, fence: int, reason: str = "", code: str = "") -> dict:
     """The runner gives a job back because it could not start it (no claude, remote unreachable, no git credentials, Claude
     Code signed out). The same rules as a lapsed lease (end_lease): requeued with a NEW fence and no token, attempts counted,
     failed for a human after JOB_MAX_ATTEMPTS. Running on THIS device at this fence, else StaleFence. A stated reason also
@@ -649,23 +781,35 @@ def release(device_id: int, job_id: int, fence: int, reason: str = "") -> dict:
     requeued: list[int] = []
     reason = _clean_reason(reason)
     note = None
+    wants_hold = is_unreviewed_release(reason, code)   # #987: waiting on the Owner's review, not a failure
+    hold = None
     with get_cursor() as cur:
         job = _running(cur, job_id, fence, device_id)
-        verb = end_lease(cur, job, "released by its runner: " + (reason or "could not start")[:200], requeued_ids=requeued)
+        if wants_hold:
+            # Only hold when the Owner has something to review. A file the dashboard could not list (over 96 KB, not text, past the cap, a socket
+            # that dropped mid-report) leaves nothing to pin: a hold would last for ever, so it is a normal, counted release.
+            cur.execute("SELECT 1 FROM project_agent_files f JOIN tasks t ON t.project_id = f.project_id WHERE t.id = %s AND f.state = 'pending' LIMIT 1",
+                        (job["task_id"],))
+            if cur.fetchone():
+                hold = HOLD_AGENT_FILES
+            else:
+                reason = "agent files flagged but none could be listed for review: " + reason
+        verb = end_lease(cur, job, "released by its runner: " + cap_words(reason or "could not start", REASON_CAP), requeued_ids=requeued,
+                         hold=hold, hold_count=_unreviewed_count(reason) if hold else None)
         if reason:
             task = repo._task_row(cur, job["task_id"])
             cur.execute("SELECT name FROM device_tokens WHERE id = %s", (device_id,))
             dev = cur.fetchone()
             cur.execute("INSERT INTO task_comments (task_id, author, body) VALUES (%s, %s, %s)",
                         (task["id"], "runner:" + str((dev or {}).get("name") or device_id)[:60],
-                         f"Job {job_id} was released ({'requeued' if verb == 'requeued' else 'failed'}): {reason}"))
+                         f"Job {job_id} is waiting for you: {reason}" if hold else f"Job {job_id} was released ({'requeued' if verb == 'requeued' else 'failed'}): {reason}"))
             cur.execute("SELECT slug FROM projects WHERE id = %s", (job["account_id"],))
             acct = cur.fetchone()
             note = {"reason": reason, "task_id": task["id"], "job_id": job_id, "slug": (acct or {}).get("slug")}
-    nudge(requeued)
+    nudge([] if hold else requeued)
     if note:
         _notify_owner(note)
-    return {"job_id": job_id, "state": "queued" if verb == "requeued" else "failed"}
+    return {"job_id": job_id, "state": "queued" if verb == "requeued" else "failed", **({"hold": hold} if hold else {})}
 
 
 def _notify_owner(note: dict) -> None:
@@ -723,17 +867,49 @@ def list_for(account_id: int, limit: int = 50, user_id: int | None = None) -> li
     return rows
 
 
-def latest_for_task(task_id: int) -> dict | None:
+READ_ONLY_PROFILES = ("code-auditor", "designer", "chores")    # reviews, looks and test runs: they never carry the work, a builder does
+
+
+def latest_builder_for_task(task_id: int) -> dict | None:
+    """The task's latest job that CHANGED CODE (any profile but the read-only ones), in latest_for_task's shape: the outcome card and the next steps
+    anchor on it, so a review or a test run never becomes 'the change'."""
+    with get_cursor(commit=False) as cur:
+        cur.execute("SELECT j.id FROM jobs j JOIN agent_profiles p ON p.id = j.profile_id WHERE j.task_id = %s AND NOT (p.name = ANY(%s)) "
+                    "ORDER BY j.id DESC LIMIT 1", (task_id, list(READ_ONLY_PROFILES)))
+        row = cur.fetchone()
+    return latest_for_task(task_id, job_id=row["id"]) if row else None
+
+
+def carry_branch(task_id: int) -> str:
+    """The branch a new job on this task starts FROM: the latest builder job's, if it finished (it pushed). '' = the default branch."""
+    b = latest_builder_for_task(task_id)
+    return (b["branch"] or "") if b and b["state"] == "done" else ""
+
+
+def followups_since(task_id: int, job_id: int) -> list[dict]:
+    """Read-only jobs (a review, a test run) started after job `job_id`: [{id, profile, state, summary, tests, branch}], oldest first (sub-results of the outcome card)."""
+    with get_cursor(commit=False) as cur:
+        cur.execute("SELECT j.id, j.state, j.summary, j.finish_summary, j.tests_run, p.name AS profile FROM jobs j JOIN agent_profiles p ON p.id = j.profile_id "
+                    "WHERE j.task_id = %s AND j.id > %s AND p.name = ANY(%s) ORDER BY j.id", (task_id, job_id, list(READ_ONLY_PROFILES)))
+        return [{"id": r["id"], "profile": r["profile"], "state": r["state"], "summary": r["finish_summary"] or r["summary"] or "", "tests": r["tests_run"] or ""}
+                for r in cur.fetchall()]
+
+
+def latest_for_task(task_id: int, job_id: int | None = None) -> dict | None:
     """The task's current job (a live one if there is one, else the most recent), for the task drawer: state, profile,
     device name, branch, who started it, summary. None if it never ran."""
     with get_cursor(commit=False) as cur:
         cur.execute(
             "SELECT j.id, j.task_id, j.account_id, j.user_id, j.state, j.branch, j.unattended, j.approved_at, j.attempts, "
             "j.requires_labels, j.summary, j.created_at, j.finished_at, j.pin_device_id, p.name AS profile, d.name AS device, "
-            "u.display_name AS user_name, pd.name AS pin_device "
-            "FROM jobs j JOIN agent_profiles p ON p.id = j.profile_id JOIN users u ON u.id = j.user_id "
+            "u.display_name AS user_name, pd.name AS pin_device, t.project_id AS task_project_id, t.status AS task_status, t.needs_work_note, "
+            "j.next_steps, j.remaining_work, j.tests_run, j.finish_outcome, j.claimed_at, j.finish_summary, j.hold_reason, j.hold_count, "
+            "EXTRACT(EPOCH FROM clock_timestamp() - j.created_at)::int AS queued_s, "
+            "EXTRACT(EPOCH FROM clock_timestamp() - j.claimed_at)::int AS running_s, "
+            "EXTRACT(EPOCH FROM j.finished_at - COALESCE(j.claimed_at, j.created_at))::int AS ran_s "
+            "FROM jobs j JOIN agent_profiles p ON p.id = j.profile_id JOIN users u ON u.id = j.user_id JOIN tasks t ON t.id = j.task_id "
             "LEFT JOIN device_tokens d ON d.id = j.device_id LEFT JOIN device_tokens pd ON pd.id = j.pin_device_id "
-            "WHERE j.task_id = %s ORDER BY (j.state IN ('queued', 'running')) DESC, j.id DESC LIMIT 1", (task_id,))
+            "WHERE j.task_id = %s AND (%s::int IS NULL OR j.id = %s) ORDER BY (j.state IN ('queued', 'running')) DESC, j.id DESC LIMIT 1", (task_id, job_id, job_id))
         row = cur.fetchone()
         return dict(row) if row else None
 
@@ -760,6 +936,7 @@ def cancel_job(account_id: int, job_id: int, user_id: int) -> dict:
         job = cur.fetchone()
         repo.record_activity(cur, account_id, f"user:{user_id}", "cancelled", "job", job_id,
                              f"Cancelled job {job_id} (task #{job['task_id']})")
+    _wake_views(job_id)
     return dict(job)
 
 
@@ -769,7 +946,8 @@ def _close_model_calls(cur, job_id: int) -> None:
     external_models.close_pending(cur, job_id)
 
 
-def end_lease(cur, job: dict, reason: str, out: dict | None = None, requeued_ids: list | None = None) -> str:
+def end_lease(cur, job: dict, reason: str, out: dict | None = None, requeued_ids: list | None = None,
+              hold: str | None = None, hold_count: int | None = None) -> str:
     """A running job loses its runner (lease expired, or the device was revoked). Deploy/migrate locks it held are marked
     orphaned and its merge locks deleted; the job is then FAILED (never retried) if it held a deploy/migrate lock or has been
     tried JOB_MAX_ATTEMPTS times, else requeued with a NEW fence. Its token hash is cleared either way, so the old token
@@ -783,7 +961,7 @@ def end_lease(cur, job: dict, reason: str, out: dict | None = None, requeued_ids
         out["orphaned"] += len(risky)
     cur.execute("DELETE FROM locks WHERE job_id = %s AND kind = 'merge'", (job["id"],))
     _close_model_calls(cur, job["id"])
-    if risky or job["attempts"] >= config.JOB_MAX_ATTEMPTS:
+    if risky or (hold is None and job["attempts"] >= config.JOB_MAX_ATTEMPTS):
         why = (f"{reason} while holding a deploy/migrate lock: the lock is orphaned and needs a human"
                if risky else f"{reason} and the job has been tried {job['attempts']} times")
         cur.execute("UPDATE jobs SET state = 'failed', token_hash = NULL, lease_expires_at = NULL, "
@@ -793,11 +971,13 @@ def end_lease(cur, job: dict, reason: str, out: dict | None = None, requeued_ids
     else:   # back to the queue with a NEW fence and no token
         cur.execute("UPDATE jobs SET state = 'queued', device_id = NULL, branch = '', lease_expires_at = NULL, "
                     "token_hash = NULL, fence = nextval('fence_seq'), finish_outcome = NULL, finish_summary = '', "
-                    "finish_requested_at = NULL, finish_fence = NULL WHERE id = %s", (job["id"],))
+                    "finish_requested_at = NULL, finish_fence = NULL, next_steps = NULL, remaining_work = NULL, tests_run = '', hold_reason = %s, hold_count = %s, hold_at = CASE WHEN %s::text IS NULL THEN NULL ELSE now() END, "
+                    "attempts = CASE WHEN %s::text IS NULL THEN attempts ELSE GREATEST(attempts - 1, 0) END WHERE id = %s",
+                    (hold, hold_count if hold else None, hold, hold, job["id"]))   # a hold is waiting on a person: the attempt is not counted
         out["requeued"] += 1
         if requeued_ids is not None:
             requeued_ids.append(job["id"])
-        why, verb = f"{reason}; requeued with a new fence", "requeued"
+        why, verb = (f"{reason}; waiting on a person (attempt not counted)" if hold else f"{reason}; requeued with a new fence"), "requeued"
     log.warning("job %s %s (%s)", job["id"], verb, why)
     repo.record_activity(cur, job["account_id"], "runner:sweeper", verb, "job", job["id"], f"Job {job['id']}: {why}")
     return verb
@@ -852,4 +1032,12 @@ class Sweeper:
             for job in cur.fetchall():
                 end_lease(cur, job, "lease expired", out, requeued_ids)
         nudge(requeued_ids)
+        try:
+            from app import job_activity
+            job_activity.purge()   # #89: the live view keeps 30 days (throttled to once an hour inside)
+        except Exception:  # noqa: BLE001 - a failed cleanup must never stop lease expiry
+            log.exception("job activity purge")
+        freed, failed = sweep_holds()
+        nudge(freed)
+        out["failed"] += failed
         return out

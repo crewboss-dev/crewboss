@@ -1,0 +1,12 @@
+{# THE CODE LINE, pinned (#91): the latest job branch, "View changes" (the compare page when the remote is on GitHub, else just the name), and the chips
+   Branch -> Reviewed -> Merged -> Deployed, lit from the data that exists and grey where there is none. Needs: code (task_timeline.code_line) or None. #}
+{% if code %}
+<div class="tw-code" data-code-line aria-label="Code">
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M18 10c0 4-6 3-12 6"/></svg>
+  <span class="tw-branch" data-code-branch>{{ code.branch }}</span>
+  {% if code.url %}<a href="{{ code.url }}" class="tw-view" target="_blank" rel="noopener noreferrer" data-code-view>View changes<span class="sr-only"> on the git host (opens in a new tab)</span></a>{% endif %}
+  <ol class="tw-chips" aria-label="Where the change has got to">
+    {% for label, on in code.chips %}<li class="tw-step{{ ' is-on' if on else '' }}" data-code-chip="{{ label|lower }}" data-on="{{ 'yes' if on else 'no' }}">{{ label }}<span class="sr-only">{{ ': done' if on else ': not yet' }}</span></li>{% endfor %}
+  </ol>
+</div>
+{% endif %}
